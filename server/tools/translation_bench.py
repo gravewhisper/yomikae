@@ -34,9 +34,12 @@ def load_pages(annotation: Path, series: list[str]) -> tuple[list[dict], int]:
         if series and book["book_title"] not in series:
             continue
         for page in sorted(book["pages"], key=lambda p: p["page_index"]):
-            lines = [{"ja": t["text_ja"].replace("\n", ""), "ref": t["text_en"]} for t in page["text"] if t["text_ja"].strip()]
+            kept = [t for t in page["text"] if t["text_ja"].strip()]
+            lines = [{"ja": t["text_ja"].replace("\n", ""), "ref": t["text_en"]} for t in kept]
+            boxes = [(t["x"], t["y"], t["x"] + t["w"], t["y"] + t["h"]) for t in kept]
             dropped += len(page["text"]) - len(lines)
-            pages.append({"series": book["book_title"], "page_index": page["page_index"], "lines": lines})
+            image = annotation.parent / page["image_paths"]["ja"]
+            pages.append({"series": book["book_title"], "page_index": page["page_index"], "lines": lines, "boxes": boxes, "image": image})
     return pages, dropped
 
 
@@ -55,9 +58,11 @@ async def run(args) -> None:
     import yomikae
     from yomikae.cache import ContextStore
     from yomikae.config import Settings
-    from yomikae.model import ContextLine
+    from PIL import Image
+
+    from yomikae.model import Box, ContextLine
     from yomikae.pipeline import translate_page
-    from yomikae.translate import TranslatorFailed, TranslatorUnavailable, make_translator
+    from yomikae.translate import TranslatorFailed, TranslatorUnavailable, make_translator, page_image
 
     out = args.out_root / args.label
     (out / "pages").mkdir(parents=True, exist_ok=True)
@@ -77,6 +82,8 @@ async def run(args) -> None:
         "translator": translator.name,
         "base_url": settings.openai_base_url,
         "reasoning_effort": settings.openai_reasoning_effort,
+        "image": args.image,
+        "image_side": args.image_side,
         "dataset": str(args.annotation),
         "dataset_sha": git_sha(args.annotation.parent),
         "blank_source_lines_dropped": dropped,
@@ -99,9 +106,14 @@ async def run(args) -> None:
         sources = [line["ja"] for line in page["lines"]]
         recalled = store.recall(series, sources)
         error = None
+        page_img = None
+        if args.image != "off" and sources:
+            with Image.open(page["image"]) as im:
+                page_img = page_image(im, [Box(*b) for b in page["boxes"]], args.image == "tagged", args.image_side)
+        tokens_before = translator.prompt_tokens
         t = time.perf_counter()
         try:
-            hyps = await translate_page(translator, store, sources, series, index) if sources else []
+            hyps = await translate_page(translator, store, sources, series, index, page_img) if sources else []
         except (TranslatorUnavailable, TranslatorFailed) as e:
             hyps, error = [""] * len(sources), str(e)
         ms = round((time.perf_counter() - t) * 1000)
@@ -111,6 +123,7 @@ async def run(args) -> None:
             "series": series,
             "page_index": index,
             "ms": ms,
+            "prompt_tokens": translator.prompt_tokens - tokens_before,
             "error": error,
             "lines": [{"line_index": i, **line, "hyp": hyp, "recalled": known is not None} for i, (line, hyp, known) in enumerate(zip(page["lines"], hyps, recalled))],
         }
@@ -265,6 +278,7 @@ def score(out: Path, args) -> None:
         "p90_ms": ms[int(0.9 * (len(ms) - 1))],
         "total_s": round(sum(ms) / 1000),
         "ms_per_line": round(sum(ms) / max(1, system["lines"] - system["recalled"])),
+        "median_prompt_tokens": round(statistics.median(p.get("prompt_tokens", 0) for p in pages)),
     }
     summary = {"meta": meta, "comet_model": args.comet_model, "system": system, "by_series": by_series, "honorifics": {k: v for k, v in hon.items() if k != "cases"}, "timing": timing, "failed_pages": failed}
     (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1))
@@ -287,7 +301,7 @@ def score(out: Path, args) -> None:
         "",
         "## Timing",
         "",
-        f"Per page, translation only: median {timing['median_ms']} ms, p90 {timing['p90_ms']} ms, {timing['total_s']} s over {timing['pages']} pages, {timing['ms_per_line']} ms per translated line.",
+        f"Per page, translation only: median {timing['median_ms']} ms, p90 {timing['p90_ms']} ms, {timing['total_s']} s over {timing['pages']} pages, {timing['ms_per_line']} ms per translated line, median {timing['median_prompt_tokens']} prompt tokens. Page image sent: {meta.get('image', 'off')}.",
         "",
         "## Method",
         "",
@@ -313,6 +327,8 @@ def main() -> None:
     ap.add_argument("--base-url", default="http://localhost:1234/v1")
     ap.add_argument("--model", default="google/gemma-4-12b")
     ap.add_argument("--reasoning-effort", default="none", help="empty string to leave it unset")
+    ap.add_argument("--image", choices=("off", "page", "tagged"), default="off", help="send each page's image, plain or with line ids tagged at their boxes")
+    ap.add_argument("--image-side", type=int, default=1024, help="long side in px of the image sent")
     ap.add_argument("--series", action="append", default=[], help="only this book_title, repeatable")
     ap.add_argument("--limit", type=int, default=0, help="pages per series, for a smoke run")
     ap.add_argument("--score", action="store_true", help="only rescore an existing run")

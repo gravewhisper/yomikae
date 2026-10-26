@@ -38,3 +38,35 @@ def test_the_glossary_keeps_the_most_used_spelling_of_a_name():
         (3, [ContextLine("d", "Nagisa-nee?"), ContextLine("e", "Yuki-chan and Yuka-chan.")]),
     )
     assert store.names("g/1") == {"Nagisa-nee": "a", "An-chan": "b", "Yuki-chan": "e", "Yuka-chan": "e"}
+
+
+def test_a_tagged_page_retried_in_halves_tags_only_the_lines_each_half_sends():
+    import asyncio
+
+    from PIL import Image
+
+    from yomikae.model import Box
+    from yomikae.translate import Context, Misaligned, build_messages, page_image, translate_lines
+
+    page = page_image(Image.new("RGB", (2048, 1024), "white"), [Box(100 * i, 0, 100 * i + 50, 50) for i in range(4)], tagged=True)
+    calls = []
+
+    class SplitsOnce:
+        name = "splits"
+
+        async def translate(self, lines, context):
+            calls.append((lines, context.page.boxes, build_messages(lines, context)))
+            if len(lines) > 2:
+                raise Misaligned("too many")
+            return [f"en {line}" for line in lines]
+
+        async def health(self):
+            return None
+
+    out = asyncio.run(translate_lines(SplitsOnce(), ["a", "b", "c", "d"], Context(page=page)))
+    assert out == ["en a", "en b", "en c", "en d"]
+    assert page.image.size == (1024, 512) and page.boxes[1] == Box(50, 0, 75, 25)
+    assert [boxes for _, boxes, _ in calls[1:]] == [page.boxes[:2], page.boxes[2:]]
+    system, user = calls[0][2]
+    assert "red numbered tag" in system["content"]
+    assert user["content"][0]["image_url"]["url"].startswith("data:image/jpeg;base64,")
