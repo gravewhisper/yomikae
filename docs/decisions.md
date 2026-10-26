@@ -70,6 +70,14 @@ If none reaches the floor, the bubble takes the largest of those fits, which can
 
 **Name errors came from the harness.** Gemma's clearest weakness was keeping characters apart: in one series it swapped two sisters' names and turned お姉ちゃん into "Onii-chan". Both came from the prompt and the name list, not the model, and were fixed (see the honorifics entry).
 
+## Translation sends text, not the page image
+
+**Decision.** The translator gets each page's OCR'd lines and the earlier pages as text, without the page image.
+
+**Why.** The Gemma 4 12B QAT build used in development can read images, so on 2026-10-26 it was tested with the page attached. The page went as a 1024 px image, plain or with each line's id drawn as a numbered tag at its bubble, and one prompt sentence said what the image was. On OpenMantra, two runs per variant, COMET and chrF stayed within noise. On Naruto volume 68, the tagged image scored 0.0025 COMET lower. The tagged image did fix ビル, the name Bill, which text alone wrote as "building" on 2 lines per run, and it stopped two lines from dropping a sister's name. Speaker errors did not change. In a blind read of 20 pages, text only won 12 pages and the image won 6, with major errors 14 against 16. The image made each page 27% slower on OpenMantra and 53% slower on Naruto, where pages hold fewer lines. The fixes are too few for that cost. [models.md](models.md#measured-on-our-benchmark) has the tables.
+
+**Tried and rejected.** The plain page image, which also left お姉ちゃん as "Onee-chan" on 16 of 28 lines per run instead of "sister", and once wrote ツバメさん as the other sister's name. The tagged page image. `translation_bench.py --image` keeps both, so a future model that can see can be checked the same way.
+
 ## The server renders the page and the extension swaps the image
 
 **Decision.** The server returns a finished page image with the English lettered in. The extension puts it in place of the original image. It draws no text over the page.

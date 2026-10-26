@@ -166,6 +166,30 @@ What each model got wrong:
 
 **Opus 5.5 as a ceiling.** Claude Opus 5.5 subagents translated OpenMantra with the same prompt, page by page, and were scored with `translation_bench.py --score`. They read each whole series at once, so they had more context than the 2 earlier pages the server sends. Opus led by about 0.008 COMET, inside the overlap of the intervals, and by 2.4 chrF. It made none of Gemma's name and gender errors, which the fix above has since removed, kept fewer honorifics, and sometimes moved text between bubbles too. On Naruto volume 68 the gap was smaller still: 0.003 COMET and 2.3 chrF. A frontier model buys little over Gemma 4 12B on overall quality here. Its clearest advantage is keeping characters apart.
 
+**Page images.** On 2026-10-26, the Gemma 4 12B QAT build used in development translated with and without the page image. That build has a vision projector, and LM Studio takes the image as an OpenAI `image_url` part. Three variants ran with the same prompt and context: A sends text only, as the server does. B adds the page scaled to 1024 px on its long side. C adds the same image with each line's id drawn as a numbered tag at its text. B and C each add one prompt sentence that says what the image is. OpenMantra ran twice per variant, alternating A, B, C, A, B, C. Naruto volume 68 ran once each for A and C. Times are for the translate call alone, on an RTX 5070 Ti that also served the owner's reading.
+
+| Set | Variant | COMET (95% CI) | chrF | Median s per page | p90 s per page | Median prompt tokens | Honorifics kept |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| OpenMantra | A, text only | 0.7487 (0.742 to 0.756), 0.7491 (0.743 to 0.756) | 38.17, 38.37 | 1.41, 1.45 | 2.35, 2.29 | 809, 805 | 26 of 27, both runs |
+| OpenMantra | B, page image | 0.7501 (0.743 to 0.758), 0.7509 (0.744 to 0.759) | 38.36, 38.53 | 1.78, 1.84 | 2.59, 2.74 | 1132, 1140 | 27 of 27, both runs |
+| OpenMantra | C, tagged image | 0.7519 (0.745 to 0.759), 0.7502 (0.743 to 0.757) | 38.21, 38.05 | 1.79, 1.84 | 2.99, 2.99 | 1160, 1162 | 27 of 27, both runs |
+| Naruto volume 68 | A, text only | 0.7809 (0.770 to 0.792) | 41.18 | 1.05 | 1.89 | 853 | 11 of 14 |
+| Naruto volume 68 | C, tagged image | 0.7784 (0.768 to 0.790) | 40.90 | 1.61 | 2.37 | 1193 | 12 of 14 |
+
+All the score gaps are inside the noise in [benchmarks.md](benchmarks.md#know-the-noise). The image costs about 340 prompt tokens per call.
+
+The image was meant to fix errors that come from not seeing who speaks. On boureisougi and tojime_no_siora, OpenMantra's series with those errors, counted per run:
+
+| Error | A | B | C |
+| --- | --- | --- | --- |
+| ビル, the name Bill, written as "building" (5 lines) | 2, 2 | 0, 0 | 0, 0 |
+| すずめ or ツバメ dropped for "her" (18 lines) | 2, 2 | 0, 0 | 0, 0 |
+| ツバメさん written as Suzume-san, the other sister | 0, 0 | 1, 1 | 0, 0 |
+| お姉ちゃん as a brother (31 lines) | 0, 0 | 0, 0 | 0, 0 |
+| お姉ちゃん left as "Onee-chan" instead of sister (28 lines) | 0, 0 | 16, 16 | 0, 0 |
+
+A script counted these, and two lines it flagged as missing Bill were corrected by hand, because "his height" is right there. A separate reviewer read 20 random OpenMantra pages from A and C blind, with each page image open. A won 12 pages, C won 6, and 2 were ties. Part of that gap is position bias, because A sat in the first column on 12 of the 20 pages. Major errors were 14 for A and 16 for C, and errors of speaker, gender, kinship, names or the wrong bubble were 13 and 15, depending on the column. Most speaker errors were made by both variants, on the same lines. The tagged image fixes a few name errors, but it does not tell Gemma 4 12B who speaks to whom. [decisions.md](decisions.md#translation-sends-text-not-the-page-image) has the decision.
+
 ## Sources
 
 - VNTL Leaderboard 2026: https://huggingface.co/datasets/yukobayashi500/vntl-leaderboard-2026

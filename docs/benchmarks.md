@@ -67,6 +67,8 @@ Other options:
 - `--reasoning-effort` defaults to `none`. Pass an empty string to leave the field out.
 - `--series NAME` runs one book, and you can repeat it. `--limit N` runs the first N pages of each series.
 - `--score` scores an existing run again without calling the model.
+- `--image page` sends each page's image from the annotation's `image_paths.ja` along with its lines, scaled so the long side is `--image-side` px (default 1024). `--image tagged` also draws each line's id as a small numbered tag at its text box. Each page's record keeps the prompt tokens its calls used, and the scorecard gives the median.
+- Running a finished label again translates only the pages that failed, which helps when LM Studio drops a few requests. Delete that run's `comet.json` first, or the scores come from the old lines.
 
 COMET runs in its own venv on the CPU, so it does not compete with the LLM for GPU memory.
 
