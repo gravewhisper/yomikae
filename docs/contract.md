@@ -40,7 +40,7 @@ Response `200 application/json`, a `TranslatedPage`:
       "vertical": true
     }
   ],
-  "timings_ms": { "detect": 41, "ocr": 280, "translate": 2100, "inpaint": 190, "typeset": 30, "total": 2650 },
+  "timings_ms": { "detect": 41, "balloons": 15, "ocr": 280, "translate": 2100, "inpaint": 190, "typeset": 30, "encode": 90, "total": 2750 },
   "cached": false
 }
 ```
@@ -77,7 +77,7 @@ Multipart form:
 | `context_key` | string, optional | As in `/v1/pages`. |
 | `page_index` | int, optional | As in `/v1/pages`. |
 | `note` | string, optional | What the reader says is wrong. |
-| `job_state` | string, optional | The extension's state for the page (`queued`, `fetching`, `translating`, `ready`, `failed`). |
+| `job_state` | string, optional | The extension's state for the page (`queued`, `fetching`, `translating`, `waiting`, `ready`, `failed`, `blocked`, or `untracked` for a page with no job). |
 | `job_error` | string, optional | The error the extension showed, for a failed page. |
 | `areas` | JSON string, optional | The parts of the page the reader marked: `[{"box": [x0, y0, x1, y1], "bubble_index": 2 \| null}]`. Boxes are fractions (0 to 1) of the displayed image, so they do not depend on how large the site drew it. `bubble_index` is set when the reader clicked a detected bubble. Malformed JSON returns `400 bad_request`. |
 
@@ -85,7 +85,7 @@ The server writes one directory per report under `~/.local/share/yomikae/reports
 
 | File | Present | Contents |
 | --- | --- | --- |
-| `original.<ext>` | always | The bytes from `image`. The extension comes from the image format (`png`, `jpg`, `webp`, `svg`, or `bin`). |
+| `original.<ext>` | always | The bytes from `image`. The extension comes from the image format (`jpg`, `png`, `webp`, `gif`, `avif`, `bmp`, the lowercase Pillow name of another format, `svg`, or `bin`). |
 | `result.json` | when the page is in the cache for the current pipeline version | The cached `TranslatedPage` with bubbles, plus `context_key`, `page_index`, `font_sizes`, and `skipped`. |
 | `rendered.<ext>` | with `result.json` | The rendered page from the cache, under the same name as in its `rendered_url`. |
 | `marked.png` | when areas were marked and the original decodes | The original page with each area outlined in magenta and labelled `bubble <i>` or `area <n>`. |
@@ -99,7 +99,7 @@ Response `200 application/json`:
 
 ### Errors
 
-Non-2xx responses return `{ "error": "<code>", "detail": "<human text>" }`. Codes: `bad_image`, `bad_request`, `translator_unavailable`, `translator_error`, `internal`. `translator_error` (500) means the translator answered but refused the request, for example a 400. The server resends a 400 whose body contains `Channel Error` or `predict request failed: fetch failed`, which LM Studio returns now and then for a request that succeeds when sent again, up to twice, after 0.5 s and then 1 s, before it answers `translator_error`. If the translator is down, the server still answers `/v1/health` with `"ok": false` and a `detail`.
+Non-2xx responses return `{ "error": "<code>", "detail": "<human text>" }`. Codes: `bad_image`, `bad_request`, `not_found`, `translator_unavailable`, `translator_error`, `internal`. A request with missing or malformed fields also gets `bad_image`. `translator_error` (500) means the translator answered but refused the request, for example a 400. The server resends a 400 whose body contains `Channel Error` or `predict request failed: fetch failed`, which LM Studio returns now and then for a request that succeeds when sent again, up to twice, after 0.5 s and then 1 s, before it answers `translator_error`. If the translator is down, the server still answers `/v1/health` with `"ok": false` and a `detail`.
 
 ## Extension page state
 
@@ -173,7 +173,7 @@ Turning the work back on rescans the page. Pages translated earlier show at once
 
 The popup asks the tab for its work with the tab command `{ type: 'work' }`, which the content script answers with `{ id, language, choice }` or `null`. While the site is on and the tab names a work, the popup shows **Translate this gallery**. For a work that is off because it is in English, it also reads "Already in English, not translating." with a **Translate anyway** button, which stores `"on"`.
 
-x.com keys an image by its media id, so every size of one image shares one job, and groups context by tweet (`x.com/i/status/<id>`), the thread on a status page or the enclosing tweet on a timeline. X draws each photo as a background image on a DIV next to a transparent IMG, so the swap and the Alt peek change that DIV too. The photo view takes its page number from `/photo/<n>` in the URL. pixiv keys a page as `<artwork id>_p<n>`, groups context by artwork (`pixiv.net/artworks/<id>`) and fetches the original named by `/ajax/illust/<id>/pages`, falling back to `master1200`. i.pximg.net refuses requests without a pixiv Referer, so the background worker installs a session `declarativeNetRequest` rule that sets `Referer: https://www.pixiv.net/` on its own requests (tab id -1) to that host.
+x.com keys an image as `x:<media id>`, so every size of one image shares one job, and groups context by tweet (`x.com/i/status/<id>`), the thread on a status page or the enclosing tweet on a timeline. X draws each photo as a background image on a DIV next to a transparent IMG, so the swap and the Alt peek change that DIV too. The photo view takes its page number from `/photo/<n>` in the URL. pixiv keys a page as `pixiv:<artwork id>_p<n>`, groups context by artwork (`pixiv.net/artworks/<id>`) and fetches the original named by `/ajax/illust/<id>/pages`, falling back to `master1200`. i.pximg.net refuses requests without a pixiv Referer, so the background worker installs a session `declarativeNetRequest` rule that sets `Referer: https://www.pixiv.net/` on its own requests (tab id -1) to that host.
 
 ## Reporting a page
 

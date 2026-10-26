@@ -59,6 +59,33 @@ LM Studio has two load options that free memory:
 
 [models.md](models.md#budget-the-graphics-memory) explains how to budget memory when you pick a model.
 
+## Disk cache
+
+Each cached page is a folder named by the SHA-256 of the image bytes, in `server/cache/v<pipeline version>/`. It holds two files: the rendered page and `result.json`. The original image is not kept. The rendered page is WebP at quality 90 when its longer side is at most 16,383 px, JPEG at quality 90 up to 65,535 px, and PNG beyond that, so almost every page is WebP.
+
+On 2026-10-27 the server rendered 10 OpenMantra pages on the CPU with the `fake` translator. Each `rendered.webp` was 140 to 305 KB, and each `result.json` 0.9 to 2.2 KB. The render came within 0 to 5% of the size of the source page encoded the same way, because the English replaces the Japanese at about the same amount of ink. So the source page encoded as WebP at quality 90 stands in for a cached page. Over 496 pages, the 214 OpenMantra pages and two volumes of a color manga, about 780 × 1200 px each:
+
+| Pages | Median per page | p90 per page |
+| --- | ---: | ---: |
+| OpenMantra, 214 | 204 KB | 266 KB |
+| Color manga volume 1, 147 | 240 KB | 295 KB |
+| Color manga volume 2, 135 | 227 KB | 282 KB |
+| All 496 | 223 KB | 283 KB |
+
+Sizes are in bytes, as `YOMIKAE_CACHE_MAX_BYTES` counts them, where 1 KB is 1,000 bytes. The rendered page is more than 99% of an entry. At the median, the default 2 GiB limit holds about 9,600 pages. Pages from sites that serve larger images take more, roughly in proportion to their pixel count. The development server's cache was empty when this was measured, so these are not sizes from real reading.
+
+Other formats for the same 496 pages, as a median per page:
+
+| Format | Median | Against the current format |
+| --- | ---: | ---: |
+| WebP quality 90, encoder method 1, current | 223 KB | |
+| WebP quality 90, encoder method 4 | 213 KB | 4.5% smaller |
+| WebP quality 80, encoder method 1 | 176 KB | 21% smaller |
+| JPEG quality 90 | 276 KB | 24% larger |
+| PNG, compression level 1 | 1,073 KB | 4.8 times larger |
+
+Nothing in an entry is wasteful. Quality 80 would store about a quarter more pages in the same space, but it may blur fine screentone, which was not checked. Method 4 saves little.
+
 ## Translation speed
 
 On 2026-10-26, `translation_bench.py` ran all 214 OpenMantra pages three times on each side, alternating, with the Gemma 4 12B build used in development and `reasoning_effort` `none`. Times are for the translate call alone.

@@ -17,6 +17,7 @@ from pathlib import Path
 SERVER_DIR = Path(__file__).resolve().parent.parent
 COMET_PYTHON = SERVER_DIR / ".venv-comet" / "bin" / "python"
 COMET_MODEL = "Unbabel/wmt22-comet-da"
+COMET_GPU_MIN_FREE = 4 * 1024**3
 BOOTSTRAP = 1000
 SAMPLES = 30
 SUFFIXES = {"さん": "san", "ちゃん": "chan", "くん": "kun", "君": "kun", "さま": "sama", "様": "sama", "先輩": "senpai", "先生": "sensei", "殿": "dono"}
@@ -150,14 +151,37 @@ def read_lines(out: Path) -> tuple[list[dict], list[dict]]:
     return pages, lines
 
 
-def comet(out: Path, model_name: str) -> None:
+def comet_gpus(device: str) -> int:
+    if device == "cpu":
+        return 0
+    import torch
+
+    if not torch.cuda.is_available():
+        print("COMET on cpu: CUDA is not available", flush=True)
+        return 0
+    free, _ = torch.cuda.mem_get_info()
+    if free < COMET_GPU_MIN_FREE:
+        print(f"COMET on cpu: the GPU has {free / 2**30:.1f} GiB free, under the {COMET_GPU_MIN_FREE / 2**30:.0f} GiB it needs", flush=True)
+        return 0
+    print("COMET on cuda", flush=True)
+    return 1
+
+
+def comet(out: Path, model_name: str, device: str = "cpu") -> None:
     from comet import download_model, load_from_checkpoint
 
     _, lines = read_lines(out)
     scored = [line for line in lines if line["ref"].strip()]
     model = load_from_checkpoint(download_model(model_name))
     data = [{"src": line["ja"], "mt": clean(line["hyp"]), "ref": clean(line["ref"])} for line in scored]
-    result = model.predict(data, batch_size=32, gpus=0, progress_bar=False)
+    gpus = comet_gpus(device)
+    try:
+        result = model.predict(data, batch_size=32, gpus=gpus, progress_bar=False)
+    except RuntimeError as e:
+        if not gpus or "out of memory" not in str(e):
+            raise
+        print("COMET ran out of GPU memory, scoring on cpu", flush=True)
+        result = model.predict(data, batch_size=32, gpus=0, progress_bar=False)
     keys = [f"{line['series']}/{line['page_index']}/{line['line_index']}" for line in scored]
     (out / "comet.json").write_text(json.dumps({"model": model_name, "scores": dict(zip(keys, result.scores))}, indent=1))
 
@@ -169,10 +193,10 @@ def comet_scores(out: Path, args, keys: list[str]) -> dict[str, float]:
         if cached["model"] == args.comet_model and set(cached["scores"]) == set(keys):
             return cached["scores"]
     python = args.comet_python or (COMET_PYTHON if COMET_PYTHON.exists() else Path(sys.executable))
-    env = {**os.environ, "CUDA_VISIBLE_DEVICES": "" if args.comet_device == "cpu" else os.environ.get("CUDA_VISIBLE_DEVICES", "")}
+    env = {**os.environ, "CUDA_VISIBLE_DEVICES": ""} if args.comet_device == "cpu" else dict(os.environ)
     print(f"scoring COMET with {args.comet_model} under {python} on {args.comet_device}", flush=True)
     t = time.perf_counter()
-    subprocess.run([str(python), "-I", str(Path(__file__).resolve()), "--comet-model", args.comet_model, "--comet-only", "--out-root", str(out.parent), "--label", out.name], env=env, check=True)
+    subprocess.run([str(python), "-I", str(Path(__file__).resolve()), "--comet-model", args.comet_model, "--comet-device", args.comet_device, "--comet-only", "--out-root", str(out.parent), "--label", out.name], env=env, check=True)
     print(f"COMET took {time.perf_counter() - t:.0f} s", flush=True)
     return json.loads(path.read_text())["scores"]
 
@@ -334,12 +358,12 @@ def main() -> None:
     ap.add_argument("--score", action="store_true", help="only rescore an existing run")
     ap.add_argument("--comet-model", default=COMET_MODEL)
     ap.add_argument("--comet-python", type=Path, help=f"interpreter with unbabel-comet, default {COMET_PYTHON}")
-    ap.add_argument("--comet-device", choices=("cpu", "auto"), default="cpu")
+    ap.add_argument("--comet-device", choices=("cpu", "auto"), default="cpu", help="auto uses the GPU when it has 4 GiB free, else the CPU")
     ap.add_argument("--comet-only", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args()
     out = args.out_root / args.label
     if args.comet_only:
-        comet(out, args.comet_model)
+        comet(out, args.comet_model, args.comet_device)
         return
     if not args.score:
         if args.annotation is None:

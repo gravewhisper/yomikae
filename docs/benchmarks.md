@@ -70,7 +70,7 @@ Other options:
 - `--image page` sends each page's image from the annotation's `image_paths.ja` along with its lines, scaled so the long side is `--image-side` px (default 1024). `--image tagged` also draws each line's id as a small numbered tag at its text box. Each page's record keeps the prompt tokens its calls used, and the scorecard gives the median.
 - Running a finished label again translates only the pages that failed, which helps when LM Studio drops a few requests. Delete that run's `comet.json` first, or the scores come from the old lines.
 
-COMET runs in its own venv on the CPU, so it does not compete with the LLM for GPU memory.
+COMET runs in its own venv on the CPU, so it does not compete with the LLM for GPU memory. `--comet-device auto` scores on the GPU instead when the COMET venv has a CUDA build of PyTorch and the GPU has 4 GiB free, and falls back to the CPU otherwise, saying why.
 
 A run that stops partway can continue. Run the same command with the same label, and pages already translated without an error are skipped.
 
@@ -136,7 +136,7 @@ On 2026-10-27 the per-lobe erosion for shared double bubbles was checked on 67 p
 
 ## Avoid these mistakes
 
-**Use the same lettering font in every checkout.** Anime Ace 2 is ignored by git, so a new worktree does not have it, and the server silently falls back to the bundled Shantell Sans. One comparison was void because the run in a worktree set dialogue in the bundled font while the base used Anime Ace, which changed sizes on most bubbles. Link or copy `server/fonts/animeace2_reg.ttf` into each worktree, and check that `dialogue_font` in `meta.json` matches between the runs you compare. The first line of `scorecard.md` shows it too.
+**Use the same lettering font in every checkout.** Anime Ace 2 is ignored by git, so a new worktree does not have it, and the server silently falls back to the bundled Shantell Sans. One comparison was void because the run in a worktree set dialogue in the bundled font while the base used Anime Ace, which changed sizes on most bubbles. Link or copy `server/fonts/animeace2_reg.ttf` into each worktree, and check that `dialogue_font` in `meta.json` matches between the runs you compare. The line under the title of `scorecard.md` shows it too.
 
 **Label GPU and CPU timings.** Detection takes about 0.95 s per page on the CPU and a few tens of milliseconds on the GPU. One estimate of CPU detection time was taken from a GPU run and came out 8 to 10 times too low. `meta.json` records the device, and `--device cpu` forces the CPU.
 
