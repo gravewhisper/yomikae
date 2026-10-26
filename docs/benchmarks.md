@@ -70,7 +70,7 @@ Other options:
 - `--image page` sends each page's image from the annotation's `image_paths.ja` along with its lines, scaled so the long side is `--image-side` px (default 1024). `--image tagged` also draws each line's id as a small numbered tag at its text box. Each page's record keeps the prompt tokens its calls used, and the scorecard gives the median.
 - Running a finished label again translates only the pages that failed, which helps when LM Studio drops a few requests. Delete that run's `comet.json` first, or the scores come from the old lines.
 
-COMET runs in its own venv on the CPU, so it does not compete with the LLM for GPU memory.
+COMET runs in its own venv on the CPU, so it does not compete with the LLM for GPU memory. `--comet-device auto` scores on the GPU instead when the COMET venv has a CUDA build of PyTorch and the GPU has 4 GiB free, and falls back to the CPU otherwise, saying why.
 
 A run that stops partway can continue. Run the same command with the same label, and pages already translated without an error are skipped.
 
