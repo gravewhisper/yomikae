@@ -86,7 +86,7 @@ def test_a_single_kanji_is_a_name_only_when_both_languages_address_it_with_an_ho
 
 def test_furigana_terms_go_to_their_own_map_and_names_stay_as_before():
     lines = ["螺旋丸を呉葉さんに託す", "呉葉の「極焔」"]
-    english = ["I entrust the Rasengan to Kureha-san.", "Kureha's \"Gokuen\"!"]
+    english = ["I entrust the Rasengan to Kureha-san.", "Kureha's \" Gokuen\"!"]
     found = furigana_names(lines, english, [("螺旋丸", "らせんがん"), ("呉葉", "くれは"), ("極焔", "ごくえん")])
     assert [(e.ja, e.kind) for e in found] == [("螺旋丸", "term"), ("呉葉", "name"), ("極焔", "term")]
     assert furigana_names(["忍術だ"], ["Ninjutsu!"], [("忍術", "にんじゅつ")])[0].kind == "term"

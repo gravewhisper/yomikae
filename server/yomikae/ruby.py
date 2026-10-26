@@ -157,7 +157,7 @@ def kind_of(base: str, name: str, lines: list[str], translations: list[str]) -> 
             person += 1
         for m in re.finditer(rf"\b{re.escape(name)}\b", text):
             before, after = text[: m.start()], text[m.end() :]
-            if DETERMINER.search(before) or before.endswith(QUOTES) and after.startswith(QUOTES):
+            if DETERMINER.search(before) or before.rstrip().endswith(QUOTES) and after.lstrip().startswith(QUOTES):
                 thing += 1
             elif re.match(rf"-(?:{'|'.join(HONORIFIC_KANA)})\b|'s\b", after) or re.fullmatch(r"\W*", before + after) or re.match(r"\s*[,!]", after) and not before.strip(" .…"):
                 person += 1
