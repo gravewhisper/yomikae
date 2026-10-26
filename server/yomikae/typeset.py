@@ -493,6 +493,7 @@ def try_layout(
             found = True
             if best is None or lined.cost < best[0].cost:
                 best = (lined, axis, spans, baselines)
+            break
         if not found:
             if best:
                 break
