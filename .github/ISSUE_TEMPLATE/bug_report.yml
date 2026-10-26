@@ -1,0 +1,54 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reproduce it
+      description: The site or kind of page, the steps, and whether it happens every time.
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where
+      options:
+        - Translation (wrong or missing text)
+        - Lettering (size, position, font)
+        - Text removal (leftover Japanese or smudges)
+        - Extension (popup, chip, a site not working)
+        - Server (won't start, crashes, errors)
+        - Install or setup
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: Your setup
+      description: OS, GPU and its memory, browser, the translator model, and the commit you run.
+      placeholder: "Arch Linux, RTX 4070 12 GB, Chrome 141, Gemma 4 12B in LM Studio, commit abc1234"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The server's output around the problem, or the error text from the extension.
+      render: text
+  - type: markdown
+    attributes:
+      value: |
+        Please don't attach pages from copyrighted manga. A crop of the problem bubble is enough, or describe it in words. Never post sexual content involving minors or characters who look like minors.

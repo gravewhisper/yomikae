@@ -115,7 +115,7 @@ def iou(a: np.ndarray, b: np.ndarray) -> float:
     return np.count_nonzero(a & b) / union if union else 0.0
 
 
-def overlay(cv2, Image, ImageDraw, rgb: np.ndarray, masks: list[np.ndarray | None], boxes: list, title: str) -> "Image.Image":
+def overlay(cv2, Image, ImageDraw, rgb: np.ndarray, masks: list[np.ndarray | None], boxes: list, title: str):
     base = rgb.astype(np.float32).copy()
     edges = np.zeros(rgb.shape[:2], bool)
     for i, m in enumerate(masks):
