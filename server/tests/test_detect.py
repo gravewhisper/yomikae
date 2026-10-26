@@ -154,3 +154,14 @@ def test_two_stacked_lobes_with_a_short_line_at_the_waist_are_split(detector):
     boxes = sorted((b.box.as_list() for b in detect.detect(detector, np.asarray(img))), key=lambda b: b[1])
     assert len(boxes) == 2, boxes
     assert boxes[0][3] < 545 and boxes[1][1] > 500, boxes
+
+
+def test_a_missed_line_is_kept_by_the_share_of_it_inside_a_weak_block_not_by_overlap():
+    prob = np.zeros((200, 200), np.float32)
+    prob[40:160, 90:100] = 0.9
+    seg = prob > 0
+    big = np.array([[0, 0, 200, 200]], np.float32)
+    assert detect.uncovered_lines(prob, seg, [], big) == [(83, 33, 107, 167)]
+    edge = np.array([[100, 0, 200, 200]], np.float32)
+    assert detect.uncovered_lines(prob, seg, [], edge) == []
+    assert detect.uncovered_lines(prob, seg, [(80, 30, 110, 170)], big) == []
