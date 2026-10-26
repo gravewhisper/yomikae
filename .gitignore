@@ -1,0 +1,15 @@
+.claude/
+server/.venv
+server/.venv-comet
+server/models
+server/cache/
+extension/node_modules
+extension/dist/
+extension/adapters.local
+extension/e2e-out/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+server/fonts/animeace2_*

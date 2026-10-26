@@ -1,0 +1,35 @@
+[project]
+name = "yomikae"
+version = "0.1.0"
+description = "Local server that translates Japanese manga pages to English in place"
+license = "GPL-3.0-only"
+requires-python = ">=3.12"
+dependencies = [
+  "torch>=2.11",
+  "onnxruntime-gpu>=1.31",
+  "manga-ocr>=0.1.14",
+  "opencv-python-headless>=4.10",
+  "numpy>=2.0",
+  "pillow>=11.0",
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+  "python-multipart>=0.0.20",
+  "httpx>=0.28",
+  "fonttools>=4.55",
+  "pyphen>=0.17",
+  "pydensecrf @ git+https://github.com/zyddnys/pydensecrf.git@3ca3d8f0cbd9701f4a765f97fbad43f9b2fe80a6",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3"]
+bench = ["sacrebleu>=2.4"]
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["yomikae"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

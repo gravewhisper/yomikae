@@ -1,0 +1,115 @@
+# Design decisions
+
+This page records why Yomikae works the way it does, and what was tried and dropped. Read the matching entry before you change one of these behaviors. [server/README.md](../server/README.md#pipeline) describes how each stage works, and [typesetting-notes.md](typesetting-notes.md) maps the lettering rules to the guide they come from.
+
+## Lettering stays inside the bubble
+
+**Decision.** English never runs past its bubble's outline, even when that leaves it smaller. The page gets one target size. When a bubble cannot fit its text in whole words at 75% of that target, it tries these in order and keeps the first that reaches the 75% floor:
+
+1. Hyphenation, at most once per word, only in words of 6 letters or more, at a syllable break from pyphen's `en_US` patterns.
+2. The dialogue face squeezed to 80% of its width, whole words first, then hyphenated.
+3. The same at 70% of its width.
+
+If none reaches the floor, the bubble takes the largest of those fits, which can be as small as 10 px. Text that cannot fit at 10 px shrinks inside its bubble, down to 6 px, instead of running across its neighbours.
+
+**Why.** A clean outline with smaller lettering reads better than bigger text squeezed edge to edge or running onto the art. The owner chose this after comparing contact sheets side by side. The squeeze widths were measured too. At 75% the letters visibly distort, and 65% turns round letters into tall ovals. The cost is smaller lettering in narrow bubbles, such as those of 4-koma strips. To read one, hold **Alt** to see the original.
+
+**Tried and rejected.** Each of these was built and reviewed on real pages:
+
+- A page floor of 14 px. Bubbles looked crammed, and more words were hyphenated.
+- The guide's stroked spill, which lets text run past the bubble edge with a white stroke. The stroke covered the bubble outlines.
+- Redrawing tiny bubbles larger, with the same shape and a fresh outline. The grown bubbles looked off, and the case came up once in 214 OpenMantra pages.
+
+## Only bursts and big lettering make a shout
+
+**Decision.** A line is set as a shout, larger and in Bangers, only when its bubble is a spiky burst or its source lettering is clearly bigger than the page's: 1.2 times the page median with a `！`, or 1.8 times without. The translation must also be 12 words or fewer. A `!!` ending or capitals do not make a shout.
+
+**Why.** Manga puts `！！` on ordinary, calm lines. When `!!` counted, 49 lines on the benchmark pages got the shout face, many of them in calm bubbles. The burst detector needs a drawn outline, with at least 30% ink in a 3 px ring outside the bubble, so flash and speed-line backgrounds, whose lines thin out toward the white, don't count. On the hand labels in `server/tools/openmantra_bursts.json`, 96 bursts among 1546 OpenMantra text blocks, it reaches 0.89 precision and 0.69 recall. `server/tools/real_bursts.py` reproduces the score.
+
+**Tried and rejected.** Treating a `!!` ending as a shout, and an earlier burst rule based only on pointed lobes, which found 28% of bursts at 71% precision.
+
+## Honorifics are kept
+
+**Decision.** The translation keeps Japanese honorifics, romanized and joined to the name with a hyphen: -san, -chan, -kun, -sama, -senpai, -sensei, -dono, and -tan. They never become Mr., Ms., or Teacher. The system prompt in `server/yomikae/translate.py` says so.
+
+**Why.** It is a style choice. The English keeps what the Japanese says about how characters address each other. On OpenMantra, the professional reference keeps the honorific on only 14 of the 27 lines that attach one to a name, so `translation_bench.py` reports honorifics as their own count beside the reference's.
+
+**Tried and rejected.** Naming kinship terms in the prompt. With "keep terms like お兄ちゃん as Onii-chan", Gemma 4 12B and Hy-MT2 7B both wrote Onii-chan, big brother, for お姉ちゃん, big sister: on boureisougi, Gemma did so on 7 to 14 lines per run over 3 runs. Naming お姉ちゃん as Onee-chan too stopped that, but then Gemma wrote Suzume-san for ツバメさん, her sister, in 5 of 6 runs. With no kinship example, both mistakes were gone in 3 of 3 runs, and お姉ちゃん reads as big sister.
+
+## A whole page goes to the translator in one call
+
+**Decision.** The translator gets every line of a page in one call. The call also carries up to 2 earlier pages of the same work, taken only from the 5 pages before this one, the names the work already uses, and the lines of this page that already have a translation. A line that matches a line already translated in the same work reuses that translation and is not sent.
+
+**Why.** Japanese often splits one sentence over two or three bubbles, with the object before the verb. Translating the page in reading order lets the model move words between a speaker's consecutive bubbles so each reads naturally in English. Earlier pages resolve who is speaking and keep the tone. The name list keeps spellings the same from page to page. Each name goes with a Japanese line it was translated from, because a bare list of English names reads as a list of who is in the work: on boureisougi, Gemma 4 12B wrote Suzume-san, a listed name, for ツバメさん, her sister, who was not in the list, in 3 of 3 runs, and in none of 3 once each name carried its line. Reused lines make a recurring caption read the same on every page. After a jump ahead, older pages say nothing about the current one, so context stops at 5 pages back.
+
+**Tried and rejected.** Reusing very short lines. On the translation benchmark, one wrong translation of `？` was reused across a whole series. Lines with fewer than 2 letters, kana, or kanji are now always sent to the model.
+
+## The translator replies with a list of strings
+
+**Decision.** The model replies with `{"translations": [...]}`, one string per line in the order the lines were sent. The lines it receives still carry ids. A reply with the wrong number of strings, or with JSON syntax such as `", "` inside a string, is retried in halves.
+
+**Why.** Writing the reply is most of the translate call, and the old reply, an object with an id and a text per line, spent about half its tokens on the ids and keys. On `translation_bench.py`, the list cut the translate time from a median of 2,322 to 2,528 ms per page to 1,358 to 1,383 ms, over three runs a side, with COMET and chrF within noise. The list also made about 10% more calls, which are counted in those times. Why the model misaligns more often with it was not measured. [performance.md](performance.md#translation-speed) has the numbers.
+
+**Tried and rejected.**
+
+- Ordering the request so LM Studio's prompt cache serves more of it. Earlier pages were sent as past chat turns, so each request started with the whole previous one. The cache served up to 1,222 tokens, but calls got slower, because taking a long prefix from the cache on this model costs about as much as reading it again.
+- More than 2 pages in flight. LM Studio serves two requests at once, but each gets about half the speed, so the page you are reading arrives later.
+
+## Gemma 4 12B QAT stays the translator
+
+**Decision.** Development and the recommended setup keep Gemma 4 12B QAT at Q4_K_M as the translator.
+
+**Why.** Four challengers with strong public numbers lost to it on OpenMantra and on a second book, in scores and in blind reads. A frontier model, Claude Opus 5.5, scored only about 0.008 COMET higher with the same prompt. [models.md](models.md#measured-on-our-benchmark) has every number.
+
+**Tried and rejected.**
+
+- Hy-MT2-7B: twice as fast and 3 GB smaller, but nearly twice the major errors in blind reads, mostly sentences moved into the wrong bubble.
+- Ministral-3-14B-Instruct-2512: wraps lines in quotes and markdown and adds content the source lacks.
+- An abliterated Gemma 4 12B at Q6_K: answers many lines with their id tag, and is lower even on the lines it translates.
+- gpt-oss-20b: not run, because it leaves no room for the server on a 16 GB card, always reasons first, and refuses mature content often.
+
+**Name errors came from the harness.** Gemma's clearest weakness was keeping characters apart: in one series it swapped two sisters' names and turned お姉ちゃん into "Onii-chan". Both came from the prompt and the name list, not the model, and were fixed (see the honorifics entry).
+
+## The server renders the page and the extension swaps the image
+
+**Decision.** The server returns a finished page image with the English lettered in. The extension puts it in place of the original image. It draws no text over the page.
+
+**Why.** Erasing the Japanese already produces a new image, so the server letters the English into it in the same step. The typesetter works in the page's own pixels, against the bubble outlines it just found, and the result is a plain image that shows the same at any size the site draws it. Holding **Alt** shows the original by swapping back, and the disk cache keeps finished pages, so a page read before loads at once.
+
+## Each site has a mode
+
+**Decision.** Each enabled site translates either every page automatically or only the images you click **Translate** on. X, pixiv, and every site without its own adapter start in click-to-translate mode. An adapter for a reader site, where nearly every large image is a page, can start in automatic mode.
+
+**Why.** Automatic mode on a timeline would spend GPU time on photos and avatars. On a reader site it lets the next pages translate before you reach them.
+
+## The app is public and site adapters can stay private
+
+**Decision.** This repo carries the default adapter and adapters for platforms where artists publish their own work. Adapters for other sites live in the gitignored `extension/adapters.local/` or in a folder named by `YOMIKAE_ADAPTERS`, and the build compiles them in.
+
+**Why.** Manifest V3 forbids remotely hosted code, so an extension cannot download adapters at run time. Every adapter has to be compiled in when you build. Reading folders outside the repo at build time lets anyone add adapters to their own copy without putting them in this repo. [adapters.md](adapters.md) explains how.
+
+## Local install only
+
+**Decision.** You install the extension with **Load unpacked** from your own build. It is not on the Chrome Web Store.
+
+**Why.** The extension does nothing without the server and an LLM running on your own computer. A store build would also contain only the adapters in this repo, while a local build compiles in your own.
+
+## GPL-3.0-only
+
+**Decision.** Yomikae is licensed GPL-3.0-only.
+
+**Why.** Parts of the server are ported from manga-image-translator, whose `pyproject.toml` declares GPL-3.0-only. [server/README.md](../server/README.md#credits) names each ported file.
+
+## Anime Ace when you have it, Shantell Sans otherwise
+
+**Decision.** Dialogue is set in Anime Ace 2 when `server/fonts/animeace2_reg.ttf` exists. Otherwise it is set in Shantell Sans Medium, which the repo includes.
+
+**Why.** Anime Ace 2 is one of the comic lettering faces that AnonBlack's guide names, but Blambot's license makes it free for personal use only, so the repo cannot include it. Shantell Sans Medium was the closest open-licensed match among 34 Google Fonts candidates. It scored 0.79 on letter shape against Anime Ace and has the same width, which matters because width decides line breaks and sizes. Kalam Bold, the font it replaced, scored 0.67 and is 13% narrower.
+
+## Detection stays on the GPU
+
+**Decision.** The text detector and the balloon segmenter run on the GPU by default, with their memory pools capped at 1.5 GB each. The server hands back PyTorch's cached memory after each page's GPU work. `YOMIKAE_DETECT_DEVICE=cpu` moves detection to the CPU, and `YOMIKAE_LOW_VRAM=1` moves everything.
+
+**Why.** On the CPU, detection costs about 0.95 s more per page. Capping the pools and releasing the cache stopped the server from growing while you read, which was the reason to consider the CPU in the first place.
+
+**Tried and rejected.** Detection on the CPU by default. It was built and briefly made the default on 2026-10-26, then reversed for the 0.95 s per page. [performance.md](performance.md#graphics-memory) has the measurements.

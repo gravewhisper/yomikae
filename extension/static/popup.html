@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>Yomikae</header>
+  <section id="server" class="row">
+    <span class="dot"></span>
+    <div>
+      <div id="server-title">Checking local server…</div>
+      <div id="server-detail" class="muted"></div>
+      <code id="server-cmd" hidden></code>
+    </div>
+  </section>
+  <section id="site" class="row" hidden>
+    <div class="site">
+      <label class="toggle">
+        <input type="checkbox" id="site-toggle">
+        <span>Translate <b id="site-name"></b></span>
+      </label>
+      <select id="site-mode" hidden>
+        <option value="auto">Every page, automatically</option>
+        <option value="on-demand">Only images I click Translate on</option>
+      </select>
+      <div id="work" class="work" hidden>
+        <label class="toggle">
+          <input type="checkbox" id="work-toggle">
+          <span>Translate this gallery</span>
+        </label>
+        <div id="work-english" class="note" hidden>
+          <span>Already in English, not translating.</span>
+          <button id="work-anyway">Translate anyway</button>
+        </div>
+      </div>
+      <div id="site-access" class="access" hidden>
+        <span id="site-access-text"></span>
+        <button id="site-grant">Allow access</button>
+      </div>
+    </div>
+  </section>
+  <p id="site-unsupported" class="muted" hidden>Open a manga page to enable translation for its site.</p>
+  <script src="popup.js"></script>
+</body>
+</html>

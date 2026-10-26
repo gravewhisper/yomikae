@@ -1,0 +1,21 @@
+:root { color-scheme: light dark; --bg: #fff; --fg: #1c1c1f; --muted: #6b6b73; --line: #e6e6ea; --ok: #1f9d55; --warn: #c27c0e; --bad: #c53030; --accent: #3b5bdb; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1c1c1f; --fg: #ececf0; --muted: #9a9aa3; --line: #2e2e33; --accent: #748ffc; } }
+[hidden] { display: none !important; }
+body { margin: 0; width: 300px; background: var(--bg); color: var(--fg); font: 13px/1.4 system-ui, sans-serif; }
+header { padding: 10px 14px; font-weight: 700; border-bottom: 1px solid var(--line); }
+.row { display: flex; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); align-items: flex-start; }
+.dot { flex: none; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--muted); }
+#server[data-state="ok"] .dot { background: var(--ok); }
+#server[data-state="degraded"] .dot { background: var(--warn); }
+#server[data-state="down"] .dot { background: var(--bad); }
+.muted { color: var(--muted); font-size: 12px; }
+code { display: block; margin-top: 6px; padding: 6px 8px; border-radius: 6px; background: var(--line); font: 11px/1.4 ui-monospace, monospace; user-select: all; word-break: break-all; }
+.toggle { display: flex; gap: 8px; align-items: center; cursor: pointer; width: 100%; }
+.site { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+#site-mode { width: 100%; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
+p.muted { padding: 12px 14px; margin: 0; }
+.access { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--warn); border-radius: 6px; color: var(--fg); font-size: 12px; }
+.work { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+.note { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.access button, .note button { align-self: flex-start; padding: 4px 10px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }

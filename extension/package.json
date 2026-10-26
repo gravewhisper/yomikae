@@ -1,0 +1,20 @@
+{
+  "name": "yomikae-extension",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "imports": {
+    "#adapter": "./src/adapter.ts"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node tools/test.mjs",
+    "mock": "node tools/mock-server.mjs"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.3.6",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}
