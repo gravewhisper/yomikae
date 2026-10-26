@@ -192,6 +192,10 @@ function pump(): void {
   }
 }
 
+function forget(entry: Entry): void {
+  if (entries.get(entry.want.key) === entry) entries.delete(entry.want.key);
+}
+
 async function run(entry: Entry): Promise<void> {
   const { key } = entry.want;
   try {
@@ -215,14 +219,14 @@ async function run(entry: Entry): Promise<void> {
       const sites = [...entry.ports].flatMap((p) => siteForUrl(p.sender?.tab?.url ?? '') ?? []);
       await Promise.all(sites.map((s) => addImageHost(s, err.host)));
       broadcast(entry, { type: 'blocked', key, host: err.host });
-      entries.delete(key);
+      forget(entry);
       return;
     }
     const retryable = err instanceof JobError ? err.retryable : true;
     const error = err instanceof Error ? err.message : String(err);
     broadcast(entry, { type: 'failed', key, error, retryable });
   }
-  entries.delete(key);
+  forget(entry);
 }
 
 function remember<V>(map: Map<string, V>, key: string, value: V, limit: number): void {
