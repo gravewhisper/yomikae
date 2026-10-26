@@ -8,7 +8,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from .model import Box, Bubble, CastEntry, TextBlock
+from .cache import HONORIFIC_KANA
+from .model import Box, Bubble, CastEntry, ContextLine, TextBlock
 
 KANA = {
     "あ": "a", "い": "i", "う": "u", "え": "e", "お": "o",
@@ -111,10 +112,24 @@ def spelled(reading: str, translation: str) -> str | None:
     return None
 
 
-def furigana_names(lines: list[str], translations: list[str], ruby: list[tuple[str, str]]) -> list[CastEntry]:
+def addressed(base: str, reading: str, lines: list[str], translations: list[str]) -> bool:
+    for line, text in zip(lines, translations):
+        if not text or not any(re.search(rf"(?<![㐀-鿿々]){base}(?:{'|'.join(kana)})", line) for kana in HONORIFIC_KANA.values()):
+            continue
+        name = spelled(reading, text)
+        if name and re.search(rf"\b{re.escape(name)}-(?:{'|'.join(HONORIFIC_KANA)})\b", text):
+            return True
+    return False
+
+
+def furigana_names(lines: list[str], translations: list[str], ruby: list[tuple[str, str]], earlier: list[ContextLine] = ()) -> list[CastEntry]:
     found: dict[str, CastEntry] = {}
+    every = lines + [c.source for c in earlier]
+    every_text = translations + [c.translation for c in earlier]
     for base, reading in ruby:
-        if base in found or len(KANJI.findall(base)) < MIN_NAME_KANJI:
+        if base in found:
+            continue
+        if len(KANJI.findall(base)) < MIN_NAME_KANJI and not (len(base) == 1 and addressed(base, reading, every, every_text)):
             continue
         for line, text in zip(lines, translations):
             if base not in line or not text:

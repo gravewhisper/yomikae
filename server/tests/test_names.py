@@ -71,6 +71,17 @@ def test_furigana_is_a_name_only_when_its_reading_is_spelled_in_the_english():
     assert furigana_names(["先生！"], ["Sensei!"], [("先生", "せんせい")]) == []
 
 
+def test_a_single_kanji_is_a_name_only_when_both_languages_address_it_with_an_honorific():
+    kururu = CastEntry("枢", "Kururu", "くるる", "furigana")
+    assert furigana_names(["枢さん、おはよう"], ["Morning, Kururu-san."], [("枢", "くるる")]) == [kururu]
+    earlier = [ContextLine("枢さん…", "Kururu-san...")]
+    assert furigana_names(["枢と呼んで"], ["Call me Kururu."], [("枢", "くるる")], earlier) == [kururu]
+    assert furigana_names(["枢と呼んで"], ["Call me Kururu."], [("枢", "くるる")]) == []
+    assert furigana_names(["鬼だ！", "炎の術"], ["An Oni!", "Honoo Jutsu!"], [("鬼", "おに"), ("炎", "ほのお")]) == []
+    assert furigana_names(["皆さん！", "家には帰さんからな"], ["Everyone!", "You're not going home!"], [("皆", "みな"), ("帰", "かえ")]) == []
+    assert furigana_names(["大鬼さん"], ["Ooni-san"], [("鬼", "おに")]) == []
+
+
 def test_names_api_reads_and_replaces_one_works_list(client):
     key = "example.com/g/cast"
     assert client.get("/v1/names", params={"context_key": key}).json() == {"context_key": key, "names": []}

@@ -234,5 +234,5 @@ async def translate_page(
     context = subset(context, [i for i, known in enumerate(recalled) if known is None])
     fresh = iter(await translate_lines(translator, todo, context) if todo else [])
     out = [known if known is not None else next(fresh) for known in recalled]
-    store.learn_names(context_key, furigana_names(lines, out, list(ruby)))
+    store.learn_names(context_key, furigana_names(lines, out, list(ruby), store.memory(context_key)))
     return out
