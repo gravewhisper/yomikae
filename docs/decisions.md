@@ -46,6 +46,24 @@ Typesetting did not cause the small text. With the reported pages' detection hel
 
 **Why.** The layout used to try both points and keep whichever lined better. In an egg-shaped bubble the inscribed circle sits at the widest row, and the wider rows always lined better, so the owner reported text set low: 58 px below the centroid on that page. The guide asks for the block centred vertically. On the 46-page development set, 61 of 288 bubbles moved, most by a few pixels and a few by up to about a line toward the middle, and none changed size from this rule alone.
 
+## Each lobe of a shared double bubble is its own region
+
+**Decision.** When two or more lettered blocks share one balloon, typeset cuts the bubble into lobes before it erodes the margin. The lobes come from the splitter's seeds (`detect.lobe_marks`), flooded down the distance map one pixel level at a time, so the cut follows the neck. Each block keeps the lobes that hold most of its text, a lobe without text goes to the block whose text is nearest, and each part is eroded on its own, by 7% of its own smaller side (3 to 16 px). A block alone in its bubble, or a bubble with one lobe, is set as before.
+
+**Why.** The whole joined shape used to be eroded with one margin from the whole bubble, then `separate()` gave each pixel to the nearer block box with a 12 px gutter. In a double bubble whose big lobe's block reaches up toward the neck, most of the small lobe went to the big lobe's block, and the small lobe's own text was left a strip beside it (about 14 px wide at its narrowest on one OpenMantra page) and lettered small. Cutting at the nearest seed instead of flooding put the cut across the big lobe, because a seed is only the small core of a lobe. OpenCV's watershed floods by colour difference, not height, and split the lobes into rings.
+
+**Measured.** On 67 pages with translations held fixed (53 OpenMantra pages, 49 of them every page with a shared double bubble, and 14 pages of a second book), 154 of 595 bubbles share a balloon with another lettered block. 52 of them grew, 15 shrank and 87 kept their size; 60 other bubbles moved with their page's target size (44 up, 16 down). The losses come where a lobe is narrow at the top or where the old distance rule had given a block part of the neck. [benchmarks.md](benchmarks.md#a-development-set-check) has the setup.
+
+**Tried and rejected.** Nearest-seed lobes and OpenCV's watershed, both above.
+
+## A missed line counts by its share inside a weak block
+
+**Decision.** `detect.uncovered_lines` keeps a rescued line group only when at least half of its box lies inside some weak block candidate (score 0.04 or more). It used to need an IoU over 0.3 with one.
+
+**Why.** IoU punishes a small line inside a big candidate: one column inside a whole-bubble candidate scores far under 0.3 even when it lies wholly inside, while what matters is whether the detector's block head saw text where the line is. 0.5 keeps every group the old rule kept on OpenMantra; the lowest of them lies 54% inside its candidate.
+
+**Measured.** On all 214 OpenMantra pages, 44 line groups reach this check. 6 passed before and 7 pass after; the one extra block, the tail of a sound effect, is dropped by OCR as a recovered sound outside any bubble, so no bubble is added or removed. On 243 pages of a second book no block changed. In 15 groups the two measures disagree, and in 14 of them the line score (under 0.6) or the segmentation support rejects the group anyway. All 15 are fragments of text that a block already covers, or pieces of sound effects. So on these pages the score gate, not the overlap measure, decides which lines are rescued, and the change makes no visible difference yet.
+
 ## Honorifics are kept
 
 **Decision.** The translation keeps Japanese honorifics, romanized and joined to the name with a hyphen: -san, -chan, -kun, -sama, -senpai, -sensei, -dono, and -tan. They never become Mr., Ms., or Teacher. The system prompt in `server/yomikae/translate.py` says so.
