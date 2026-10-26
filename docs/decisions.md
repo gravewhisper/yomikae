@@ -56,11 +56,38 @@ Typesetting did not cause the small text. With the reported pages' detection hel
 
 ## A whole page goes to the translator in one call
 
-**Decision.** The translator gets every line of a page in one call. The call also carries up to 2 earlier pages of the same work, taken only from the 5 pages before this one, the names the work already uses, and the lines of this page that already have a translation. A line that matches a line already translated in the same work reuses that translation and is not sent.
+**Decision.** The translator gets every line of a page in one call. The call also carries up to 2 earlier pages of the same work, taken only from the 5 pages before this one, the work's name list (see the names entry below), and the lines of this page that already have a translation. A line that matches a line already translated in the same work reuses that translation and is not sent.
 
 **Why.** Japanese often splits one sentence over two or three bubbles, with the object before the verb. Translating the page in reading order lets the model move words between a speaker's consecutive bubbles so each reads naturally in English. Earlier pages resolve who is speaking and keep the tone. The name list keeps spellings the same from page to page. Each name goes with a Japanese line it was translated from, because a bare list of English names reads as a list of who is in the work: on boureisougi, Gemma 4 12B wrote Suzume-san, a listed name, for ツバメさん, her sister, who was not in the list, in 3 of 3 runs, and in none of 3 once each name carried its line. Reused lines make a recurring caption read the same on every page. After a jump ahead, older pages say nothing about the current one, so context stops at 5 pages back.
 
 **Tried and rejected.** Reusing very short lines. On the translation benchmark, one wrong translation of `？` was reused across a whole series. Lines with fewer than 2 letters, kana, or kanji are now always sent to the model.
+
+## Names come from a per-work list and printed furigana
+
+**Decision.** Each work keeps a name list. A name has its Japanese spelling, its reading in kana, its English spelling, and its source: `auto`, `furigana`, or `user`. `auto` names are the honorific names the work's earlier translations already use, built as before and never stored. `furigana` names come from the small kana printed beside a kanji name. `user` names are typed by the reader through `PUT /v1/names` and always win. The translator gets the list as the `names` map it got before. The server also reads the furigana on each page and sends the page's readings as a `readings` map, with one prompt sentence that only appears when the map is not empty. When the English of a line spells a reading of two or more kanji, that spelling is stored as a `furigana` name. [contract.md](contract.md#names-of-a-work) has the API.
+
+**Why.** Gemma reads unfamiliar kanji names by guessing. On OpenMantra's rasetugari, without readings it wrote 在藤 (Arifuji) as Zaito on 15 lines, 和音 (Kazune) as Waon, and 華鏡丸 (Kakyomaru) as Kagami-maru, Hanakagami-maru and Kagamaru-maru. Manga print the reading of such names as furigana, and with the readings sent every one of those lines used the reference's name. A reader can still fix a name the furigana does not cover, and a name they fix is never overwritten.
+
+How furigana is found: in a vertical block, the columns of large glyphs are the text, and small glyphs just right of a column are its furigana. Each run of furigana is read with manga-ocr on its own, upscaled, and so is the slice of the text column beside it, which gives the kanji it belongs to. A reading is dropped when it is not all kana, when manga-ocr is less than 0.7 sure of it, or when it is shorter than its kanji or more than 4 kana per kanji. Small つ, ゃ, ゅ and ょ are fixed where Japanese cannot have them. Horizontal text is skipped. manga-ocr already leaves furigana out of the line it reads: across 2,522 readings found on all pages of Naruto volumes 1 and 68 and OpenMantra, no source line held its furigana, so the line itself is not changed.
+
+**Measured.** On 2026-10-27 with the Gemma 4 12B build used in development, `translation_bench.py` on the dataset text, with each line's readings taken from the page images:
+
+| Set | Run | COMET | chrF | Names kept / misspelt / missing | Median prompt tokens |
+| --- | --- | ---: | ---: | --- | ---: |
+| OpenMantra | main | 0.7472 | 37.98 | 59 / 11 / 24 | 801 |
+| OpenMantra | readings, run 1 | 0.7494 | 38.69 | 83 / 9 / 2 | 834 |
+| OpenMantra | readings, run 2 | 0.7502 | 39.21 | 82 / 5 / 7 | 838 |
+| Naruto volume 1 | main | 0.6704 | 26.24 | 102 / 0 / 12 | 775 |
+| Naruto volume 1 | readings | 0.6665 | 25.74 | 102 / 0 / 12 | 955 |
+| Naruto volume 68 | main | 0.7809 | 41.20 | 118 / 4 / 7 | 852 |
+| Naruto volume 68 | readings, run 1 | 0.7781 | 40.53 | 122 / 2 / 5 | 983 |
+| Naruto volume 68 | readings, run 2 | 0.7786 | 40.44 | 115 / 7 / 7 | 962 |
+
+COMET moved within noise on all three sets. The names moved only on OpenMantra, where almost all the gain is rasetugari, the one series that prints furigana on its names. Naruto names are mostly in katakana, which carries no furigana, and its few kanji names were already right.
+
+The name counts use a hand-made list of names from each reference. "Kept" is a line whose reference uses a name and whose output has it; "misspelt" has a near spelling instead; "missing" has neither. Checked by hand, 37 of 48 readings were right (25 of 32 on Naruto volume 68, 12 of 16 on OpenMantra); the mistakes are mostly a lost dakuten (ご read as こ) or a small kana read wrong. Reading furigana adds about 0.5 s per page on a page where every kanji carries furigana, with manga-ocr on the GPU, and nothing on a page without it.
+
+**Tried and rejected.** Sending only readings of kanji followed by an honorific. On Naruto volume 68 that kept 1 of 1,120 readings, because names there appear bare. Storing names of one kanji: on Naruto volume 68 they were mostly ordinary words the model happened to romanize, and one was a reading attached to the wrong kanji.
 
 ## The translator replies with a list of strings
 

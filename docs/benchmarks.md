@@ -68,6 +68,7 @@ Other options:
 - `--series NAME` runs one book, and you can repeat it. `--limit N` runs the first N pages of each series.
 - `--score` scores an existing run again without calling the model.
 - `--image page` sends each page's image from the annotation's `image_paths.ja` along with its lines, scaled so the long side is `--image-side` px (default 1024). `--image tagged` also draws each line's id as a small numbered tag at its text box. Each page's record keeps the prompt tokens its calls used, and the scorecard gives the median.
+- A text entry in the annotation may carry `"ruby": [["漢字", "かんじ"], ...]`, the furigana printed beside it. The bench passes those readings to `translate_page` as the server passes the readings it finds on a page, so a change to how readings are used can be measured on gold text. OpenMantra has no such field; it has to be filled from the page images.
 - Running a finished label again translates only the pages that failed, which helps when LM Studio drops a few requests. Delete that run's `comet.json` first, or the scores come from the old lines.
 
 COMET runs in its own venv on the CPU, so it does not compete with the LLM for GPU memory.

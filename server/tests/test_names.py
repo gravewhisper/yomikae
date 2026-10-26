@@ -5,7 +5,7 @@ import asyncio
 from yomikae.cache import ContextStore
 from yomikae.model import CastEntry, ContextLine
 from yomikae.pipeline import translate_page
-from yomikae.ruby import furigana_names, romanize
+from yomikae.ruby import furigana_names, romanize, tidy
 from yomikae.translate import build_messages
 
 
@@ -66,6 +66,9 @@ def test_furigana_is_a_name_only_when_its_reading_is_spelled_in_the_english():
     assert furigana_names(lines, ["The funeral is tomorrow."], [("烏丸枢", "からすまくるる")]) == []
     assert furigana_names(lines, ["Kururu Karasuma's funeral."], [("烏丸枢", "からすまくるる")])[0].en == "Kururu Karasuma"
     assert [romanize(r) for r in ("きょうこ", "さっちゃん", "シュウ", "じゃない")] == ["kyouko", "satchan", "shuu", "janai"]
+    assert [tidy(r) for r in ("じゅっ", "っくえ", "がっこう", "さょう", "きょう")] == ["じゅつ", "つくえ", "がっこう", "さよう", "きょう"]
+    assert furigana_names(["術だ"], ["Jutsu!"], [("術", "じゅつ")]) == []
+    assert furigana_names(["先生！"], ["Sensei!"], [("先生", "せんせい")]) == []
 
 
 def test_names_api_reads_and_replaces_one_works_list(client):

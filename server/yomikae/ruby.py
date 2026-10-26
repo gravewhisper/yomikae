@@ -146,7 +146,7 @@ def find_ruby(gray: np.ndarray, block: TextBlock) -> list[tuple[Box, Box, int]]:
         return []
     mb = block.mask_box
     ink = (gray[mb.y0 : mb.y1, mb.x0 : mb.x1] < INK) & (cv2.dilate(block.mask, np.ones((3, 3), np.uint8)) > 0)
-    n, _, stats, _ = cv2.connectedComponentsWithStats(ink.astype(np.uint8), connectivity=8)
+    _, _, stats, _ = cv2.connectedComponentsWithStats(ink.astype(np.uint8), connectivity=8)
     comps = stats[1:, :4].astype(int).tolist()
     if len(comps) < 3:
         return []
