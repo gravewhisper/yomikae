@@ -65,10 +65,10 @@ Clears the current pipeline version's cache and drops those pages from the trans
 
 ### Names of a work
 
-Each work, as grouped by `context_key`, has a name list that the translator follows so a character's name is spelled the same on every page. A `Name` is:
+Each work, as grouped by `context_key`, has a name list that the translator follows so a character's name, or a technique's, is spelled the same on every page. A `Name` is:
 
 ```json
-{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user" }
+{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name" }
 ```
 
 | Field | Meaning |
@@ -77,10 +77,12 @@ Each work, as grouped by `context_key`, has a name list that the translator foll
 | `en` | The English spelling the translator must use. Never empty. |
 | `reading` | The name's reading in hiragana, or `""`. |
 | `source` | `auto`, `furigana` or `user`. |
+| `kind` | `name` for a person or character, `term` for a technique, place, item, group and so on. A missing `kind` reads as `name`. |
 
 - `auto` names come from earlier translations of the work: an English name joined to an honorific, such as `Yuki-chan`, in its most used spelling. They are rebuilt from the cache, are never stored, and leave with their pages.
 - `furigana` names come from the small kana printed beside a kanji name. When the translation of a line spells that reading in English, the kanji, the reading and that spelling are kept.
-- `user` names are what the reader typed. A `user` name always wins: it is never overwritten, a `furigana` name with the same `ja` is hidden, and an `auto` name is hidden when its spelling is close to the `user` name's or its line holds the `user` name's `ja` followed by the same honorific.
+- `auto` names are always `name`. A `furigana` name gets its `kind` from the line it was learned from: `term` when the Japanese ends in a technique or place suffix such as 術, 眼 or 流, or when the English puts "the", "a" or a possessive word before it or quotes it; `name` when an honorific follows it or the English addresses it or uses it with 's; `name` when neither side wins. The translator gets `name` entries in the `names` map and `term` entries in a `terms` map.
+- `user` names are what the reader typed, including their `kind`. A `user` name always wins: it is never overwritten, a `furigana` name with the same `ja` is hidden, and an `auto` name is hidden when its spelling is close to the `user` name's or its line holds the `user` name's `ja` followed by the same honorific.
 - `furigana` and `user` names are stored per work in `server/cache/names/<sha256 of context_key>.json`, outside the versioned page cache, so they survive restarts, `DELETE /v1/cache`, eviction, and a new pipeline version.
 - New names apply to pages translated after the change. Cached pages keep their translation.
 
@@ -89,7 +91,7 @@ Each work, as grouped by `context_key`, has a name list that the translator foll
 Response `200 application/json`, the work's names, `user` first, then `furigana`, then `auto`:
 
 ```json
-{ "context_key": "example.com/g/12345", "names": [{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user" }] }
+{ "context_key": "example.com/g/12345", "names": [{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name" }] }
 ```
 
 #### `PUT /v1/names/entry?context_key=<key>`
@@ -100,7 +102,7 @@ Body: one `Name` as JSON. `source` is ignored and the name is stored as `user`. 
 
 Body: `{ "names": [Name, ...] }`, at most 500. Replaces the work's stored names. Entries with source `auto` are skipped, since those are rebuilt; an entry without a `source` is stored as `user`. To delete a name, leave it out. Response: as `GET /v1/names`.
 
-A missing `context_key`, a body that is not JSON, an empty `en`, a field that is too long (`ja` 200 characters, `en` and `reading` 100), or an unknown `source` return `400 bad_request`.
+A missing `context_key`, a body that is not JSON, an empty `en`, a field that is too long (`ja` 200 characters, `en` and `reading` 100), an unknown `source`, or a `kind` other than `name` or `term` return `400 bad_request`.
 
 ### `POST /v1/reports`
 

@@ -70,3 +70,4 @@ class CastEntry:
     en: str
     reading: str = ""
     source: str = "auto"
+    kind: str = "name"

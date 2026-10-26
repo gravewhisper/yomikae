@@ -24,6 +24,7 @@ NOISE = re.compile(r"[\s.,、。・ー一っッ~～\-]+")
 VERSION_DIR = re.compile(r"v(\d+)")
 LEGACY_DIR = re.compile(r"[0-9a-f]{64}")
 SAVED_SOURCES = ("furigana", "user")
+KINDS = ("name", "term")
 HONORIFIC_KANA = {
     "san": ("さん",), "kun": ("くん", "君"), "chan": ("ちゃん",), "sama": ("さま", "様"), "senpai": ("先輩", "せんぱい"),
     "sensei": ("先生", "せんせい"), "dono": ("殿", "どの"), "nee": ("姉", "ねえ", "ねぇ"), "nii": ("兄", "にい", "にぃ"),
@@ -237,7 +238,7 @@ class ContextStore:
             path = self.names_path(key)
             try:
                 rows = json.loads(path.read_text())["names"] if path else []
-                self.saved[key] = [CastEntry(r["ja"], r["en"], r.get("reading", ""), r["source"]) for r in rows if r.get("source") in SAVED_SOURCES]
+                self.saved[key] = [CastEntry(r["ja"], r["en"], r.get("reading", ""), r["source"], r.get("kind") if r.get("kind") in KINDS else "name") for r in rows if r.get("source") in SAVED_SOURCES]
             except (OSError, ValueError, KeyError, TypeError):
                 self.saved[key] = []
         return self.saved[key]
@@ -246,7 +247,7 @@ class ContextStore:
         self.saved[key] = entries
         path = self.names_path(key)
         if path:
-            rows = [{"ja": e.ja, "en": e.en, "reading": e.reading, "source": e.source} for e in entries]
+            rows = [{"ja": e.ja, "en": e.en, "reading": e.reading, "source": e.source, "kind": e.kind} for e in entries]
             write_atomic(path, json.dumps({"context_key": key, "names": rows}, ensure_ascii=False, indent=1).encode())
 
     def cast(self, key: str | None) -> list[CastEntry]:

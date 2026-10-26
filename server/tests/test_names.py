@@ -6,7 +6,7 @@ from yomikae.cache import ContextStore
 from yomikae.model import CastEntry, ContextLine
 from yomikae.pipeline import translate_page
 from yomikae.ruby import furigana_names, romanize, tidy
-from yomikae.translate import build_messages
+from yomikae.translate import Context, build_messages
 
 
 class Recorder:
@@ -82,12 +82,45 @@ def test_a_single_kanji_is_a_name_only_when_both_languages_address_it_with_an_ho
     assert furigana_names(["大鬼さん"], ["Ooni-san"], [("鬼", "おに")]) == []
 
 
+def test_furigana_terms_go_to_their_own_map_and_names_stay_as_before():
+    lines = ["螺旋丸を呉葉さんに託す", "呉葉の「極焔」"]
+    english = ["I entrust the Rasengan to Kureha-san.", "Kureha's \"Gokuen\"!"]
+    found = furigana_names(lines, english, [("螺旋丸", "らせんがん"), ("呉葉", "くれは"), ("極焔", "ごくえん")])
+    assert [(e.ja, e.kind) for e in found] == [("螺旋丸", "term"), ("呉葉", "name"), ("極焔", "term")]
+    assert furigana_names(["忍術だ"], ["Ninjutsu!"], [("忍術", "にんじゅつ")])[0].kind == "term"
+    store = ContextStore()
+    store.learn_names("g/1", found)
+    translator = Recorder(lambda lines: ["Go."] * len(lines))
+    asyncio.run(translate_page(translator, store, ["行け"], "g/1", 2))
+    context = translator.contexts[0]
+    assert context.names == {"Kureha": "呉葉"} and context.terms == {"Rasengan": "螺旋丸", "Gokuen": "極焔"}
+    system, user = (m["content"] for m in build_messages(["行け"], context))
+    assert '"terms"' in system and '"terms"' in user
+    plain = build_messages(["行け"], Context(names={"Kureha": "呉葉"}))
+    assert '"terms"' not in plain[0]["content"] and '"terms"' not in plain[1]["content"]
+
+
+def test_a_saved_entry_without_a_kind_reads_as_a_name_and_the_users_kind_wins(tmp_path, client):
+    store = ContextStore(tmp_path)
+    store.names_path("g/1").write_text('{"names": [{"ja": "渚", "en": "Nagisa", "source": "user"}]}')
+    assert store.saved_names("g/1")[0].kind == "name"
+    store.learn_names("g/1", [CastEntry("螺旋丸", "Rasengan", "らせんがん", "furigana", "term")])
+    store.set_name("g/1", CastEntry("螺旋丸", "Rasengan", "らせんがん", "user", "name"))
+    assert [(e.en, e.source, e.kind) for e in ContextStore(tmp_path).cast("g/1")] == [("Nagisa", "user", "name"), ("Rasengan", "user", "name")]
+    key = "example.com/g/kinds"
+    r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "螺旋丸", "en": "Rasengan", "kind": "term"})
+    assert r.json()["names"] == [{"ja": "螺旋丸", "en": "Rasengan", "reading": "", "source": "user", "kind": "term"}]
+    r = client.put("/v1/names", params={"context_key": key}, json={"names": [{"ja": "渚", "en": "Nagisa"}]})
+    assert r.json()["names"][0]["kind"] == "name"
+    assert client.put("/v1/names/entry", params={"context_key": key}, json={"en": "A", "kind": "place"}).status_code == 400
+
+
 def test_names_api_reads_and_replaces_one_works_list(client):
     key = "example.com/g/cast"
     assert client.get("/v1/names", params={"context_key": key}).json() == {"context_key": key, "names": []}
     r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "凛恋", "en": "Rinren", "reading": "りんれん"})
     assert r.status_code == 200, r.text
-    assert r.json()["names"] == [{"ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user"}]
+    assert r.json()["names"] == [{"ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name"}]
     r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "凛恋", "en": "Rin"})
     assert [n["en"] for n in r.json()["names"]] == ["Rin"]
     body = {"names": [{"ja": "我愛羅", "en": "Gaara", "reading": "があら", "source": "furigana"}, {"ja": "", "en": "Yuki-chan", "source": "auto"}, {"ja": "渚", "en": "Nagisa"}]}

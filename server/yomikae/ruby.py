@@ -54,6 +54,10 @@ KANA_ONLY = re.compile(r"[\u3041-\u3096\u30a1-\u30fa\u30fc]+")
 WORD = re.compile(r"[A-Za-z]+(?:-[a-z]+)?")
 KANJI = re.compile(r"[㐀-鿿々]")
 HONORIFIC = re.compile(r"-(?:san|kun|chan|sama|senpai|sensei|dono|tan|nee|nii|neesan|niisan|neechan|niichan)$")
+TERM_ENDINGS = tuple("術眼剣国流校法拳陣獣力忍刀")
+ENDING_WEIGHT = 2
+QUOTES = ('"', "“", "”", "「", "」")
+DETERMINER = re.compile(r"\b(?:the|a|an|this|that|these|those|his|her|its|my|your|our|their)\s+$", re.I)
 VOWEL_RUNS = re.compile(r"([aeiou])\1+|ou")
 
 
@@ -136,9 +140,27 @@ def furigana_names(lines: list[str], translations: list[str], ruby: list[tuple[s
                 continue
             name = spelled(reading, text)
             if name and name.lower() not in TITLES:
-                found[base] = CastEntry(base, name, hiragana(reading), "furigana")
+                found[base] = CastEntry(base, name, hiragana(reading), "furigana", kind_of(base, name, lines, translations))
                 break
     return list(found.values())
+
+
+def kind_of(base: str, name: str, lines: list[str], translations: list[str]) -> str:
+    person = thing = 0
+    if base.endswith(TERM_ENDINGS):
+        thing += ENDING_WEIGHT
+    for line, text in zip(lines, translations):
+        if base not in line or name not in text:
+            continue
+        if any(base + kana in line for kana in sum(HONORIFIC_KANA.values(), ())):
+            person += 1
+        for m in re.finditer(rf"\b{re.escape(name)}\b", text):
+            before, after = text[: m.start()], text[m.end() :]
+            if DETERMINER.search(before) or before.endswith(QUOTES) and after.startswith(QUOTES):
+                thing += 1
+            elif re.match(rf"-(?:{'|'.join(HONORIFIC_KANA)})\b|'s\b", after) or re.fullmatch(r"\W*", before + after) or re.match(r"\s*[,!]", after) and not before.strip(" .…"):
+                person += 1
+    return "term" if thing > person else "name"
 
 
 def tidy(reading: str) -> str:

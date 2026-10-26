@@ -220,9 +220,10 @@ async def translate_page(
     recalled = store.recall(context_key, lines)
     todo = [line for line, known in zip(lines, recalled) if known is None]
     names: dict[str, str] = {}
+    terms: dict[str, str] = {}
     for entry in store.cast(context_key):
-        names.setdefault(entry.en, entry.ja)
-    known_ja = set(names.values())
+        (terms if entry.kind == "term" else names).setdefault(entry.en, entry.ja)
+    known_ja = set(names.values()) | set(terms.values())
     readings = {base: reading for base, reading in ruby if base not in known_ja and any(base in line for line in todo)}
     context = Context(
         store.before(context_key, page_index),
@@ -230,6 +231,7 @@ async def translate_page(
         [ContextLine(line, known) for line, known in zip(lines, recalled) if known is not None],
         page,
         readings,
+        terms,
     )
     context = subset(context, [i for i, known in enumerate(recalled) if known is None])
     fresh = iter(await translate_lines(translator, todo, context) if todo else [])
