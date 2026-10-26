@@ -64,6 +64,7 @@ def test_furigana_is_a_name_only_when_its_reading_is_spelled_in_the_english():
     found = furigana_names(lines, ["Karasuma Kururu's funeral is tomorrow."], [("明日", "あした"), ("烏丸枢", "からすまくるる")])
     assert found == [CastEntry("烏丸枢", "Karasuma Kururu", "からすまくるる", "furigana")]
     assert furigana_names(lines, ["The funeral is tomorrow."], [("烏丸枢", "からすまくるる")]) == []
+    assert furigana_names(lines, ["Kururu Karasuma's funeral."], [("烏丸枢", "からすまくるる")])[0].en == "Kururu Karasuma"
     assert [romanize(r) for r in ("きょうこ", "さっちゃん", "シュウ", "じゃない")] == ["kyouko", "satchan", "shuu", "janai"]
 
 

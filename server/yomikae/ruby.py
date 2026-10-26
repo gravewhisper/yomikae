@@ -103,7 +103,7 @@ def spelled(reading: str, translation: str) -> str | None:
                 break
             text = translation[first.start() : span[-1].end()]
             name = HONORIFIC.sub("", text)
-            if sound(name) == target:
+            if target in (sound(name), sound("".join(HONORIFIC.sub("", w.group(0)) for w in reversed(span)))):
                 return name
     return None
 
