@@ -36,9 +36,7 @@ export async function loadWork(adapter: SiteAdapter, loc: Location): Promise<Wor
 }
 
 export async function setWorkChoice(work: Work, choice: WorkChoice): Promise<void> {
-  const key = workKey(work.id);
-  if (choice === defaultChoice(work.language)) await chrome.storage.local.remove(key);
-  else await chrome.storage.local.set({ [key]: choice });
+  await chrome.storage.local.set({ [workKey(work.id)]: choice });
 }
 
 export function watchWorkChoice(id: string, onChange: (choice: WorkChoice | undefined) => void): () => void {

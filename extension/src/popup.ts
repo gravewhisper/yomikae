@@ -2,7 +2,7 @@ import { getServerUrl, parseHealth } from './contract';
 import type { TabCommand } from './messages';
 import { parseSiteMode } from './adapters';
 import { disableSite, enableSite, getSiteMode, setSiteMode, siteAccess, siteForPattern, siteForUrl, type Site, type SiteAccess } from './sites';
-import { defaultChoice, parseWork, setWorkChoice, workChoice, type Work, type WorkChoice } from './works';
+import { parseWork, setWorkChoice, workChoice, type Work, type WorkChoice } from './works';
 
 const START_COMMAND = 'cd server && .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878';
 
@@ -68,7 +68,7 @@ async function showSite(): Promise<void> {
   };
   const chooseWork = (choice: WorkChoice) => {
     if (!work) return;
-    const changed = { ...work, choice: choice === defaultChoice(work.language) ? undefined : choice };
+    const changed = { ...work, choice };
     work = changed;
     render();
     void setWorkChoice(changed, choice);

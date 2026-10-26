@@ -155,7 +155,7 @@ x.com, twitter.com, pixiv.net and every other site default to `on-demand`. An ad
 
 An adapter can name the work on the tab with `workId(location)`, such as `pixiv.net/artworks/<id>`, and can say what language the work is already in with `workLanguage(location)`, a lowercase English name such as `english` or `japanese`. The content script reads both before it starts, and waits at most 3 seconds for the language. A page whose adapter has no `workId`, or whose address names no work, translates by its site mode alone.
 
-The reader's choice for a work is stored in `chrome.storage.local` under its own key, `work:<work id>`, with the value `"on"` or `"off"`. One key per work keeps two tabs from overwriting each other. The key exists only while the choice differs from the default. A work in English is off by default, and any other work is on.
+The reader's choice for a work is stored in `chrome.storage.local` under its own key, `work:<work id>`, with the value `"on"` or `"off"`. One key per work keeps two tabs from overwriting each other. The key is written whenever the reader switches a work, even to its default, so a choice survives a language lookup that fails later. Without a key, a work in English is off and any other work is on.
 
 The tab's mode combines the site mode and the work:
 

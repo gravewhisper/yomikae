@@ -67,19 +67,19 @@ describe('work storage', () => {
     (globalThis as { chrome?: unknown }).chrome = realChrome;
   });
 
-  it('remembers a work turned off and forgets it when turned back on', async () => {
+  it('remembers a work turned off and turned back on', async () => {
     await setWorkChoice(work(), 'off');
     assert.deepEqual(store.data, { 'work:reader.example/chapter/1': 'off' });
     await setWorkChoice(work(), 'on');
-    assert.deepEqual(store.data, {});
+    assert.deepEqual(store.data, { 'work:reader.example/chapter/1': 'on' });
   });
 
-  it('stores only a choice that differs from the default for an English work', async () => {
-    const english = work({ language: 'english' });
-    await setWorkChoice(english, 'on');
-    assert.deepEqual(store.data, { 'work:reader.example/chapter/1': 'on' });
-    await setWorkChoice(english, 'off');
-    assert.deepEqual(store.data, {});
+  it('keeps an English work turned off even when a later language lookup fails', async () => {
+    await setWorkChoice(work({ language: 'english' }), 'off');
+    const broken: SiteAdapter = { ...reader, workLanguage: () => Promise.reject(new Error('offline')) };
+    const later = await loadWork(broken, loc('https://reader.example/chapter/1/2'));
+    assert.ok(later);
+    assert.equal(workChoice(later), 'off');
   });
 
   it('loads the work of the address with its language and stored choice', async () => {
@@ -103,7 +103,7 @@ describe('work storage', () => {
     await setWorkChoice(work(), 'on');
     stop();
     await setWorkChoice(work(), 'off');
-    assert.deepEqual(seen, ['off', undefined]);
+    assert.deepEqual(seen, ['off', 'on']);
     assert.equal(store.listeners.size, 0);
   });
 });
