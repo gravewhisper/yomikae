@@ -17,6 +17,7 @@ from . import balloon, detect, inpaint, ocr, typeset
 from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, Settings
 from .model import Bubble, ContextLine
+from .ruby import furigana_names
 from .translate import Context, PageImage, Translator, make_translator, subset, translate_lines
 
 T = TypeVar("T")
@@ -98,7 +99,7 @@ class Engine:
         self.lettering = typeset.load_lettering(settings.case)
         self.translator = make_translator(settings)
         self.cache = PageCache(settings.cache_dir / f"v{PIPELINE_VERSION}")
-        self.context = ContextStore()
+        self.context = ContextStore(settings.cache_dir / "names")
         self.context.rebuild(self.cache)
         self.inflight: dict[str, asyncio.Future] = {}
 
@@ -205,15 +206,31 @@ class Engine:
             timer.ms["translate"] = round((time.perf_counter() - t) * 1000)
 
 
-async def translate_page(translator: Translator, store: ContextStore, lines: list[str], context_key: str | None, page_index: int | None, page: PageImage | None = None) -> list[str]:
+async def translate_page(
+    translator: Translator,
+    store: ContextStore,
+    lines: list[str],
+    context_key: str | None,
+    page_index: int | None,
+    page: PageImage | None = None,
+    ruby: list[tuple[str, str]] = (),
+) -> list[str]:
     recalled = store.recall(context_key, lines)
     todo = [line for line, known in zip(lines, recalled) if known is None]
+    names: dict[str, str] = {}
+    for entry in store.cast(context_key):
+        names.setdefault(entry.en, entry.ja)
+    known_ja = set(names.values())
+    readings = {base: reading for base, reading in ruby if base not in known_ja and any(base in line for line in todo)}
     context = Context(
         store.before(context_key, page_index),
-        store.names(context_key),
+        names,
         [ContextLine(line, known) for line, known in zip(lines, recalled) if known is not None],
         page,
+        readings,
     )
     context = subset(context, [i for i, known in enumerate(recalled) if known is None])
     fresh = iter(await translate_lines(translator, todo, context) if todo else [])
-    return [known if known is not None else next(fresh) for known in recalled]
+    out = [known if known is not None else next(fresh) for known in recalled]
+    store.learn_names(context_key, furigana_names(lines, out, list(ruby)))
+    return out
