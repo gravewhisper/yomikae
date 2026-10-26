@@ -10,7 +10,7 @@ import statistics
 import subprocess
 import sys
 import time
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -132,6 +132,9 @@ async def run(args) -> None:
         finished += 1
         per_page = (time.perf_counter() - started) / finished
         print(f"{series} p{index}: {len(sources)} lines in {ms} ms{' ERROR ' + error if error else ''}, {len(todo) - finished} pages left, about {per_page * (len(todo) - finished) / 60:.1f} min", flush=True)
+    learned = {series: [asdict(e) for e in store.saved_names(series)] for series, store in stores.items() if store.saved_names(series)}
+    if learned:
+        (out / "names.json").write_text(json.dumps(learned, ensure_ascii=False, indent=1))
     meta["finished"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     meta["wall_s_this_session"] = round(time.perf_counter() - started, 1)
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
