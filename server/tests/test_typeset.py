@@ -670,3 +670,15 @@ def test_text_on_art_never_lands_in_a_neighbouring_bubble():
     assert changed.any() and sizes[0] > 0
     near = cv2.dilate(theirs.astype(np.uint8), np.ones((9, 9), np.uint8)) > 0
     assert not (changed & near).any(), "the art text stays out of the neighbouring bubble"
+
+
+def test_text_in_an_egg_shaped_bubble_sits_near_its_middle_not_down_at_its_widest_row():
+    page = Image.new("RGB", (900, 1100), (120, 120, 120))
+    t = np.linspace(0, 2 * np.pi, 400)
+    ImageDraw.Draw(page).polygon([(450 + 150 * np.cos(v) * (1 + 0.25 * np.sin(v)), 540 + 270 * np.sin(v)) for v in t], fill="white", outline="black", width=4)
+    page = np.asarray(page)
+    block = Box(400, 410, 500, 670)
+    bubble = Bubble(TextBlock(block, True, block, np.zeros((block.h, block.w), np.uint8)), "凪瀬はうちのだから", "Nagise belongs to us")
+    rendered = typeset.typeset(FONTS, page, [bubble])[0]
+    _, cy = ink_center(rendered, page)
+    assert abs(cy - 540) <= 30, cy
