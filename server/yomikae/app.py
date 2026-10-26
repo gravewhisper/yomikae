@@ -17,7 +17,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
 from .config import Settings
-from .cache import prune_stale
+from .cache import KINDS, SAVED_SOURCES, prune_stale
+from .model import CastEntry
 from .pipeline import FORMATS, PIPELINE_VERSION, BadImage, Engine, decode_image
 from .reports import BadReport, image_extension, image_size, json_bytes, new_report_id, parse_areas, render_marked, resolve_areas, write_report
 from .translate import TranslatorFailed, TranslatorUnavailable
@@ -25,6 +26,8 @@ from .translate import TranslatorFailed, TranslatorUnavailable
 log = logging.getLogger("yomikae")
 PAGE_ID_CHARS = set("0123456789abcdef")
 INTERNAL_FIELDS = ("context_key", "page_index", "font_sizes", "skipped")
+MAX_NAMES = 500
+NAME_FIELDS = {"ja": 200, "en": 100, "reading": 100}
 
 
 def error(status: int, code: str, detail: str) -> JSONResponse:
@@ -50,7 +53,7 @@ app = FastAPI(title="Yomikae", version=__version__, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"chrome-extension://.*",
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
 
@@ -140,6 +143,69 @@ async def clear_cache(request: Request):
     for result in removed:
         engine.context.forget(result)
     return {"removed": len(removed)}
+
+
+def cast_body(engine: Engine, key: str) -> dict:
+    rows = [{"ja": e.ja, "en": e.en, "reading": e.reading, "source": e.source, "kind": e.kind} for e in engine.context.cast(key)]
+    return {"context_key": key, "names": rows}
+
+
+def parse_entry(row) -> CastEntry:
+    if not isinstance(row, dict):
+        raise BadReport("each name must be an object")
+    values = {}
+    for name, limit in NAME_FIELDS.items():
+        value = row.get(name, "")
+        if not isinstance(value, str) or len(value) > limit:
+            raise BadReport(f"{name} must be a string of at most {limit} characters")
+        values[name] = value.strip()
+    if not values["en"]:
+        raise BadReport("en must not be empty")
+    source = row.get("source") or "user"
+    if source not in (*SAVED_SOURCES, "auto"):
+        raise BadReport(f"source must be one of auto, {', '.join(SAVED_SOURCES)}")
+    kind = row.get("kind") or "name"
+    if kind not in KINDS:
+        raise BadReport(f"kind must be one of {', '.join(KINDS)}")
+    return CastEntry(values["ja"], values["en"], values["reading"], source, kind)
+
+
+async def json_body(request: Request):
+    try:
+        return await request.json()
+    except ValueError as e:
+        raise BadReport(f"body is not JSON: {e}") from e
+
+
+@app.get("/v1/names")
+async def get_names(request: Request, context_key: str = ""):
+    if not context_key:
+        raise BadReport("context_key is required")
+    return cast_body(request.app.state.engine, context_key)
+
+
+@app.put("/v1/names")
+async def put_names(request: Request, context_key: str = ""):
+    if not context_key:
+        raise BadReport("context_key is required")
+    body = await json_body(request)
+    rows = body.get("names") if isinstance(body, dict) else None
+    if not isinstance(rows, list) or len(rows) > MAX_NAMES:
+        raise BadReport(f"names must be a list of at most {MAX_NAMES} entries")
+    entries = [e for e in map(parse_entry, rows) if e.source != "auto"]
+    engine: Engine = request.app.state.engine
+    engine.context.save_names(context_key, entries)
+    return cast_body(engine, context_key)
+
+
+@app.put("/v1/names/entry")
+async def put_name(request: Request, context_key: str = ""):
+    if not context_key:
+        raise BadReport("context_key is required")
+    entry = parse_entry(await json_body(request))
+    engine: Engine = request.app.state.engine
+    engine.context.set_name(context_key, CastEntry(entry.ja, entry.en, entry.reading, "user", entry.kind))
+    return cast_body(engine, context_key)
 
 
 @app.get("/v1/pages/{page_id}/rendered.{ext}")

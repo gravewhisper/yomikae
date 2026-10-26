@@ -10,7 +10,7 @@ import statistics
 import subprocess
 import sys
 import time
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,7 +36,7 @@ def load_pages(annotation: Path, series: list[str]) -> tuple[list[dict], int]:
             continue
         for page in sorted(book["pages"], key=lambda p: p["page_index"]):
             kept = [t for t in page["text"] if t["text_ja"].strip()]
-            lines = [{"ja": t["text_ja"].replace("\n", ""), "ref": t["text_en"]} for t in kept]
+            lines = [{"ja": t["text_ja"].replace("\n", ""), "ref": t["text_en"], **({"ruby": t["ruby"]} if t.get("ruby") else {})} for t in kept]
             boxes = [(t["x"], t["y"], t["x"] + t["w"], t["y"] + t["h"]) for t in kept]
             dropped += len(page["text"]) - len(lines)
             image = annotation.parent / page["image_paths"]["ja"]
@@ -114,7 +114,8 @@ async def run(args) -> None:
         tokens_before = translator.prompt_tokens
         t = time.perf_counter()
         try:
-            hyps = await translate_page(translator, store, sources, series, index, page_img) if sources else []
+            ruby = [tuple(pair) for line in page["lines"] for pair in line.get("ruby", [])]
+            hyps = await translate_page(translator, store, sources, series, index, page_img, ruby) if sources else []
         except (TranslatorUnavailable, TranslatorFailed) as e:
             hyps, error = [""] * len(sources), str(e)
         ms = round((time.perf_counter() - t) * 1000)
@@ -132,6 +133,9 @@ async def run(args) -> None:
         finished += 1
         per_page = (time.perf_counter() - started) / finished
         print(f"{series} p{index}: {len(sources)} lines in {ms} ms{' ERROR ' + error if error else ''}, {len(todo) - finished} pages left, about {per_page * (len(todo) - finished) / 60:.1f} min", flush=True)
+    learned = {series: [asdict(e) for e in store.saved_names(series)] for series, store in stores.items() if store.saved_names(series)}
+    if learned:
+        (out / "names.json").write_text(json.dumps(learned, ensure_ascii=False, indent=1))
     meta["finished"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     meta["wall_s_this_session"] = round(time.perf_counter() - started, 1)
     (out / "meta.json").write_text(json.dumps(meta, indent=1))

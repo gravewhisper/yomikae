@@ -13,14 +13,15 @@ from typing import TypeVar
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
-from . import balloon, detect, inpaint, ocr, typeset
+from . import balloon, detect, inpaint, ocr, ruby, typeset
 from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, Settings
 from .model import Bubble, ContextLine
+from .ruby import furigana_names
 from .translate import Context, PageImage, Translator, make_translator, mend_stutters, subset, translate_lines
 
 T = TypeVar("T")
-PIPELINE_VERSION = 25
+PIPELINE_VERSION = 26
 STAGES = ("detect", "balloons", "ocr", "translate", "inpaint", "typeset")
 WEBP_QUALITY = 90
 JPEG_QUALITY = 90
@@ -98,7 +99,7 @@ class Engine:
         self.lettering = typeset.load_lettering(settings.case)
         self.translator = make_translator(settings)
         self.cache = PageCache(settings.cache_dir / f"v{PIPELINE_VERSION}")
-        self.context = ContextStore()
+        self.context = ContextStore(settings.cache_dir / "names")
         self.context.rebuild(self.cache)
         self.inflight: dict[str, asyncio.Future] = {}
 
@@ -155,7 +156,8 @@ class Engine:
             with self.gpu():
                 blocks = timer.run("detect", detect.detect, self.detector, image)
                 balloons = timer.run("balloons", balloon.segment, self.balloons, image)
-                return timer.run("ocr", ocr.read, self.ocr, image, blocks, balloons)
+                bubbles, unsure = timer.run("ocr", ocr.read, self.ocr, image, blocks, balloons)
+                return timer.run("ocr", ruby.attach, self.ocr, image, bubbles), unsure
 
         def remove_text(bubbles: list[Bubble]) -> np.ndarray:
             with self.gpu():
@@ -163,7 +165,8 @@ class Engine:
 
         bubbles, unsure = await asyncio.to_thread(read_page)
         if bubbles:
-            translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer))
+            readings = [pair for b in bubbles for pair in b.ruby]
+            translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings))
             try:
                 inpainted = await asyncio.to_thread(remove_text, bubbles)
             finally:
@@ -197,23 +200,41 @@ class Engine:
         timings = {**timer.ms, "total": round((time.perf_counter() - start) * 1000)}
         return {**result, "timings_ms": timings, "cached": False}
 
-    async def _translate(self, lines: list[str], context_key: str | None, page_index: int | None, timer: Timer) -> list[str]:
+    async def _translate(self, lines: list[str], context_key: str | None, page_index: int | None, timer: Timer, readings: list[tuple[str, str]]) -> list[str]:
         t = time.perf_counter()
         try:
-            return await translate_page(self.translator, self.context, lines, context_key, page_index)
+            return await translate_page(self.translator, self.context, lines, context_key, page_index, ruby=readings)
         finally:
             timer.ms["translate"] = round((time.perf_counter() - t) * 1000)
 
 
-async def translate_page(translator: Translator, store: ContextStore, lines: list[str], context_key: str | None, page_index: int | None, page: PageImage | None = None) -> list[str]:
+async def translate_page(
+    translator: Translator,
+    store: ContextStore,
+    lines: list[str],
+    context_key: str | None,
+    page_index: int | None,
+    page: PageImage | None = None,
+    ruby: list[tuple[str, str]] = (),
+) -> list[str]:
     recalled = store.recall(context_key, lines)
     todo = [line for line, known in zip(lines, recalled) if known is None]
+    names: dict[str, str] = {}
+    terms: dict[str, str] = {}
+    for entry in store.cast(context_key):
+        (terms if entry.kind == "term" else names).setdefault(entry.en, entry.ja)
+    known_ja = set(names.values()) | set(terms.values())
+    readings = {base: reading for base, reading in ruby if base not in known_ja and any(base in line for line in todo)}
     context = Context(
         store.before(context_key, page_index),
-        store.names(context_key),
+        names,
         [ContextLine(line, known) for line, known in zip(lines, recalled) if known is not None],
         page,
+        readings,
+        terms,
     )
     context = subset(context, [i for i, known in enumerate(recalled) if known is None])
     fresh = iter(await translate_lines(translator, todo, context) if todo else [])
-    return mend_stutters(lines, [known if known is not None else next(fresh) for known in recalled])
+    out = mend_stutters(lines, [known if known is not None else next(fresh) for known in recalled])
+    store.learn_names(context_key, furigana_names(lines, out, list(ruby), store.memory(context_key)))
+    return out

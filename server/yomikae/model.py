@@ -55,9 +55,19 @@ class Bubble:
     translation: str = ""
     balloon: Balloon | None = None
     shared: bool = False
+    ruby: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
 class ContextLine:
     source: str
     translation: str
+
+
+@dataclass(frozen=True)
+class CastEntry:
+    ja: str
+    en: str
+    reading: str = ""
+    source: str = "auto"
+    kind: str = "name"
