@@ -37,7 +37,12 @@ def test_the_glossary_keeps_the_most_used_spelling_of_a_name():
         (2, [ContextLine("c", "Nagisaki-nee is here.")]),
         (3, [ContextLine("d", "Nagisa-nee?"), ContextLine("e", "Yuki-chan and Yuka-chan.")]),
     )
-    assert store.names("g/1") == {"Nagisa-nee": "a", "An-chan": "b", "Yuki-chan": "e", "Yuka-chan": "e"}
+    assert store.names("g/1") == {"Nagisa": "a", "An": "b", "Yuki": "e", "Yuka": "e"}
+
+
+def test_the_glossary_lists_a_name_without_its_honorific():
+    store = work_with((1, [ContextLine("宏也落ち着け", "Hiroya-kun, calm down."), ContextLine("宏也さん", "Hiroya-san!")]))
+    assert store.names("g/1") == {"Hiroya": "宏也落ち着け"}
 
 
 def test_a_misread_name_copied_from_the_glossary_gives_way_to_the_real_one():
@@ -53,7 +58,7 @@ def test_a_misread_name_copied_from_the_glossary_gives_way_to_the_real_one():
             out, copied = [], False
             for line in lines:
                 own = "Nagina-nee" if "ナギナ" in line else "Nagisa-nee"
-                name = pinned if pinned and not copied else own
+                name = f"{pinned}-nee" if pinned and not copied else own
                 copied = True
                 out.append(f"{name}, {line[-2:]}")
             return out
@@ -68,7 +73,7 @@ def test_a_misread_name_copied_from_the_glossary_gives_way_to_the_real_one():
         outs.append(asyncio.run(translate_page(SometimesCopies(), store, lines, "g/1", idx)))
         store.add("g/1", idx, [ContextLine(a, b) for a, b in zip(lines, outs[-1])])
     assert outs[1][0].startswith("Nagina-nee") and outs[3] == ["Nagisa-nee, ほら"], outs
-    assert store.names("g/1") == {"Nagisa-nee": "ナギサ姉、早く"}
+    assert store.names("g/1") == {"Nagisa": "ナギサ姉、早く"}
 
 
 def test_a_tagged_page_retried_in_halves_tags_only_the_lines_each_half_sends():

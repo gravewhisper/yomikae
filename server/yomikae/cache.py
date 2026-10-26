@@ -213,8 +213,9 @@ class ContextStore:
         for p in sorted(pages):
             for line in pages[p]:
                 for m in NAME.finditer(line.translation):
-                    if m.group(0) not in kept:
-                        seen.setdefault(m.group(0), {}).setdefault(normalize(line.source), line.source)
+                    name = m.group(0).rsplit("-", 1)[0]
+                    if name not in kept:
+                        seen.setdefault(name, {}).setdefault(normalize(line.source), line.source)
             kept = {}
             for name, lines in sorted(seen.items(), key=lambda item: -len(item[1])):
                 if not any(same_name(name, k) for k in kept):
@@ -250,5 +251,4 @@ def edit_distance(a: str, b: str) -> int:
 
 
 def same_name(a: str, b: str) -> bool:
-    (base_a, honorific_a), (base_b, honorific_b) = a.rsplit("-", 1), b.rsplit("-", 1)
-    return honorific_a == honorific_b and SequenceMatcher(None, base_a, base_b).ratio() >= NAME_RATIO
+    return SequenceMatcher(None, a, b).ratio() >= NAME_RATIO

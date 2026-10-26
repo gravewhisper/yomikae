@@ -309,7 +309,7 @@ def test_a_line_seen_earlier_in_the_work_keeps_its_translation(client):
 
 def test_a_name_keeps_its_first_spelling_on_later_pages(client):
     def reply(call, lines, context):
-        name = next(iter(context.names)) if context.names else ("Nagisa-nee" if call == 1 else "Nagisaki-nee")
+        name = f"{next(iter(context.names))}-nee" if context.names else ("Nagisa-nee" if call == 1 else "Nagisaki-nee")
         return [f"{name}, wait {i}!" for i in range(len(lines))]
 
     translator = Scripted(reply)
@@ -326,7 +326,7 @@ def test_context_from_far_away_pages_is_dropped_but_names_stay(client):
     post_in_work(client, translator, 213, "example.com/g/far", 20)
     _, context = translator.calls[-1]
     assert context.pages == []
-    assert "Yuki-chan" in context.names
+    assert "Yuki" in context.names
 
 
 def test_an_echoed_line_is_retried_once_then_left_untouched(client):
