@@ -319,7 +319,7 @@ async function postToServer(server: string, path: string, form: FormData, timeou
   if (!res.ok) {
     const { code, detail } = parseServerError(await res.json().catch(() => null));
     if (SERVER_DOWN_STATUSES.has(res.status)) throw new ServerDown(detail);
-    throw new JobError(detail, code !== 'bad_image');
+    throw new JobError(detail, code !== 'bad_image' && code !== 'bad_request');
   }
   return res;
 }

@@ -28,7 +28,8 @@ export type PageJob =
   | { state: 'failed'; url: string; error: string; retryable: boolean }
   | { state: 'blocked'; url: string; host: string };
 
-export type ServerErrorCode = 'bad_image' | 'translator_unavailable' | 'translator_error' | 'internal';
+export const SERVER_ERROR_CODES = ['bad_image', 'bad_request', 'not_found', 'translator_unavailable', 'translator_error', 'internal'] as const;
+export type ServerErrorCode = (typeof SERVER_ERROR_CODES)[number];
 
 class ParseError extends Error {}
 
@@ -107,8 +108,8 @@ export function parseServerError(v: unknown): { code: ServerErrorCode | 'unknown
   try {
     const o = obj(v, 'error');
     const code = o.error;
-    const known = code === 'bad_image' || code === 'translator_unavailable' || code === 'translator_error' || code === 'internal';
-    return { code: known ? code : 'unknown', detail: typeof o.detail === 'string' ? o.detail : String(code) };
+    const known = SERVER_ERROR_CODES.find((c) => c === code);
+    return { code: known ?? 'unknown', detail: typeof o.detail === 'string' ? o.detail : String(code) };
   } catch {
     return { code: 'unknown', detail: 'Unreadable error response.' };
   }
