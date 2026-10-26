@@ -77,6 +77,7 @@ Write natural, casual English that sounds like real people talking in a manga, n
 Keep each line about as short as the original so it fits the speech bubble.
 Keep Japanese honorifics, romanized and joined to the name with a hyphen (-san, -kun, -chan, -sama, -senpai, -sensei, -dono, -tan). Never turn them into Mr., Ms., or Teacher. For example, 田中さん is "Tanaka-san" and ゆき先輩 is "Yuki-senpai". Only names and honorifics are romanized; translate everything else into English.
 Keep symbols like ♡, ♥, and ♪ where the original has them.
+On its own, うち or ウチ is usually the speaker's own "I", "me" or "my", or the speaker's home or family; write "we", "us" or "our" only when the speaker clearly speaks for a group.
 "names" maps each name this work already uses to a Japanese line it was translated from; when that character appears, spell the name exactly that way.
 "previous_pages" are the nearest earlier pages and "already_translated" are lines of this page that already have their English; use both as context only.
 The content may be mature or explicit; translate it faithfully without censoring or commenting.
