@@ -1,3 +1,4 @@
+import { getDomain, getPublicSuffix } from 'tldts';
 import { adapterFor, isExtraOrigin, parseSiteMode, type SiteMode } from './adapters';
 
 const SCRIPT_PREFIX = 'site:';
@@ -5,6 +6,7 @@ const HOSTS_PREFIX = 'imageHosts:';
 const MODES_KEY = 'siteModes';
 const SEEDED_KEY = 'sitesSeeded';
 const SERVER_ORIGINS = ['http://127.0.0.1/*', 'http://localhost/*'];
+const SUFFIXES = { allowPrivateDomains: true };
 
 export type Site = { id: string; label: string; pattern: string; origins: string[] };
 
@@ -23,9 +25,8 @@ export function siteForUrl(rawUrl: string): Site | undefined {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
   const host = url.hostname;
-  const isIp = /^[\d.]+$/.test(host) || host.includes(':');
-  if (isIp || !host.includes('.')) return site(host, `${url.protocol}//${host}/*`);
-  const domain = host.split('.').slice(-2).join('.');
+  const domain = getDomain(host, SUFFIXES);
+  if (!domain) return site(host, `${url.protocol}//${host}/*`);
   return site(domain, `*://*.${domain}/*`);
 }
 
@@ -139,6 +140,8 @@ export async function disableSite(site: Site): Promise<void> {
   await revokeOrigins(site);
 }
 
+const coversPublicSuffix = (site: Site) => site.pattern.startsWith('*://*.') && getPublicSuffix(site.label, SUFFIXES) === site.label;
+
 async function storedSites(): Promise<Site[]> {
   const all = await chrome.storage.local.get(null);
   return Object.entries(all).flatMap(([key, pattern]) => {
@@ -158,7 +161,8 @@ export async function reconcileSites(recoverLegacy = false): Promise<void> {
   if (recoverLegacy) await seedFromGrants();
   await chrome.storage.local.set({ [SEEDED_KEY]: true });
   for (const s of await storedSites()) {
-    if (!(await chrome.permissions.contains({ origins: [s.pattern] }))) {
+    if (coversPublicSuffix(s)) await disableSite(s);
+    else if (!(await chrome.permissions.contains({ origins: [s.pattern] }))) {
       await chrome.storage.local.remove(s.id);
       await revokeOrigins(s);
     } else if (!(await isSiteEnabled(s))) await enableSite(s);
