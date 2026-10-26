@@ -49,7 +49,7 @@ It reports:
 - COMET with `Unbabel/wmt22-comet-da`, with a 95% bootstrap interval over lines from 1000 resamples.
 - chrF, case-insensitive and cased.
 - Blank lines, and how many of them have a source of only punctuation.
-- How many lines keep the romanized honorific, out of the lines that attach さん, ちゃん, くん, 様, 先輩, 先生, or 殿 to a name, beside the same count for the professional reference.
+- How many lines keep the romanized honorific, out of the lines that attach さん, ちゃん, くん, 君, 様, さま, 先輩, 先生, or 殿 to a name, beside the same count for the professional reference.
 - Lines answered from memory without a model call.
 - Median and p90 time per page for the translation call.
 
