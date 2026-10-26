@@ -49,6 +49,26 @@ describe('site for a page', () => {
   });
 });
 
+describe('image hosts a site already covers', () => {
+  it('counts a host as covered by an exact or wildcard origin of the same domain', async () => {
+    const { sites } = await setup();
+    assert.ok(sites.coversHost('*://pbs.twimg.com/*', 'pbs.twimg.com'));
+    assert.ok(sites.coversHost('*://*.cdn.example/*', 'w1.cdn.example'));
+    assert.ok(sites.coversHost('*://*.cdn.example/*', 'cdn.example'));
+    assert.ok(!sites.coversHost('*://pbs.twimg.com/*', 'video.twimg.com'));
+    assert.ok(!sites.coversHost('*://*.cdn.example/*', 'badcdn.example'));
+  });
+
+  it('does not record a host the site already covers', async () => {
+    const { sites, data } = await setup(enabled('*://*.x.com/*', 'x.com'), ['*://*.x.com/*', '*://pbs.twimg.com/*']);
+    const x = sites.siteForUrl('https://x.com/a');
+    assert.ok(x);
+    await sites.addImageHost(x, 'pbs.twimg.com');
+    await sites.addImageHost(x, 'video.twimg.com');
+    assert.deepEqual(data['imageHosts:x.com'], ['video.twimg.com']);
+  });
+});
+
 describe('turning a site off', () => {
   it('keeps the image origins another enabled site still uses', async () => {
     const stored = { ...enabled('*://*.x.com/*', 'x.com'), ...enabled('*://*.twitter.com/*', 'twitter.com') };

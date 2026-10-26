@@ -38,6 +38,11 @@ export function siteForPattern(pattern: string): Site | undefined {
 
 const imageOrigin = (host: string) => `*://${host}/*`;
 
+export function coversHost(pattern: string, host: string): boolean {
+  const m = pattern.match(/^(?:\*|https?):\/\/(\*\.)?([^/*]+)\/\*$/);
+  return !!m?.[2] && (host === m[2] || (!!m[1] && host.endsWith(`.${m[2]}`)));
+}
+
 const hostsKey = (site: Site) => HOSTS_PREFIX + site.label;
 
 const asHosts = (v: unknown): string[] => (Array.isArray(v) ? v.filter((h): h is string => typeof h === 'string') : []);
@@ -50,7 +55,7 @@ async function storedImageHosts(): Promise<string[][]> {
 async function siteOrigins(site: Site): Promise<string[]> {
   const key = hostsKey(site);
   const hosts = asHosts((await chrome.storage.local.get(key))[key]);
-  return [...new Set([...site.origins, ...hosts.map(imageOrigin)])];
+  return [...new Set([...site.origins, ...hosts.filter((h) => !site.origins.some((o) => coversHost(o, h))).map(imageOrigin)])];
 }
 
 let hostWrites = Promise.resolve();
@@ -61,7 +66,7 @@ export function addImageHost(site: Site, host: string): Promise<void> {
       const key = hostsKey(site);
       const stored = await chrome.storage.local.get([site.id, key]);
       const hosts = asHosts(stored[key]);
-      if (stored[site.id] === undefined || hosts.includes(host) || site.origins.includes(imageOrigin(host))) return;
+      if (stored[site.id] === undefined || hosts.includes(host) || site.origins.some((o) => coversHost(o, host))) return;
       await chrome.storage.local.set({ [key]: [...hosts, host] });
     })
     .catch(() => undefined);
