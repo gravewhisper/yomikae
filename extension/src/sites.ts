@@ -71,8 +71,8 @@ export function addImageHost(site: Site, host: string): Promise<void> {
 async function revokeOrigins(site: Site): Promise<void> {
   const origins = await siteOrigins(site);
   await chrome.storage.local.remove(hostsKey(site));
-  const shared = new Set((await storedImageHosts()).flat().map(imageOrigin));
-  await chrome.permissions.remove({ origins: origins.filter((o) => !shared.has(o)) }).catch(() => false);
+  const kept = new Set((await Promise.all((await storedSites()).map(siteOrigins))).flat());
+  await chrome.permissions.remove({ origins: origins.filter((o) => !kept.has(o)) }).catch(() => false);
 }
 
 export async function sitesForGrants(origins: string[]): Promise<Site[]> {
