@@ -40,6 +40,37 @@ def test_the_glossary_keeps_the_most_used_spelling_of_a_name():
     assert store.names("g/1") == {"Nagisa-nee": "a", "An-chan": "b", "Yuki-chan": "e", "Yuka-chan": "e"}
 
 
+def test_a_misread_name_copied_from_the_glossary_gives_way_to_the_real_one():
+    import asyncio
+
+    from yomikae.pipeline import translate_page
+
+    class SometimesCopies:
+        name = "copies"
+
+        async def translate(self, lines, context):
+            pinned = next(iter(context.names), None)
+            out, copied = [], False
+            for line in lines:
+                own = "Nagina-nee" if "ナギナ" in line else "Nagisa-nee"
+                name = pinned if pinned and not copied else own
+                copied = True
+                out.append(f"{name}, {line[-2:]}")
+            return out
+
+        async def health(self):
+            return None
+
+    store = ContextStore()
+    pages = [["ナギナ姉、待って"], ["ナギサ姉、来て", "ナギサ姉、早く"], ["ナギサ姉、見て", "ナギサ姉、どこ"], ["ナギサ姉、ほら"]]
+    outs = []
+    for idx, lines in enumerate(pages):
+        outs.append(asyncio.run(translate_page(SometimesCopies(), store, lines, "g/1", idx)))
+        store.add("g/1", idx, [ContextLine(a, b) for a, b in zip(lines, outs[-1])])
+    assert outs[1][0].startswith("Nagina-nee") and outs[3] == ["Nagisa-nee, ほら"], outs
+    assert store.names("g/1") == {"Nagisa-nee": "ナギサ姉、早く"}
+
+
 def test_a_tagged_page_retried_in_halves_tags_only_the_lines_each_half_sends():
     import asyncio
 

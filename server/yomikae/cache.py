@@ -7,7 +7,6 @@ import shutil
 import tempfile
 import threading
 import unicodedata
-from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -208,16 +207,18 @@ class ContextStore:
         return [lookup(known, normalize(s)) for s in sources]
 
     def names(self, key: str | None) -> dict[str, str]:
-        counts: Counter[str] = Counter()
-        sources: dict[str, str] = {}
-        for line in self.memory(key):
-            for m in NAME.finditer(line.translation):
-                counts[m.group(0)] += 1
-                sources.setdefault(m.group(0), line.source)
+        seen: dict[str, dict[str, str]] = {}
         kept: dict[str, str] = {}
-        for name, _ in counts.most_common():
-            if not any(same_name(name, k) for k in kept):
-                kept[name] = sources[name]
+        pages = self.pages.get(key, {}) if key else {}
+        for p in sorted(pages):
+            for line in pages[p]:
+                for m in NAME.finditer(line.translation):
+                    if m.group(0) not in kept:
+                        seen.setdefault(m.group(0), {}).setdefault(normalize(line.source), line.source)
+            kept = {}
+            for name, lines in sorted(seen.items(), key=lambda item: -len(item[1])):
+                if not any(same_name(name, k) for k in kept):
+                    kept[name] = next(iter(lines.values()))
         return kept
 
 
