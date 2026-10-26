@@ -61,16 +61,42 @@ def vertical_text_size(text: str, font: ImageFont.FreeTypeFont, per_col: int) ->
     return col_w * len(cols), int(size * 1.1) * max(len(c) for c in cols), cols
 
 
-def draw_vertical_text(img: Image.Image, origin: tuple[int, int], cols: list[str], font: ImageFont.FreeTypeFont) -> None:
+def draw_vertical_text(
+    img: Image.Image, origin: tuple[int, int], cols: list[str], font: ImageFont.FreeTypeFont, ruby: dict[int, list[tuple[int, int, str]]] | None = None
+) -> None:
     draw = ImageDraw.Draw(img)
     size = font.size
-    col_w = int(size * 1.25)
+    col_w = int(size * (1.7 if ruby else 1.25))
+    pitch = int(size * 1.1)
+    small = ImageFont.truetype(FONT_PATH, max(8, int(size * 0.42)), index=JP_FONT_INDEX)
     x_right = origin[0] + col_w * len(cols)
     for ci, col in enumerate(cols):
         cx = x_right - col_w * ci - col_w // 2
         for ri, ch in enumerate(col):
-            cy = origin[1] + int(size * 1.1) * ri + size // 2
+            cy = origin[1] + pitch * ri + size // 2
             draw.text((cx, cy), ch, font=font, fill=(0, 0, 0), anchor="mm")
+        for start, length, kana in (ruby or {}).get(ci, []):
+            mid = origin[1] + pitch * start + pitch * length / 2
+            for k, ch in enumerate(kana):
+                draw.text((cx + int(size * 0.8), mid + (k - (len(kana) - 1) / 2) * small.size * 1.05), ch, font=small, fill=(0, 0, 0), anchor="mm")
+
+
+def draw_horizontal_text(
+    img: Image.Image, origin: tuple[int, int], lines: list[str], font: ImageFont.FreeTypeFont, ruby: dict[int, list[tuple[int, int, str]]] | None = None
+) -> None:
+    draw = ImageDraw.Draw(img)
+    size = font.size
+    pitch = int(size * 1.05)
+    line_h = int(size * 1.6)
+    small = ImageFont.truetype(FONT_PATH, max(8, int(size * 0.42)), index=JP_FONT_INDEX)
+    for li, line in enumerate(lines):
+        cy = origin[1] + line_h * li + size // 2
+        for ci, ch in enumerate(line):
+            draw.text((origin[0] + pitch * ci + size // 2, cy), ch, font=font, fill=(0, 0, 0), anchor="mm")
+        for start, length, kana in (ruby or {}).get(li, []):
+            mid = origin[0] + pitch * start + pitch * length / 2
+            for k, ch in enumerate(kana):
+                draw.text((mid + (k - (len(kana) - 1) / 2) * small.size * 1.05, cy - int(size * 0.78)), ch, font=small, fill=(0, 0, 0), anchor="mm")
 
 
 def make_page(seed: int, width: int = 1280, height: int = 1816) -> tuple[Image.Image, list[GroundTruthBubble]]:

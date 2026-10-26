@@ -37,6 +37,7 @@ TITLES = {"san", "kun", "chan", "sama", "senpai", "sensei", "dono", "tan"}
 INK = 150
 RUBY_WIDTH = 0.62
 RUBY_GAP = 0.7
+PITCH_PERCENTILE = 90
 BASE_MIN_WIDTH = 0.8
 BIG_GLYPH = 0.6
 JOIN_GAP = 0.5
@@ -142,10 +143,23 @@ def runs(on: np.ndarray) -> list[tuple[int, int]]:
 
 
 def find_ruby(gray: np.ndarray, block: TextBlock) -> list[tuple[Box, Box, int]]:
-    if not block.vertical:
-        return []
     mb = block.mask_box
     ink = (gray[mb.y0 : mb.y1, mb.x0 : mb.x1] < INK) & (cv2.dilate(block.mask, np.ones((3, 3), np.uint8)) > 0)
+    if block.vertical:
+        return [(moved(ruby, mb), moved(base, mb), i) for ruby, base, i in find_side_ruby(ink)]
+    height = ink.shape[0]
+    found = []
+    for ruby, base, i in find_side_ruby(ink.T[:, ::-1]):
+        ruby, base = Box(ruby.y0, height - ruby.x1, ruby.y1, height - ruby.x0), Box(base.y0, height - base.x1, base.y1, height - base.x0)
+        found.append((moved(ruby, mb), moved(base, mb), i))
+    return found
+
+
+def moved(box: Box, by: Box) -> Box:
+    return Box(box.x0 + by.x0, box.y0 + by.y0, box.x1 + by.x0, box.y1 + by.y0)
+
+
+def find_side_ruby(ink: np.ndarray) -> list[tuple[Box, Box, int]]:
     _, _, stats, _ = cv2.connectedComponentsWithStats(ink.astype(np.uint8), connectivity=8)
     comps = stats[1:, :4].astype(int).tolist()
     if len(comps) < 3:
@@ -165,7 +179,7 @@ def find_ruby(gray: np.ndarray, block: TextBlock) -> list[tuple[Box, Box, int]]:
         if d - c < BASE_MIN_WIDTH * main or not small:
             continue
         small.sort(key=lambda r: r[1])
-        pitch = float(np.median([max(w, h) for _, _, w, h in small]))
+        pitch = float(np.percentile([max(w, h) for _, _, w, h in small], PITCH_PERCENTILE))
         groups: list[list[int]] = []
         for x, y, w, h in small:
             if groups and y - groups[-1][3] < GROUP_GAP * pitch:
@@ -177,8 +191,8 @@ def find_ruby(gray: np.ndarray, block: TextBlock) -> list[tuple[Box, Box, int]]:
         for x0, y0, x1, y1 in groups:
             if y1 - y0 < MIN_GROUP * pitch or x1 - x0 < 2:
                 continue
-            ruby = Box(mb.x0 + x0, mb.y0 + y0, mb.x0 + x1, mb.y0 + y1)
-            found.append((ruby, Box(mb.x0 + c, max(0, ruby.y0 - reach), mb.x0 + d, ruby.y1 + reach), i))
+            mid, half = (y0 + y1) / 2, max((y1 - y0) / 2 + reach, main / 2)
+            found.append((Box(x0, y0, x1, y1), Box(c, max(0, round(mid - half)), d, round(mid + half)), i))
     return found
 
 
@@ -209,25 +223,31 @@ def joined_base(first: str, second: str, source: str) -> str | None:
 def read_ruby(ocr, page: Image.Image, gray: np.ndarray, block: TextBlock, source: str) -> list[tuple[str, str]]:
     from .ocr import recognize
 
-    pairs: list[tuple[str, str, int, int]] = []
+    pairs: list[tuple[str, str, int, int, int]] = []
+    failed: list[tuple[int, int, int]] = []
+    gap = 0.0
     for ruby, base, column in find_ruby(gray, block):
+        start, end, width = (ruby.y0, ruby.y1, base.w) if block.vertical else (ruby.x0, ruby.x1, base.h)
+        gap = JOIN_GAP * width
         crop = page.crop((ruby.x0 - 1, ruby.y0 - 1, ruby.x1 + 1, ruby.y1 + 1))
-        scale = max(1, round(RUBY_SIDE / max(1, ruby.w)))
+        scale = max(1, round(RUBY_SIDE / max(1, ruby.w if block.vertical else ruby.h)))
         crop = crop.resize((crop.width * scale, crop.height * scale), Image.Resampling.LANCZOS)
         reading, confidence, _ = recognize(ocr, padded(crop, RUBY_PAD * scale))
-        if confidence < MIN_CONFIDENCE or not KANA_ONLY.fullmatch(reading):
-            continue
-        text, _, _ = recognize(ocr, padded(page.crop((base.x0 - 2, base.y0, base.x1 + 2, base.y1)), BASE_PAD))
-        kanji = kanji_in(text, source)
+        kanji = ""
+        if confidence >= MIN_CONFIDENCE and KANA_ONLY.fullmatch(reading):
+            slice_box = (base.x0 - 2, base.y0, base.x1 + 2, base.y1) if block.vertical else (base.x0, base.y0 - 2, base.x1, base.y1 + 2)
+            kanji = kanji_in(recognize(ocr, padded(page.crop(slice_box), BASE_PAD))[0], source)
         if not kanji:
+            failed.append((column, start, end))
             continue
-        if pairs and pairs[-1][2] == column and ruby.y0 - pairs[-1][3] < JOIN_GAP * base.w:
+        if pairs and pairs[-1][2] == column and start - pairs[-1][4] < gap:
             joined = joined_base(pairs[-1][0], kanji, source)
             if joined:
-                kanji, reading = joined, pairs[-1][1] + reading
+                kanji, reading, start = joined, pairs[-1][1] + reading, pairs[-1][3]
                 pairs.pop()
-        pairs.append((kanji, reading, column, ruby.y1))
-    return [(k, tidy(r)) for k, r, _, _ in pairs if len(k) <= len(r) <= MAX_KANA_PER_KANJI * len(k)]
+        pairs.append((kanji, reading, column, start, end))
+    whole = [p for p in pairs if not any(c == p[2] and s - p[4] < gap and p[3] - e < gap for c, s, e in failed)]
+    return [(k, tidy(r)) for k, r, _, _, _ in whole if len(k) <= len(r) <= MAX_KANA_PER_KANJI * len(k)]
 
 
 def attach(ocr, image: np.ndarray, bubbles: list[Bubble]) -> list[Bubble]:

@@ -89,45 +89,45 @@ def test_names_api_reads_and_replaces_one_works_list(client):
     assert client.put("/v1/names", params={"context_key": key}, json={"names": [{"en": "A", "source": "nope"}]}).status_code == 400
 
 
-def vertical_page(columns, ruby):
-    from PIL import Image, ImageDraw, ImageFont
+def ruby_page(lines, ruby, vertical, size=44):
+    from make_test_page import FONT_PATH, draw_horizontal_text, draw_vertical_text
+    from PIL import Image, ImageFont
 
-    main = ImageFont.truetype("/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc", 44)
-    small = ImageFont.truetype("/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc", 18)
-    page = Image.new("L", (520, 520), 255)
-    draw = ImageDraw.Draw(page)
-    right = 380
-    for c, column in enumerate(columns):
-        cx = right - 80 * c
-        for r, ch in enumerate(column):
-            draw.text((cx, 90 + 48 * r), ch, font=main, fill=0, anchor="mm")
-        for start, kana in ruby.get(c, []):
-            top = 90 + 48 * start - 24
-            for k, ch in enumerate(kana):
-                draw.text((cx + 36, top + 10 + 20 * k), ch, font=small, fill=0, anchor="mm")
+    page = Image.new("RGB", (560, 560), (255, 255, 255))
+    draw = draw_vertical_text if vertical else draw_horizontal_text
+    draw(page, (120, 100), lines, ImageFont.truetype(FONT_PATH, size), ruby)
     return page
 
 
-def test_furigana_beside_a_kanji_name_is_read_and_kept_out_of_the_line():
+def read_block(page, vertical, box=None):
     import numpy as np
 
     from yomikae import ocr, ruby
     from yomikae.model import Box, TextBlock
 
     reader = ocr.load_ocr()
-    page = vertical_page(["桜野さんは", "どこですか"], {0: [(0, "さくらの")]})
-    ink = np.asarray(page) < 128
-    ys, xs = np.nonzero(ink)
-    box = Box(int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+    ink = np.asarray(page.convert("L")) < 128
+    if box is None:
+        ys, xs = np.nonzero(ink)
+        box = Box(int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
     mask_box = box.expand(12, *page.size)
     mask = np.where(ink[mask_box.y0 : mask_box.y1, mask_box.x0 : mask_box.x1], 255, 0).astype(np.uint8)
-    image = np.asarray(page.convert("RGB"))
-    bubbles, _ = ocr.read(reader, image, [TextBlock(box, True, mask_box, mask)])
+    image = np.asarray(page)
+    bubbles, _ = ocr.read(reader, image, [TextBlock(box, vertical, mask_box, mask)])
     [bubble] = ruby.attach(reader, image, bubbles)
+    return bubble, box
+
+
+def test_furigana_beside_a_kanji_name_is_read_and_kept_out_of_the_line():
+    bubble, box = read_block(ruby_page(["桜野さんは", "どこですか"], {0: [(0, 2, "さくらの")]}, True), True)
     assert "さくら" not in bubble.source, bubble.source
     assert bubble.ruby == (("桜野", "さくらの"),), (bubble.source, bubble.ruby)
-    plain = vertical_page(["桜野さんは", "どこですか"], {})
-    ink = np.asarray(plain) < 128
-    mask = np.where(ink[mask_box.y0 : mask_box.y1, mask_box.x0 : mask_box.x1], 255, 0).astype(np.uint8)
-    image = np.asarray(plain.convert("RGB"))
-    assert ruby.attach(reader, image, ocr.read(reader, image, [TextBlock(box, True, mask_box, mask)])[0])[0].ruby == ()
+    assert read_block(ruby_page(["桜野さんは", "どこですか"], {}, True), True, box)[0].ruby == ()
+
+
+def test_furigana_above_horizontal_text_is_read_and_two_plain_lines_are_not_ruby():
+    bubble, box = read_block(ruby_page(["明日は桜野さん", "と会うよ"], {0: [(3, 2, "さくらの")]}, False), False)
+    assert "さくら" not in bubble.source, bubble.source
+    assert bubble.ruby == (("桜野", "さくらの"),), (bubble.source, bubble.ruby)
+    assert read_block(ruby_page(["明日は桜野さん", "と会うよ"], {}, False), False, box)[0].ruby == ()
+    assert read_block(ruby_page(["かな", "とても小さな字"], {}, False, 30), False)[0].ruby == ()
