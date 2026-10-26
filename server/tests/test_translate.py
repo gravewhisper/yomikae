@@ -70,3 +70,32 @@ def test_a_tagged_page_retried_in_halves_tags_only_the_lines_each_half_sends():
     system, user = calls[0][2]
     assert "red numbered tag" in system["content"]
     assert user["content"][0]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+
+
+def test_a_sound_cut_off_before_the_next_bubble_becomes_its_stutter():
+    import asyncio
+
+    from yomikae.pipeline import translate_page
+
+    replies = {"ふっ": "Heh.", "ふざけんなっ！": "Don't mess with me!", "ど…": "", "どういう意味さ…": "...What do you mean?", "そっ": "So...", "．．．そっか": "...I see."}
+
+    class Literal:
+        name = "literal"
+
+        async def translate(self, lines, context):
+            return [replies[line] for line in lines]
+
+        async def health(self):
+            return None
+
+    lines = list(replies)
+    out = asyncio.run(translate_page(Literal(), ContextStore(), lines, "g/1", 0))
+    assert out == ["D-", "Don't mess with me!", "Wh-", "...What do you mean?", "I-", "...I see."]
+
+
+def test_interjections_and_drawn_out_sounds_are_not_stutters():
+    from yomikae.translate import mend_stutters
+
+    lines = ["あ！", "あれは誰？", "はっ", "はは…", "あ？", "あ、あの…", "かっ…", "かかかっ", "なー", "なんで", "あ", "ありがとう"]
+    out = ["Ah!", "Who's that?", "Ha!", "Haha...", "Huh?", "U-um...", "Ka...", "Kakaka", "Hey~", "Why?", "Oh.", "Thanks."]
+    assert mend_stutters(lines, out) == out

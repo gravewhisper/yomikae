@@ -203,6 +203,37 @@ async def translate_lines(translator: Translator, lines: list[str], context: Con
     return out
 
 
+CUT_SOUND = re.compile(r"([\u3041-\u3096\u30a1-\u30f6])[っッ]?[\s.…‥・―─\-、]*")
+FIRST_SOUND = re.compile(r"[\s.…‥・ー―─\-~、「『（(]*([\u3041-\u3096\u30a1-\u30f6])[っッ]?(.?)")
+FIRST_WORD = re.compile(r"[^A-Za-z]*([A-Za-z])(h?)")
+
+
+def hiragana(ch: str) -> str:
+    return chr(ord(ch) - 0x60) if "\u30a1" <= ch <= "\u30f6" else ch
+
+
+def stutter_of(cut: str, following: str) -> bool:
+    m = CUT_SOUND.fullmatch(unicodedata.normalize("NFKC", cut).strip())
+    n = FIRST_SOUND.match(unicodedata.normalize("NFKC", following))
+    if not m or not n or (m.group(0) == m.group(1) and hiragana(m.group(1)) in "あいうえお"):
+        return False
+    sound = hiragana(m.group(1))
+    return hiragana(n.group(1)) == sound and hiragana(n.group(2)) != sound
+
+
+def stutter(text: str) -> str | None:
+    m = FIRST_WORD.match(text)
+    return f"{m.group(1).upper()}{m.group(2)}-" if m else None
+
+
+def mend_stutters(lines: list[str], out: list[str]) -> list[str]:
+    mended = list(out)
+    for i in range(len(lines) - 1):
+        if stutter_of(lines[i], lines[i + 1]) and (s := stutter(out[i + 1])):
+            mended[i] = s
+    return mended
+
+
 TRANSIENT_ERRORS = ("Channel Error", "predict request failed: fetch failed")
 
 

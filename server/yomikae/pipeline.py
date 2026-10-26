@@ -17,7 +17,7 @@ from . import balloon, detect, inpaint, ocr, typeset
 from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, Settings
 from .model import Bubble, ContextLine
-from .translate import Context, PageImage, Translator, make_translator, subset, translate_lines
+from .translate import Context, PageImage, Translator, make_translator, mend_stutters, subset, translate_lines
 
 T = TypeVar("T")
 PIPELINE_VERSION = 25
@@ -216,4 +216,4 @@ async def translate_page(translator: Translator, store: ContextStore, lines: lis
     )
     context = subset(context, [i for i, known in enumerate(recalled) if known is None])
     fresh = iter(await translate_lines(translator, todo, context) if todo else [])
-    return [known if known is not None else next(fresh) for known in recalled]
+    return mend_stutters(lines, [known if known is not None else next(fresh) for known in recalled])
