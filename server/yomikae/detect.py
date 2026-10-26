@@ -32,7 +32,7 @@ LINE_SEG_SUPPORT = 0.2
 LINE_SCORE = 0.6
 LINE_UNCLIP = 1.5
 LINE_BLOCK_FLOOR = 0.04
-LINE_BLOCK_IOU = 0.3
+LINE_IN_BLOCK = 0.5
 INVERTED_IOU = 0.1
 INVERTED_DARK = 0.4
 JOIN_WIDTH_RATIO = 1.3
@@ -79,6 +79,12 @@ def iou(box: Box, others: np.ndarray) -> np.ndarray:
     return inter / (box.w * box.h + (others[:, 2] - others[:, 0]) * (others[:, 3] - others[:, 1]) - inter)
 
 
+def share_inside(box: Box, others: np.ndarray) -> np.ndarray:
+    ix = np.clip(np.minimum(others[:, 2], box.x1) - np.maximum(others[:, 0], box.x0), 0, None)
+    iy = np.clip(np.minimum(others[:, 3], box.y1) - np.maximum(others[:, 1], box.y0), 0, None)
+    return ix * iy / max(1, box.w * box.h)
+
+
 def decode_blocks(blk: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     scores_all = blk[:, 4:5] * blk[:, 5:]
     scores = scores_all.max(1)
@@ -113,7 +119,7 @@ def drop_merged_blocks(boxes: list[Box]) -> list[Box]:
     return [b for b in boxes if sum(o is not b and contains(b, o) for o in boxes) < 2]
 
 
-def lobes(interior: np.ndarray) -> np.ndarray:
+def lobe_marks(interior: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
     d = cv2.distanceTransform(np.pad(interior, 1).astype(np.uint8), cv2.DIST_L2, 3)[1:-1, 1:-1]
     step = max(1, -(-max(d.shape) // LOBE_SCAN))
     small = d[::step, ::step]
@@ -128,15 +134,25 @@ def lobes(interior: np.ndarray) -> np.ndarray:
             if peak >= LOBE_MIN_PEAK * top and peak - level >= LOBE_PROMINENCE * peak and not any((comp & seed).any() for seed in seeds):
                 seeds.append(comp)
     if len(seeds) < 2:
-        return np.zeros(interior.shape, np.int32)
+        return None
     marks = np.zeros(small.shape, np.uint8)
     for i, seed in enumerate(seeds):
         marks[seed] = i + 1
-    marks = cv2.resize(marks, (d.shape[1], d.shape[0]), interpolation=cv2.INTER_NEAREST) * interior
+    return d, cv2.resize(marks, (d.shape[1], d.shape[0]), interpolation=cv2.INTER_NEAREST) * interior
+
+
+def nearest_mark(marks: np.ndarray) -> np.ndarray:
     _, near = cv2.distanceTransformWithLabels((marks == 0).astype(np.uint8), cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
     ys, xs = np.nonzero(marks)
     owner = np.concatenate([[0], marks[ys, xs].astype(np.int32) - 1])
     return owner[near]
+
+
+def lobes(interior: np.ndarray) -> np.ndarray:
+    found = lobe_marks(interior)
+    if found is None:
+        return np.zeros(interior.shape, np.int32)
+    return nearest_mark(found[1])
 
 
 def column_width(mask: np.ndarray, vertical: bool) -> int:
@@ -328,7 +344,7 @@ def uncovered_lines(prob: np.ndarray, seg: np.ndarray, boxes: list[tuple[float, 
         area = sum(m[1] for m in members)
         score = sum(m[2] for m in members) / area
         support = float(seg[box.y0 : box.y1, box.x0 : box.x1].mean())
-        if area >= LINE_GROUP_PIXELS and score >= LINE_SCORE and support >= LINE_SEG_SUPPORT and (iou(box, weak) > LINE_BLOCK_IOU).any():
+        if area >= LINE_GROUP_PIXELS and score >= LINE_SCORE and support >= LINE_SEG_SUPPORT and (share_inside(box, weak) >= LINE_IN_BLOCK).any():
             out.append((box.x0, box.y0, box.x1, box.y1))
     return out
 
