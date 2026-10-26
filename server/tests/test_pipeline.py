@@ -417,6 +417,20 @@ def test_a_channel_error_that_persists_fails_the_page_with_a_clear_error(client)
     assert "Channel Error" in body["detail"] and "HTTPStatusError" not in body["detail"], body
 
 
+def test_a_failed_fetch_inside_lm_studio_is_resent_and_the_page_translates(client):
+    translator, calls = lm_studio([(400, "Engine protocol predict request failed: fetch failed"), (200, None)])
+    r = post_page_with(client, translator, 223)
+    assert r.status_code == 200, r.text
+    assert len(calls) == 2
+
+
+def test_a_request_over_the_context_size_is_not_resent(client):
+    translator, calls = lm_studio([(400, "Engine protocol predict request returned 400: request (9001 tokens) exceeds the available context size (8192 tokens)")])
+    r = post_page_with(client, translator, 224)
+    assert len(calls) == 1
+    assert r.status_code == 500 and r.json()["error"] == "translator_error"
+
+
 def test_another_400_from_the_translator_is_not_resent(client):
     translator, calls = lm_studio([(400, "'messages' field is required")])
     r = post_page_with(client, translator, 222)

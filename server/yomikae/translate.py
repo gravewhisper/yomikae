@@ -202,6 +202,13 @@ async def translate_lines(translator: Translator, lines: list[str], context: Con
     return out
 
 
+TRANSIENT_ERRORS = ("Channel Error", "predict request failed: fetch failed")
+
+
+def transient(r: httpx.Response) -> bool:
+    return r.status_code == 400 and any(e in r.text for e in TRANSIENT_ERRORS)
+
+
 class OpenAICompatible:
     retry_delays = (0.5, 1.0)
 
@@ -225,13 +232,13 @@ class OpenAICompatible:
                 r = await self.client.post(f"{self.base}/chat/completions", json=body)
             except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
                 raise TranslatorUnavailable(f"{self.base} unreachable: {e!r}") from e
-            if delay is None or not (r.status_code == 400 and "Channel Error" in r.text):
+            if delay is None or not transient(r):
                 break
             await asyncio.sleep(delay)
         if r.status_code >= 500 or r.status_code in (401, 403, 404):
             raise TranslatorUnavailable(f"{self.base} returned {r.status_code}: {r.text[:200]}")
         if r.status_code >= 400:
-            tries = f" after {len(self.retry_delays) + 1} tries" if "Channel Error" in r.text else ""
+            tries = f" after {len(self.retry_delays) + 1} tries" if transient(r) else ""
             raise TranslatorFailed(f"translator at {self.base} returned {r.status_code}{tries}: {r.text[:200]}")
         try:
             reply = r.json()
