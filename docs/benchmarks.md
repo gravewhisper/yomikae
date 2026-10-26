@@ -119,6 +119,19 @@ Translation wording changes between runs, and different wording breaks lines dif
 
 Replay looks translations up by their Japanese source text. A line whose OCR reading changed has no match, so it still goes to the translator.
 
+## A development set check
+
+While you develop, check a change on pages that are not held out. Build a folder of OpenMantra pages, run `tools/eval_pages.py` at the base commit, then at the change with `--replay` pointed at the base run's `summary.json`, and compare the two summaries bubble by bubble.
+
+On 2026-10-27 the split and centring fixes for the 2026-10-26 reports were checked this way on 46 OpenMantra pages: every fifth page of each of the 5 works, plus rasetugari 030 and 039, which held wrong splits. Both runs used Anime Ace and replayed one Gemma 4 12B run's translations, so only the 2 merged blocks got fresh translations.
+
+- Bubbles: 289 before, 288 after. The 2 wrong splits became whole blocks.
+- Size: of the 286 bubbles whose block was unchanged, 282 kept their size, 1 grew by 1 px and 3 shrank by 1 to 3 px. Those 4 moved with their page's target size, and one of them, on the page whose split was fixed, lost the shout face because the page's median glyph size moved.
+- Placement: 61 bubbles moved without a size change, from laying text out at the centroid.
+- Splits over all 214 OpenMantra pages, from detection alone: 66 before, 68 after. Two wrong splits are gone, and the 4 new ones separate two real bubbles or bubble text from speed lines.
+
+On the reported pages themselves, 7 pages from one gallery, the big toned bubbles went from 7 to 15 px to 16 to 18 px. On a page from another gallery, one bubble gained the shout face the same way the OpenMantra bubble lost it: merging a stepped balloon's two blocks moved the page's median glyph size, and the bubble's ratio went from 1.71 to 1.86, past the 1.8 rule.
+
 ## Avoid these mistakes
 
 **Use the same lettering font in every checkout.** Anime Ace 2 is ignored by git, so a new worktree does not have it, and the server silently falls back to the bundled Shantell Sans. One comparison was void because the run in a worktree set dialogue in the bundled font while the base used Anime Ace, which changed sizes on most bubbles. Link or copy `server/fonts/animeace2_reg.ttf` into each worktree, and check that `dialogue_font` in `meta.json` matches between the runs you compare. The first line of `scorecard.md` shows it too.

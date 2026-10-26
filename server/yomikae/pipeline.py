@@ -20,7 +20,7 @@ from .model import Bubble, ContextLine
 from .translate import Context, PageImage, Translator, make_translator, subset, translate_lines
 
 T = TypeVar("T")
-PIPELINE_VERSION = 24
+PIPELINE_VERSION = 25
 STAGES = ("detect", "balloons", "ocr", "translate", "inpaint", "typeset")
 WEBP_QUALITY = 90
 JPEG_QUALITY = 90

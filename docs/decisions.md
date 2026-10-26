@@ -28,6 +28,24 @@ If none reaches the floor, the bubble takes the largest of those fits, which can
 
 **Tried and rejected.** Treating a `!!` ending as a shout, and an earlier burst rule based only on pointed lobes, which found 28% of bursts at 71% precision.
 
+## A block is split per bubble, never per column
+
+**Decision.** `detect.split_by_bubble` cuts a detected block only where its text sits in different bubbles or in different lobes of one bubble. A light area counts as a bubble only when it holds at least 3 times as many pixels as the text inside it. Lighter areas than that are the slivers around white-edged lettering in a toned bubble, and all of them in one block count as one area. Lobes are seeded at every level of the distance map, not only at the level with the most peaks. Each run of text, joined along the reading direction, goes to one part.
+
+**Why.** On 2026-10-26 the owner reported big bubbles with very small, narrow text, a bubble read as three, a lobe left empty, a double bubble with all its text in one lobe, and a kana left on the page. All five came from this function, added on 2026-10-25 (5f4b46c). In a toned or gradient bubble (median gray 133 to 179 on the reported pages) only the white edge around each column is light, so every column became its own block, its own translation fragment, and its own sliver of the shared balloon, lettered at 7 to 15 px with the face squeezed to 70%. The slivers held 1.1 to 2.4 times their text's pixels. Real bubbles held 3.8 times or more on the reported pages and 5.0 times or more on all 63 correct splits over the 214 OpenMantra pages, so 3 sits in the gap. The three OpenMantra splits under 3.5 were wrong splits too. Lobe seeding at one level missed a third lobe whose neck sat lower than the other two necks (peaks 107, 90 and 56, the second merging at 72 before the third appeared at 56). Glyph pixels that crossed a lobe boundary by 3 px made two lobes look like one broken column.
+
+Typesetting did not cause the small text. With the reported pages' detection held fixed, the typesetting of every commit back to 0b842ac (2026-10-25) letters those columns at 10 to 15 px. c5fd2c4 took one of them from 10 px to 7 px by shrinking it inside its sliver rather than letting it overflow. With the blocks whole, the same bubbles get 16 to 18 px at today's rules, with no squeeze.
+
+**Measured.** On the 214 OpenMantra pages the split count went from 66 to 68: the 2 wrong splits are gone and 4 new ones each separate two real bubbles, or bubble text from speed lines. On a 46-page OpenMantra development set (every fifth page of each work, plus the two pages with wrong splits), with translations replayed, 2 blocks changed (both wrong splits made whole, and one of them no longer leaves a kana on the page) and no bubble lost its text. [benchmarks.md](benchmarks.md#a-development-set-check) has the size counts.
+
+**Tried and rejected.** Nothing else was built. A rule from the median gray alone would not work: the reported toned bubbles ranged from 133 to 240, and an OpenMantra white bubble with a dark outline also split its columns.
+
+## Text sits at the bubble's centroid
+
+**Decision.** A block is laid out around the centroid of the bubble interior. The centre of the largest inscribed circle is a fallback for a number of lines that does not fit at the centroid.
+
+**Why.** The layout used to try both points and keep whichever lined better. In an egg-shaped bubble the inscribed circle sits at the widest row, and the wider rows always lined better, so the owner reported text set low: 58 px below the centroid on that page. The guide asks for the block centred vertically. On the 46-page development set, 61 of 288 bubbles moved, most by a few pixels and a few by up to about a line toward the middle, and none changed size from this rule alone.
+
 ## Honorifics are kept
 
 **Decision.** The translation keeps Japanese honorifics, romanized and joined to the name with a hyphen: -san, -chan, -kun, -sama, -senpai, -sensei, -dono, and -tan. They never become Mr., Ms., or Teacher. The system prompt in `server/yomikae/translate.py` says so.

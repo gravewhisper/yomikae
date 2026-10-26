@@ -150,8 +150,10 @@ ones. It has two parts: the overall shape of the block, and where each break fal
   from the cap height of the first line to the baseline of the last line, ignoring descenders and trailing
   leading. Put it at the centroid of the bubble interior, or at the center of the largest inscribed circle for
   lopsided bubbles. Check that the top and bottom margins differ by less than about 10% (suggested).
-- **Ours:** Mostly yes. Lines are centered on `cx`. The block is centered on the line-box stack, which uses
-  ascent plus descent times 1.12. With all-caps text the visible ink sits a little high, because the descender
+- **Ours:** Mostly yes. The block is centred on the interior's centroid, and on the largest inscribed circle only when
+  the lines do not fit at the centroid. Choosing whichever of the two lined better put text at the widest row of
+  egg-shaped bubbles, 58 px below the centroid on one reported page. Lines are centered on `cx`. The block is
+  centered on the line-box stack, which uses ascent plus descent times 1.12. With all-caps text the visible ink sits a little high, because the descender
   space at the bottom is empty. Comic Neue's ascent also includes accent room. It is a small offset, but
   visible in short bubbles.
 
