@@ -55,6 +55,12 @@ describe('image fetching', () => {
       const failed = tab.received.find((m) => m.key === url && m.type === 'failed');
       assert.ok(failed?.type === 'failed' && !failed.retryable && failed.error.includes(new URL(url).hostname), url);
     }
+    const report = { want: want(local[0] ?? ''), pageUrl: 'https://reader.example/chapter/1', imageUrl: local[0] ?? '', note: '', jobState: 'failed', jobError: null, areas: [] };
+    tab.send({ type: 'report', report });
+    await tick();
+    assert.deepEqual(requested(), []);
+    const reported = tab.received.find((m) => m.type === 'reported');
+    assert.ok(reported?.type === 'reported' && !reported.outcome.ok);
   });
 
   it('still fetches images on the web, and images on this computer for a page on this computer', async () => {

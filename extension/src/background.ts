@@ -15,6 +15,7 @@ const SLOW_HOST_PENALTY_MS = 10 * 60_000;
 const HEALTH_BACKOFF_MS = [2_000, 4_000, 8_000, 16_000, 30_000];
 const HEALTH_TIMEOUT_MS = 5_000;
 const SERVER_DOWN_STATUSES = new Set([502, 503, 504]);
+const LOOPBACK = /^(localhost|.+\.localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1?\]|\[::ffff:(7f[0-9a-f]{2}|0):[0-9a-f]+\])$/;
 
 type Entry = {
   want: Want;
@@ -90,7 +91,23 @@ function sendCached(port: chrome.runtime.Port, key: string): boolean {
   return true;
 }
 
+function isLoopback(url: string): boolean {
+  try {
+    return LOOPBACK.test(new URL(url).hostname.replace(/\.$/, ''));
+  } catch {
+    return false;
+  }
+}
+
+function loopbackRefusal(port: chrome.runtime.Port, w: Want): string | undefined {
+  if (isLoopback(port.sender?.tab?.url ?? '')) return undefined;
+  const url = w.candidates.find(isLoopback);
+  return url && `Refused to fetch ${new URL(url).hostname}: a web page cannot load images from this computer.`;
+}
+
 function want(port: chrome.runtime.Port, w: Want): void {
+  const refusal = loopbackRefusal(port, w);
+  if (refusal) return send(port, { type: 'failed', key: w.key, error: refusal, retryable: false });
   if (sendCached(port, w.key)) return;
   const existing = entries.get(w.key);
   if (existing) {
@@ -327,6 +344,8 @@ async function translate(image: Blob, w: Want): Promise<Ready> {
 
 async function report(port: chrome.runtime.Port, r: ReportRequest): Promise<void> {
   const { key } = r.want;
+  const refusal = loopbackRefusal(port, r.want);
+  if (refusal) return send(port, { type: 'reported', key, outcome: { ok: false, error: refusal } });
   try {
     const image = originals.get(key) ?? (await fetchImage(r.want.candidates));
     remember(originals, key, image, ORIGINALS_LIMIT);
