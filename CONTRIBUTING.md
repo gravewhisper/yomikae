@@ -56,19 +56,6 @@ Pull requests are squash-merged, so the pull request title becomes the commit on
 git config core.hooksPath .githooks
 ```
 
-## Releases
-
-Versions follow [Semantic Versioning](https://semver.org/). While the version starts with 0, a release with any `feat` raises the middle number, such as 0.1.0 to 0.2.0, and a release with only fixes raises the last one, such as 0.1.0 to 0.1.1.
-
-To cut a release:
-
-1. Set the new version in `server/pyproject.toml`, `server/yomikae/__init__.py` and `extension/static/manifest.json`.
-2. Add a section to [CHANGELOG.md](CHANGELOG.md) built from the `feat` and `fix` commits since the last tag.
-3. Commit both as `chore(release): v0.2.0` and merge it to `main`.
-4. Tag that commit `v0.2.0` with `git tag -a`, push the tag, and publish a GitHub release with the changelog section as its notes.
-
-Version tags are protected, so a tag can't be moved or deleted once it is pushed.
-
 ## Rules
 
 These come from [AGENTS.md](AGENTS.md), and pull requests that break them can't be merged:
