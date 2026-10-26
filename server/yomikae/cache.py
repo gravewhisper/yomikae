@@ -7,7 +7,6 @@ import shutil
 import tempfile
 import threading
 import unicodedata
-from collections import Counter
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -208,16 +207,19 @@ class ContextStore:
         return [lookup(known, normalize(s)) for s in sources]
 
     def names(self, key: str | None) -> dict[str, str]:
-        counts: Counter[str] = Counter()
-        sources: dict[str, str] = {}
-        for line in self.memory(key):
-            for m in NAME.finditer(line.translation):
-                counts[m.group(0)] += 1
-                sources.setdefault(m.group(0), line.source)
+        seen: dict[str, dict[str, str]] = {}
         kept: dict[str, str] = {}
-        for name, _ in counts.most_common():
-            if not any(same_name(name, k) for k in kept):
-                kept[name] = sources[name]
+        pages = self.pages.get(key, {}) if key else {}
+        for p in sorted(pages):
+            for line in pages[p]:
+                for m in NAME.finditer(line.translation):
+                    name = m.group(0).rsplit("-", 1)[0]
+                    if name not in kept:
+                        seen.setdefault(name, {}).setdefault(normalize(line.source), line.source)
+            kept = {}
+            for name, lines in sorted(seen.items(), key=lambda item: -len(item[1])):
+                if not any(same_name(name, k) for k in kept):
+                    kept[name] = next(iter(lines.values()))
         return kept
 
 
@@ -249,5 +251,4 @@ def edit_distance(a: str, b: str) -> int:
 
 
 def same_name(a: str, b: str) -> bool:
-    (base_a, honorific_a), (base_b, honorific_b) = a.rsplit("-", 1), b.rsplit("-", 1)
-    return honorific_a == honorific_b and SequenceMatcher(None, base_a, base_b).ratio() >= NAME_RATIO
+    return SequenceMatcher(None, a, b).ratio() >= NAME_RATIO

@@ -70,15 +70,38 @@ Typesetting did not cause the small text. With the reported pages' detection hel
 
 **Why.** It is a style choice. The English keeps what the Japanese says about how characters address each other. On OpenMantra, the professional reference keeps the honorific on only 14 of the 27 lines that attach one to a name, so `translation_bench.py` reports honorifics as their own count beside the reference's.
 
+An honorific is added only where the Japanese has one. Gemma used to add one to bare names: on OpenMantra 28 lines put a romanized honorific after a name the Japanese line gave none, 31 on Naruto volume 1 and 12 on volume 68 (on 2026-10-26, main at 211fbb9). The name list then carried the honorific to later pages, so a bare 宏也 came out as "Hiroya-kun" because an earlier line had. The prompt now says a bare name stays bare, and the name list holds names without their honorifics. With both, the counts fell to 11, 10 and 4. The honorifics kept on names that have one moved by 1 to 2 lines (26 to 25 of 27 on OpenMantra), which is within run-to-run noise.
+
+**Family words.** A family term is translated either whole into English (big brother, mom) or whole into romanized Japanese with its honorific (Onii-sama). An English word never carries a Japanese honorific, as in "Brother-sama". The prompt says only names, honorifics and family terms said with an honorific are romanized, and that a family term is romanized whole or translated whole. `translate_lines` also strips an honorific from an English family word, because the prompt alone missed once. The old wording, "Only names and honorifics are romanized", made Gemma translate 兄 and keep さま: rasetugari's 兄さま came out as "Brother-sama" in all 4 runs without the new wording, and the name list then listed it as a name. With the お兄ちゃん example below, it had been "Onii-sama". With the new wording it was "Big brother" in 4 of 5 runs and "Brother-sama" in 1. お姉ちゃん stayed "big sister" on all 28 lines in each of those runs.
+
 **Tried and rejected.** Naming kinship terms in the prompt. With "keep terms like お兄ちゃん as Onii-chan", Gemma 4 12B and Hy-MT2 7B both wrote Onii-chan, big brother, for お姉ちゃん, big sister: on boureisougi, Gemma did so on 7 to 14 lines per run over 3 runs. Naming お姉ちゃん as Onee-chan too stopped that, but then Gemma wrote Suzume-san for ツバメさん, her sister, in 5 of 6 runs. With no kinship example, both mistakes were gone in 3 of 3 runs, and お姉ちゃん reads as big sister.
 
 ## A whole page goes to the translator in one call
 
 **Decision.** The translator gets every line of a page in one call. The call also carries up to 2 earlier pages of the same work, taken only from the 5 pages before this one, the names the work already uses, and the lines of this page that already have a translation. A line that matches a line already translated in the same work reuses that translation and is not sent.
 
-**Why.** Japanese often splits one sentence over two or three bubbles, with the object before the verb. Translating the page in reading order lets the model move words between a speaker's consecutive bubbles so each reads naturally in English. Earlier pages resolve who is speaking and keep the tone. The name list keeps spellings the same from page to page. Each name goes with a Japanese line it was translated from, because a bare list of English names reads as a list of who is in the work: on boureisougi, Gemma 4 12B wrote Suzume-san, a listed name, for ツバメさん, her sister, who was not in the list, in 3 of 3 runs, and in none of 3 once each name carried its line. Reused lines make a recurring caption read the same on every page. After a jump ahead, older pages say nothing about the current one, so context stops at 5 pages back.
+**Why.** Japanese often splits one sentence over two or three bubbles, with the object before the verb. Translating the page in reading order lets the model move words between a speaker's consecutive bubbles so each reads naturally in English. Earlier pages resolve who is speaking and keep the tone. The name list keeps spellings the same from page to page. A line counts toward a spelling only when the model wrote that spelling while the list did not already give it, so copies of a listed spelling add nothing. A name misread once by OCR can still be listed first, but a spelling the model writes against it on later lines overtakes it, where before the copies kept the first spelling forever. On the benchmark books, which have no misreads, the list held the same names on every page as before. Each name goes with a Japanese line it was translated from, because a bare list of English names reads as a list of who is in the work: on boureisougi, Gemma 4 12B wrote Suzume-san, a listed name, for ツバメさん, her sister, who was not in the list, in 3 of 3 runs, and in none of 3 once each name carried its line. Reused lines make a recurring caption read the same on every page. After a jump ahead, older pages say nothing about the current one, so context stops at 5 pages back.
 
-**Tried and rejected.** Reusing very short lines. On the translation benchmark, one wrong translation of `？` was reused across a whole series. Lines with fewer than 2 letters, kana, or kanji are now always sent to the model.
+**Tried and rejected.**
+
+- Listing a name only once two lines use it. It delayed the list until the model had drifted: on tencho_isoro, 店長 came out five ways (you, Manager-san, Tencho, Manager, Shop Manager-san) in each of two runs, where the one-line list held one form on 15 or 16 lines.
+- Reusing very short lines. On the translation benchmark, one wrong translation of `？` was reused across a whole series. Lines with fewer than 2 letters, kana, or kanji are now always sent to the model.
+
+## A cut-off sound before the same sound is a stutter
+
+**Decision.** A bubble that holds only one kana, with or without っ, dots or a dash, followed by a bubble that starts with the same kana, is lettered as a stutter of the next bubble's first English word, for example "D-" before "Don't mess with me!". The rule skips a bubble ending in ！ or ？, a next bubble that repeats the sound, as a laugh like はは does, and a bare あ, い, う, え or お. It runs after translation in `translate_page`, so the model sees the same lines as before.
+
+**Why.** Gemma read the first bubble as a word of its own: ふっ before ふざけんなっ came out as "Heh.". On OpenMantra, 5 bubble pairs fit the rule, and it changed 4 lines of the 2026-10-26 main run: 2 real stutters fixed, 1 already right and now written the same way as the rest, and 1 that follows a mistranslated next bubble. Naruto volumes 1 and 68 have no such pairs. Blank lines stayed at 32. COMET fell from 0.7472 to 0.7468 because it scores a one-letter fragment low even where the reference has one, as "Wh..." to "Wh-" shows, so the lines were judged by reading them.
+
+**Tried and rejected.** Counting a bare vowel. あ before ありがとう became "Th-", where the reference reads "oh...".
+
+## A bare うち is the speaker
+
+**Decision.** The prompt says that うち or ウチ on its own is usually the speaker's "I", "me" or "my", or the speaker's home or family, and is "we", "us" or "our" only when the speaker clearly speaks for a group.
+
+**Why.** It is a common first person for girls and in Kansai speech. On ten lines written for the test, each sent alone three times, うちな ("I tell you") became the name "Uchina" in 3 of 3 runs before and 0 of 3 after. Neither side wrote "we", "us" or "our" for a first-person うち, and on the benchmark books the 6 bare うち lines read the same before and after. The Uchiha clan, うちは, stayed "Uchiha" on 13 of 13 lines in 3 of 4 runs; one run wrote it as "Uchi-" once. The "us" and "our" mistakes that prompted this showed only on an abliterated Q6 build of Gemma.
+
+The wording changes of 2026-10-26 (this one, stutters, family words, added honorifics and the name count) together left COMET within noise on all three books: OpenMantra 0.7472 before and 0.7474 after, Naruto volume 1 0.6704 and 0.6711, volume 68 0.7809 and 0.7820.
 
 ## The translator replies with a list of strings
 
