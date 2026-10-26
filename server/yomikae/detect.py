@@ -22,6 +22,7 @@ LOBE_LEVELS = 40
 LOBE_SCAN = 64
 LOBE_MIN_PEAK = 0.4
 MIN_PART_SHARE = 0.1
+PAPER = 3
 STRADDLE = 0.1
 OVERLAP_FRAC = 0.3
 BUBBLE_REACH = 4
@@ -117,17 +118,16 @@ def lobes(interior: np.ndarray) -> np.ndarray:
     step = max(1, -(-max(d.shape) // LOBE_SCAN))
     small = d[::step, ::step]
     top = float(small.max())
-    seeds, count = None, 1
+    seeds: list[np.ndarray] = []
     for k in range(1, LOBE_LEVELS):
         level = top * (1 - k / LOBE_LEVELS)
         n, lab = cv2.connectedComponents((small > level).astype(np.uint8), connectivity=8)
-        peaks = [
-            i for i in range(1, n)
-            if (peak := float(small[lab == i].max())) >= LOBE_MIN_PEAK * top and peak - level >= LOBE_PROMINENCE * peak
-        ]
-        if len(peaks) > count:
-            seeds, count = [lab == i for i in peaks], len(peaks)
-    if seeds is None:
+        for i in range(1, n):
+            comp = lab == i
+            peak = float(small[comp].max())
+            if peak >= LOBE_MIN_PEAK * top and peak - level >= LOBE_PROMINENCE * peak and not any((comp & seed).any() for seed in seeds):
+                seeds.append(comp)
+    if len(seeds) < 2:
         return np.zeros(interior.shape, np.int32)
     marks = np.zeros(small.shape, np.uint8)
     for i, seed in enumerate(seeds):
@@ -160,9 +160,11 @@ def split_by_bubble(gray: np.ndarray, block: TextBlock) -> list[TextBlock]:
     light[ty[seen], tx[seen]] = 255
     light = cv2.erode(light, np.ones((3, 3), np.uint8))
     n, labels, stats, _ = cv2.connectedComponentsWithStats(light, connectivity=4)
+    held = np.bincount(labels[ty[seen], tx[seen]], minlength=n)
     sh, sw = light.shape
     part = np.full(light.shape, -1, np.int32)
     parts = 0
+    halo = -1
     for i in np.flatnonzero(stats[1:, 4] >= MIN_PART_SHARE * len(ty)) + 1:
         x, y, cw, ch, _ = (int(v) for v in stats[i])
         if (x == 0 and search.x0 > 0) or (y == 0 and search.y0 > 0) or (x + cw == sw and search.x1 < w) or (y + ch == sh and search.y1 < h):
@@ -176,6 +178,11 @@ def split_by_bubble(gray: np.ndarray, block: TextBlock) -> list[TextBlock]:
         inside = inside > 0
         if not inside[ty[here] - y, tx[here] - x].any():
             continue
+        if stats[i, 4] < PAPER * held[i]:
+            if halo < 0:
+                halo, parts = parts, parts + 1
+            part[y : y + ch, x : x + cw][inside] = halo
+            continue
         sub = lobes(inside)
         part[y : y + ch, x : x + cw][inside] = parts + sub[inside]
         parts += int(sub.max()) + 1
@@ -186,7 +193,8 @@ def split_by_bubble(gray: np.ndarray, block: TextBlock) -> list[TextBlock]:
     text[ty, tx] = 1
     reach = 2 * column_width(block.mask > 0, block.vertical)
     kernel = np.ones((reach, 1) if block.vertical else (1, reach), np.uint8)
-    columns = cv2.morphologyEx(cv2.morphologyEx(text, cv2.MORPH_CLOSE, kernel), cv2.MORPH_OPEN, kernel) * (part >= 0)
+    closed = cv2.morphologyEx(text, cv2.MORPH_CLOSE, kernel)
+    columns = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel) * (part >= 0)
     count, col = cv2.connectedComponents(columns.astype(np.uint8), connectivity=8)
     group = list(range(parts))
 
@@ -201,6 +209,10 @@ def split_by_bubble(gray: np.ndarray, block: TextBlock) -> list[TextBlock]:
         for p in crossed[1:]:
             group[p] = crossed[0]
     owner = np.array([root(p) if p >= 0 else -1 for p in range(-1, parts)])[owner + 1]
+    run = cv2.connectedComponents(closed | text, connectivity=8)[1][ty, tx]
+    for r in np.unique(run[owner >= 0]):
+        mine = (run == r) & (owner >= 0)
+        owner[mine] = np.bincount(owner[mine]).argmax()
     shares = np.bincount(owner[owner >= 0], minlength=parts) / len(owner)
     kept = [p for p in range(parts) if shares[p] >= MIN_PART_SHARE]
     if len(kept) < 2:
