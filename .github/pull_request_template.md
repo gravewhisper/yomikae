@@ -1,3 +1,5 @@
+<!-- Title: type(scope): description, such as fix(typeset): keep lettering inside its bubble. It becomes the commit on main. -->
+
 ## What this changes
 
 ## Why

@@ -67,7 +67,7 @@ Never use sexual content that involves minors or characters who look like minors
 
 - Write no code comments. Remove comments you find in code you touch. Keep pragmas such as `# noqa: E402`.
 - Match the style of the surrounding code: naming, file layout, and how much each line does.
-- Write commit messages as one plain sentence in the imperative that says what changed, as the history does.
+- Write commit messages as [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): description`, at most 100 characters, with no trailing period, for example `fix(typeset): keep lettering inside its bubble`. [CONTRIBUTING.md](CONTRIBUTING.md#commit-messages) lists the types and scopes. CI checks every commit pushed to `main` and every pull request title.
 
 ## Keep the docs and cache in step
 
