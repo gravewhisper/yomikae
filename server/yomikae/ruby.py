@@ -32,6 +32,8 @@ SMALL_Y = {"ゃ": "a", "ゅ": "u", "ょ": "o"}
 BIG_Y = {"ゃ": "や", "ゅ": "ゆ", "ょ": "よ"}
 NO_GEMINATE = set("あいうえおなにぬねのまみむめもやゆよらりるれろわをんっゃゅょぁぃぅぇぉー")
 NAME_SPAN = 3
+MIN_NAME_KANJI = 2
+TITLES = {"san", "kun", "chan", "sama", "senpai", "sensei", "dono", "tan"}
 INK = 150
 RUBY_WIDTH = 0.62
 RUBY_GAP = 0.7
@@ -111,13 +113,13 @@ def spelled(reading: str, translation: str) -> str | None:
 def furigana_names(lines: list[str], translations: list[str], ruby: list[tuple[str, str]]) -> list[CastEntry]:
     found: dict[str, CastEntry] = {}
     for base, reading in ruby:
-        if base in found or not KANJI.search(base):
+        if base in found or len(KANJI.findall(base)) < MIN_NAME_KANJI:
             continue
         for line, text in zip(lines, translations):
             if base not in line or not text:
                 continue
             name = spelled(reading, text)
-            if name:
+            if name and name.lower() not in TITLES:
                 found[base] = CastEntry(base, name, hiragana(reading), "furigana")
                 break
     return list(found.values())
