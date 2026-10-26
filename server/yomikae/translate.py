@@ -75,7 +75,7 @@ class Translator(Protocol):
 SYSTEM_PROMPT = """You translate Japanese manga dialogue into English for an in-place scanlation.
 Write natural, casual English that sounds like real people talking in a manga, not a literal gloss.
 Keep each line about as short as the original so it fits the speech bubble.
-Keep Japanese honorifics, romanized and joined to the name with a hyphen (-san, -kun, -chan, -sama, -senpai, -sensei, -dono, -tan). Never turn them into Mr., Ms., or Teacher. For example, 田中さん is "Tanaka-san" and ゆき先輩 is "Yuki-senpai". Only names and honorifics are romanized; translate everything else into English.
+Keep Japanese honorifics, romanized and joined to the name with a hyphen (-san, -kun, -chan, -sama, -senpai, -sensei, -dono, -tan). Never turn them into Mr., Ms., or Teacher. For example, 田中さん is "Tanaka-san" and ゆき先輩 is "Yuki-senpai". Only names, honorifics, and family terms said with an honorific are romanized; translate everything else into English. Never attach a Japanese honorific to an English word: a family term with an honorific is romanized whole, or else translated into plain English with no honorific.
 Keep symbols like ♡, ♥, and ♪ where the original has them.
 On its own, うち or ウチ is usually the speaker's own "I", "me" or "my", or the speaker's home or family; write "we", "us" or "our" only when the speaker clearly speaks for a group.
 "names" maps each name this work already uses to a Japanese line it was translated from; when that character appears, spell the name exactly that way.
@@ -193,6 +193,13 @@ async def aligned(translator: Translator, lines: list[str], context: Context) ->
         return first + await aligned(translator, lines[mid:], subset(context, range(mid, len(lines))))
 
 
+KIN_HONORIFIC = re.compile(r"\b(brother|sister|bro|sis|mother|father|mom|mum|dad|grandpa|grandma|granny|grandmother|grandfather|uncle|aunt|auntie)-(?:sama|chan|san|kun|dono|tan)\b", re.I)
+
+
+def plain_kin(text: str) -> str:
+    return KIN_HONORIFIC.sub(r"\1", text)
+
+
 async def translate_lines(translator: Translator, lines: list[str], context: Context) -> list[str]:
     out = await aligned(translator, lines, context)
     echoes = [i for i, (source, text) in enumerate(zip(lines, out)) if text and untranslated(source, text)]
@@ -200,7 +207,7 @@ async def translate_lines(translator: Translator, lines: list[str], context: Con
         retry = await aligned(translator, [lines[i] for i in echoes], subset(context, echoes))
         for i, text in zip(echoes, retry):
             out[i] = "" if untranslated(lines[i], text) else text
-    return out
+    return [plain_kin(text) for text in out]
 
 
 CUT_SOUND = re.compile(r"([\u3041-\u3096\u30a1-\u30f6])[っッ]?[\s.…‥・―─\-、]*")

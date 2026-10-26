@@ -130,3 +130,21 @@ def test_interjections_and_drawn_out_sounds_are_not_stutters():
     lines = ["あ！", "あれは誰？", "はっ", "はは…", "あ？", "あ、あの…", "かっ…", "かかかっ", "なー", "なんで", "あ", "ありがとう"]
     out = ["Ah!", "Who's that?", "Ha!", "Haha...", "Huh?", "U-um...", "Ka...", "Kakaka", "Hey~", "Why?", "Oh.", "Thanks."]
     assert mend_stutters(lines, out) == out
+
+
+def test_an_english_family_word_never_keeps_a_japanese_honorific():
+    import asyncio
+
+    from yomikae.translate import Context, translate_lines
+
+    class Hybrid:
+        name = "hybrid"
+
+        async def translate(self, lines, context):
+            return ["Brother-sama...", "Thanks, big sister-chan!", "Onii-sama, Yuki-chan and Mom."]
+
+        async def health(self):
+            return None
+
+    out = asyncio.run(translate_lines(Hybrid(), ["兄さま…", "ありがとう、お姉ちゃん！", "お兄さま、ゆきちゃんとママ。"], Context()))
+    assert out == ["Brother...", "Thanks, big sister!", "Onii-sama, Yuki-chan and Mom."]
