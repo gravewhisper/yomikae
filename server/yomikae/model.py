@@ -55,6 +55,7 @@ class Bubble:
     translation: str = ""
     balloon: Balloon | None = None
     shared: bool = False
+    ruby: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

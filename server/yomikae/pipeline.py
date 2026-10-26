@@ -13,7 +13,7 @@ from typing import TypeVar
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
-from . import balloon, detect, inpaint, ocr, typeset
+from . import balloon, detect, inpaint, ocr, ruby, typeset
 from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, Settings
 from .model import Bubble, ContextLine
@@ -156,7 +156,8 @@ class Engine:
             with self.gpu():
                 blocks = timer.run("detect", detect.detect, self.detector, image)
                 balloons = timer.run("balloons", balloon.segment, self.balloons, image)
-                return timer.run("ocr", ocr.read, self.ocr, image, blocks, balloons)
+                bubbles, unsure = timer.run("ocr", ocr.read, self.ocr, image, blocks, balloons)
+                return timer.run("ocr", ruby.attach, self.ocr, image, bubbles), unsure
 
         def remove_text(bubbles: list[Bubble]) -> np.ndarray:
             with self.gpu():
@@ -164,7 +165,8 @@ class Engine:
 
         bubbles, unsure = await asyncio.to_thread(read_page)
         if bubbles:
-            translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer))
+            readings = [pair for b in bubbles for pair in b.ruby]
+            translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings))
             try:
                 inpainted = await asyncio.to_thread(remove_text, bubbles)
             finally:
@@ -198,10 +200,10 @@ class Engine:
         timings = {**timer.ms, "total": round((time.perf_counter() - start) * 1000)}
         return {**result, "timings_ms": timings, "cached": False}
 
-    async def _translate(self, lines: list[str], context_key: str | None, page_index: int | None, timer: Timer) -> list[str]:
+    async def _translate(self, lines: list[str], context_key: str | None, page_index: int | None, timer: Timer, readings: list[tuple[str, str]]) -> list[str]:
         t = time.perf_counter()
         try:
-            return await translate_page(self.translator, self.context, lines, context_key, page_index)
+            return await translate_page(self.translator, self.context, lines, context_key, page_index, ruby=readings)
         finally:
             timer.ms["translate"] = round((time.perf_counter() - t) * 1000)
 

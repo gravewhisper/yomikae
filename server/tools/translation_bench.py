@@ -35,7 +35,7 @@ def load_pages(annotation: Path, series: list[str]) -> tuple[list[dict], int]:
             continue
         for page in sorted(book["pages"], key=lambda p: p["page_index"]):
             kept = [t for t in page["text"] if t["text_ja"].strip()]
-            lines = [{"ja": t["text_ja"].replace("\n", ""), "ref": t["text_en"]} for t in kept]
+            lines = [{"ja": t["text_ja"].replace("\n", ""), "ref": t["text_en"], **({"ruby": t["ruby"]} if t.get("ruby") else {})} for t in kept]
             boxes = [(t["x"], t["y"], t["x"] + t["w"], t["y"] + t["h"]) for t in kept]
             dropped += len(page["text"]) - len(lines)
             image = annotation.parent / page["image_paths"]["ja"]
@@ -113,7 +113,8 @@ async def run(args) -> None:
         tokens_before = translator.prompt_tokens
         t = time.perf_counter()
         try:
-            hyps = await translate_page(translator, store, sources, series, index, page_img) if sources else []
+            ruby = [tuple(pair) for line in page["lines"] for pair in line.get("ruby", [])]
+            hyps = await translate_page(translator, store, sources, series, index, page_img, ruby) if sources else []
         except (TranslatorUnavailable, TranslatorFailed) as e:
             hyps, error = [""] * len(sources), str(e)
         ms = round((time.perf_counter() - t) * 1000)
