@@ -48,3 +48,27 @@ describe('site for a page', () => {
     assert.deepEqual([...scripts.keys()].sort(), ['site:localhost', 'site:x.com']);
   });
 });
+
+describe('turning a site off', () => {
+  it('keeps the image origins another enabled site still uses', async () => {
+    const stored = { ...enabled('*://*.x.com/*', 'x.com'), ...enabled('*://*.twitter.com/*', 'twitter.com') };
+    const { sites, revoked } = await setup(stored, ['*://*.x.com/*', '*://*.twitter.com/*', '*://pbs.twimg.com/*']);
+    const twitter = sites.siteForUrl('https://twitter.com/a');
+    const x = sites.siteForUrl('https://x.com/a');
+    assert.ok(twitter && x);
+    await sites.disableSite(twitter);
+    assert.deepEqual(revoked, ['*://*.twitter.com/*']);
+    await sites.disableSite(x);
+    assert.deepEqual(revoked, ['*://*.twitter.com/*', '*://*.x.com/*', '*://pbs.twimg.com/*']);
+  });
+
+  it('keeps an image host another enabled site recorded', async () => {
+    const stored = { ...enabled('*://*.a.example/*', 'a.example'), ...enabled('*://*.b.example/*', 'b.example'), 'imageHosts:a.example': ['cdn.example'], 'imageHosts:b.example': ['cdn.example'] };
+    const { sites, revoked, data } = await setup(stored, ['*://*.a.example/*', '*://*.b.example/*', '*://cdn.example/*']);
+    const a = sites.siteForUrl('https://a.example/');
+    assert.ok(a);
+    await sites.disableSite(a);
+    assert.deepEqual(revoked, ['*://*.a.example/*']);
+    assert.equal(data['imageHosts:a.example'], undefined);
+  });
+});
