@@ -6,7 +6,7 @@ An adapter tells the extension which images on a site are manga pages, which URL
 
 The manifest asks for `scripting`, `storage`, `activeTab`, and `declarativeNetRequestWithHostAccess`. Its host permissions cover only `http://127.0.0.1/*` and `http://localhost/*`, where the server runs. Access to any other site is an optional permission, requested one site at a time.
 
-Switching a site on in the popup requests access to `*://*.<domain>/*`, where `<domain>` is the last two labels of the page's host, plus the adapter's image hosts. On an IP address or a host without a dot, it requests `<protocol>//<host>/*` instead. The extension then registers its content script for that pattern and injects it into open tabs of the site. Switching the site off unregisters the script and gives the access back.
+Switching a site on in the popup requests access to `*://*.<domain>/*`, where `<domain>` is the page's registrable domain by the Public Suffix List, plus the adapter's image hosts. So `www.bbc.co.uk` requests `*://*.bbc.co.uk/*` and `someone.github.io` requests `*://*.someone.github.io/*`. On an IP address, a host without a dot, or a host that is itself a public suffix, it requests `<protocol>//<host>/*` instead. The extension then registers its content script for that pattern and injects it into open tabs of the site. Switching the site off unregisters the script and gives the access back, except access another enabled site still uses, such as `pbs.twimg.com` for x.com and twitter.com.
 
 `declarativeNetRequestWithHostAccess` lets the background worker set a `Referer` header on its own image requests to hosts that refuse requests without one. The session rule applies only to requests that come from no tab (tab id -1), so the site's own requests are untouched.
 
@@ -33,6 +33,7 @@ Each adapter turns an image URL into a list of candidate URLs, best first. The b
 - A candidate with no response after 2 s starts the next candidate in parallel, and its host counts as slow for 10 minutes.
 - A fetch with no first byte for 8 s, or that stalls for 8 s mid-download, is cancelled.
 - Fetches send the browser's cookies for the image host.
+- A page on the web cannot have the extension fetch an image from this computer, such as `127.0.0.1` or `localhost`. Such a page fails without **Retry**. A page served from this computer can.
 - At most 2 pages are fetched or translated at once. The page nearest to the one on screen goes first.
 
 Every adapter also gives each page a key. Two image URLs with the same key are one page and one job, so a page shown at several sizes or from several mirrors is translated once.
