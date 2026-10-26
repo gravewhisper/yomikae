@@ -165,10 +165,10 @@ def read_block(page, vertical, box=None):
 
 
 def test_furigana_beside_a_kanji_name_is_read_and_kept_out_of_the_line():
-    bubble, box = read_block(ruby_page(["桜野さんは", "どこですか"], {0: [(0, 2, "さくらの")]}, True), True)
+    bubble, _ = read_block(ruby_page(["桜野さんは", "どこですか"], {0: [(0, 2, "さくらの")]}, True), True)
     assert "さくら" not in bubble.source, bubble.source
     assert bubble.ruby == (("桜野", "さくらの"),), (bubble.source, bubble.ruby)
-    assert read_block(ruby_page(["桜野さんは", "どこですか"], {}, True), True, box)[0].ruby == ()
+    assert read_block(ruby_page(["桜野さんは", "どこですか"], {}, True), True)[0].ruby == ()
 
 
 def test_furigana_above_horizontal_text_is_read_and_two_plain_lines_are_not_ruby():
