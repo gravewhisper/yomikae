@@ -80,6 +80,8 @@ def test_a_single_kanji_is_a_name_only_when_both_languages_address_it_with_an_ho
     assert furigana_names(["鬼だ！", "炎の術"], ["An Oni!", "Honoo Jutsu!"], [("鬼", "おに"), ("炎", "ほのお")]) == []
     assert furigana_names(["皆さん！", "家には帰さんからな"], ["Everyone!", "You're not going home!"], [("皆", "みな"), ("帰", "かえ")]) == []
     assert furigana_names(["大鬼さん"], ["Ooni-san"], [("鬼", "おに")]) == []
+    assert furigana_names(["お孫様！"], ["Mago-sama!"], [("孫", "まご")]) == []
+    assert furigana_names(["孫様！"], ["Ki-sama!"], [("孫", "き")]) == []
 
 
 def test_furigana_terms_go_to_their_own_map_and_names_stay_as_before():

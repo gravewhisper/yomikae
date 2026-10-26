@@ -34,6 +34,7 @@ BIG_Y = {"ゃ": "や", "ゅ": "ゆ", "ょ": "よ"}
 NO_GEMINATE = set("あいうえおなにぬねのまみむめもやゆよらりるれろわをんっゃゅょぁぃぅぇぉー")
 NAME_SPAN = 3
 MIN_NAME_KANJI = 2
+MIN_SINGLE_READING = 2
 TITLES = {"san", "kun", "chan", "sama", "senpai", "sensei", "dono", "tan"}
 INK = 150
 RUBY_WIDTH = 0.62
@@ -118,7 +119,7 @@ def spelled(reading: str, translation: str) -> str | None:
 
 def addressed(base: str, reading: str, lines: list[str], translations: list[str]) -> bool:
     for line, text in zip(lines, translations):
-        if not text or not any(re.search(rf"(?<![㐀-鿿々]){base}(?:{'|'.join(kana)})", line) for kana in HONORIFIC_KANA.values()):
+        if not text or not any(re.search(rf"(?<![㐀-鿿々おご御]){base}(?:{'|'.join(kana)})", line) for kana in HONORIFIC_KANA.values()):
             continue
         name = spelled(reading, text)
         if name and re.search(rf"\b{re.escape(name)}-(?:{'|'.join(HONORIFIC_KANA)})\b", text):
@@ -133,7 +134,7 @@ def furigana_names(lines: list[str], translations: list[str], ruby: list[tuple[s
     for base, reading in ruby:
         if base in found:
             continue
-        if len(KANJI.findall(base)) < MIN_NAME_KANJI and not (len(base) == 1 and addressed(base, reading, every, every_text)):
+        if len(KANJI.findall(base)) < MIN_NAME_KANJI and not (len(base) == 1 and len(reading) >= MIN_SINGLE_READING and addressed(base, reading, every, every_text)):
             continue
         for line, text in zip(lines, translations):
             if base not in line or not text:
