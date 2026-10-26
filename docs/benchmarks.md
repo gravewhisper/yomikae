@@ -134,7 +134,7 @@ On the reported pages themselves, 7 pages from one gallery, the big toned bubble
 
 ## Avoid these mistakes
 
-**Use the same lettering font in every checkout.** Anime Ace 2 is ignored by git, so a new worktree does not have it, and the server silently falls back to the bundled Shantell Sans. One comparison was void because the run in a worktree set dialogue in the bundled font while the base used Anime Ace, which changed sizes on most bubbles. Link or copy `server/fonts/animeace2_reg.ttf` into each worktree, and check that `dialogue_font` in `meta.json` matches between the runs you compare. The first line of `scorecard.md` shows it too.
+**Use the same lettering font in every checkout.** Anime Ace 2 is ignored by git, so a new worktree does not have it, and the server silently falls back to the bundled Shantell Sans. One comparison was void because the run in a worktree set dialogue in the bundled font while the base used Anime Ace, which changed sizes on most bubbles. Link or copy `server/fonts/animeace2_reg.ttf` into each worktree, and check that `dialogue_font` in `meta.json` matches between the runs you compare. The line under the title of `scorecard.md` shows it too.
 
 **Label GPU and CPU timings.** Detection takes about 0.95 s per page on the CPU and a few tens of milliseconds on the GPU. One estimate of CPU detection time was taken from a GPU run and came out 8 to 10 times too low. `meta.json` records the device, and `--device cpu` forces the CPU.
 

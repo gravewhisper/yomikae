@@ -336,8 +336,8 @@ ones. It has two parts: the overall shape of the block, and where each break fal
 - **Rule:** If you don't want to add a font, change the style. Use bold or italic for shouts, sighs and similar
   lines. The guide's own example uses only italic to mirror the raw's font switch.
 - **Algorithm:** This is the minimal version of 6.3: bold for shouts, italic for thoughts, narration and
-  off-panel speech. The Comic Neue family includes Regular, Bold and Italic styles, but only `server/fonts/ComicNeue-Bold.ttf`
-  is in the repo, so we would need to add those files.
+  off-panel speech. The Comic Neue family includes Regular, Bold and Italic styles. Regular and Bold are in `server/fonts/`,
+  so we would need to add Italic.
 - **Ours:** No. We always use Bold. That makes the bold-for-shout signal unavailable. Switching dialogue to
   Regular, or to a lettering font's normal weight, would free it.
 

@@ -40,7 +40,7 @@ Every adapter also gives each page a key. Two image URLs with the same key are o
 ## x.com and twitter.com
 
 - Pages are photos at `pbs.twimg.com/media/<id>`. Video thumbnails and GIFs are not pages.
-- The key is the media id, so every size of one photo shares one job.
+- The key is `x:<media id>`, so every size of one photo shares one job.
 - The work is the post, `x.com/i/status/<id>`. On a status page it is the post in the address, and on a timeline it is the post that contains the photo.
 - The page number comes from `/photo/<n>` in the photo's link, or in the address when the photo view is open.
 - Candidates are the original size (`name=orig`) as JPEG and as PNG, then `4096x4096`, then `large`, then the shown URL. When the URL's path names a format, that format is tried first.
@@ -50,7 +50,7 @@ Every adapter also gives each page a key. Two image URLs with the same key are o
 ## pixiv.net
 
 - Pages are images at `i.pximg.net` under `img-master` or `img-original`, named `<artwork id>_p<n>`.
-- The key is `<artwork id>_p<n>`.
+- The key is `pixiv:<artwork id>_p<n>`.
 - The work is `pixiv.net/artworks/<id>`. On an artwork page, the popup offers **Translate this gallery** for that artwork. pixiv does not report a language, so no artwork is skipped as English.
 - The page number is `<n>`.
 - Candidates are the original named by `/ajax/illust/<id>/pages`, fetched with the reader's cookies, then the `master1200` JPEG, then the shown URL.
