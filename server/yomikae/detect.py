@@ -113,7 +113,7 @@ def drop_merged_blocks(boxes: list[Box]) -> list[Box]:
     return [b for b in boxes if sum(o is not b and contains(b, o) for o in boxes) < 2]
 
 
-def lobes(interior: np.ndarray) -> np.ndarray:
+def lobe_marks(interior: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
     d = cv2.distanceTransform(np.pad(interior, 1).astype(np.uint8), cv2.DIST_L2, 3)[1:-1, 1:-1]
     step = max(1, -(-max(d.shape) // LOBE_SCAN))
     small = d[::step, ::step]
@@ -128,15 +128,25 @@ def lobes(interior: np.ndarray) -> np.ndarray:
             if peak >= LOBE_MIN_PEAK * top and peak - level >= LOBE_PROMINENCE * peak and not any((comp & seed).any() for seed in seeds):
                 seeds.append(comp)
     if len(seeds) < 2:
-        return np.zeros(interior.shape, np.int32)
+        return None
     marks = np.zeros(small.shape, np.uint8)
     for i, seed in enumerate(seeds):
         marks[seed] = i + 1
-    marks = cv2.resize(marks, (d.shape[1], d.shape[0]), interpolation=cv2.INTER_NEAREST) * interior
+    return d, cv2.resize(marks, (d.shape[1], d.shape[0]), interpolation=cv2.INTER_NEAREST) * interior
+
+
+def nearest_mark(marks: np.ndarray) -> np.ndarray:
     _, near = cv2.distanceTransformWithLabels((marks == 0).astype(np.uint8), cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
     ys, xs = np.nonzero(marks)
     owner = np.concatenate([[0], marks[ys, xs].astype(np.int32) - 1])
     return owner[near]
+
+
+def lobes(interior: np.ndarray) -> np.ndarray:
+    found = lobe_marks(interior)
+    if found is None:
+        return np.zeros(interior.shape, np.int32)
+    return nearest_mark(found[1])
 
 
 def column_width(mask: np.ndarray, vertical: bool) -> int:

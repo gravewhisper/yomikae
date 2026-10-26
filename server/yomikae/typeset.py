@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from . import lining
+from . import detect, lining
 from .config import FALLBACK_FONT_PATHS, lettering_fonts
 from .model import Balloon, Box, Bubble, TextBlock
 
@@ -324,8 +324,8 @@ def within(inner: Box, outer: Box) -> bool:
     return inner.x0 >= outer.x0 - FRAME_REACH and inner.y0 >= outer.y0 - FRAME_REACH and inner.x1 <= outer.x1 + FRAME_REACH and inner.y1 <= outer.y1 + FRAME_REACH
 
 
-def find_region(gray: np.ndarray, text: TextBlock) -> Region:
-    light = light_region(gray, text)
+def find_region(gray: np.ndarray, text: TextBlock, others: tuple[TextBlock, ...] = ()) -> Region:
+    light = light_region(gray, text, others)
     boxes = frames(gray, text.box)
     if not boxes:
         return light
@@ -337,7 +337,62 @@ def find_region(gray: np.ndarray, text: TextBlock) -> Region:
     return frame_region(gray, text.box, box) if touching >= 3 else light
 
 
-def light_region(gray: np.ndarray, text: TextBlock) -> Region:
+def text_pixels(text: TextBlock, origin: Box, shape: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
+    ys, xs = np.nonzero(text.mask)
+    ys, xs = ys + text.mask_box.y0 - origin.y0, xs + text.mask_box.x0 - origin.x0
+    keep = (ys >= 0) & (xs >= 0) & (ys < shape[0]) & (xs < shape[1])
+    return ys[keep], xs[keep]
+
+
+def lobe_parts(shape: np.ndarray) -> np.ndarray | None:
+    found = detect.lobe_marks(shape)
+    if found is None:
+        return None
+    d, labels = found
+    kernel = np.ones((3, 3), np.uint8)
+    for level in range(int(d.max()), -1, -1):
+        allowed = shape & (d >= level)
+        while True:
+            grown = cv2.dilate(labels, kernel)
+            new = allowed & (labels == 0) & (grown > 0)
+            if not new.any():
+                break
+            labels[new] = grown[new]
+    return detect.nearest_mark(labels)
+
+
+def own_part(shape: np.ndarray, origin: Box, text: TextBlock, others: tuple[TextBlock, ...]) -> np.ndarray | None:
+    if not others:
+        return None
+    lobes = lobe_parts(shape)
+    if lobes is None:
+        return None
+    n = int(lobes.max()) + 1
+    held = np.zeros((1 + len(others), n))
+    centers = np.zeros((1 + len(others), 2))
+    for k, t in enumerate((text, *others)):
+        ys, xs = text_pixels(t, origin, shape.shape)
+        inside = shape[ys, xs]
+        held[k] = np.bincount(lobes[ys[inside], xs[inside]], minlength=n)
+        centers[k] = (t.box.center[1] - origin.y0, t.box.center[0] - origin.x0)
+    owner = held.argmax(0)
+    for i in np.flatnonzero(held.sum(0) == 0):
+        ys, xs = np.nonzero(shape & (lobes == i))
+        if len(ys):
+            owner[i] = int(np.argmin(np.hypot(centers[:, 0] - ys.mean(), centers[:, 1] - xs.mean())))
+    if not (owner == 0).any():
+        return None
+    return shape & (owner == 0)[lobes]
+
+
+def part_pad(part: np.ndarray) -> int:
+    ys, xs = np.nonzero(part)
+    if not len(ys):
+        return 3
+    return min(MAX_PAD, max(3, round(min(xs.max() - xs.min() + 1, ys.max() - ys.min() + 1) * 0.07)))
+
+
+def light_region(gray: np.ndarray, text: TextBlock, others: tuple[TextBlock, ...] = ()) -> Region:
     block = text.box
     h, w = gray.shape
     dark = float(np.median(gray[block.y0 : block.y1, block.x0 : block.x1])) < 100
@@ -376,8 +431,11 @@ def light_region(gray: np.ndarray, text: TextBlock) -> Region:
     comp[np.isin(hole_labels, small)] = 1
     box = Box(search.x0 + x, search.y0 + y, search.x0 + x + cw, search.y0 + y + ch)
     burst = is_burst(gray, box, comp, dark)
+    part = own_part(comp > 0, box, text, others)
+    pad = min(MAX_PAD, max(3, round(min(cw, ch) * 0.07))) if part is None else part_pad(part)
+    if part is not None:
+        comp = part.astype(np.uint8)
     comp = cv2.dilate(comp * 255, np.ones((3, 3), np.uint8))
-    pad = min(MAX_PAD, max(3, round(min(cw, ch) * 0.07)))
     comp = cv2.erode(comp, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * pad + 1, 2 * pad + 1)))
     left, top, right, bottom = pad - box.x0, pad - box.y0, box.x1 + pad - w, box.y1 + pad - h
     if left > 0:
@@ -392,13 +450,18 @@ def light_region(gray: np.ndarray, text: TextBlock) -> Region:
     return Region(box=box, mask=comp > 0, anchor=anchor, on_art=False, dark=dark, pad=pad, burst=burst)
 
 
-def balloon_region(gray: np.ndarray, text: TextBlock, balloon: Balloon, pad: int | None = None) -> Region:
+def balloon_region(gray: np.ndarray, text: TextBlock, balloon: Balloon, pad: int | None = None, others: tuple[TextBlock, ...] = ()) -> Region:
     box = balloon.box
     block = text.box
     dark = float(np.median(gray[block.y0 : block.y1, block.x0 : block.x1])) < 100
-    pad = pad or min(MAX_PAD, max(3, round(min(box.w, box.h) * 0.07)))
+    part = own_part(balloon.mask, box, text, others)
+    if part is None:
+        part = balloon.mask
+        pad = pad or min(MAX_PAD, max(3, round(min(box.w, box.h) * 0.07)))
+    else:
+        pad = part_pad(part)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * pad + 1, 2 * pad + 1))
-    mask = cv2.erode(np.pad(balloon.mask, 1).astype(np.uint8), kernel)[1:-1, 1:-1] > 0
+    mask = cv2.erode(np.pad(part, 1).astype(np.uint8), kernel)[1:-1, 1:-1] > 0
     sub = gray[box.y0 : box.y1, box.x0 : box.x1]
     paper = (255 - sub if dark else sub)[mask]
     busy = bool(paper.size) and float((paper < LIGHT).mean()) > BUSY
@@ -406,12 +469,12 @@ def balloon_region(gray: np.ndarray, text: TextBlock, balloon: Balloon, pad: int
     return Region(box=box, mask=mask, anchor=anchor, on_art=False, dark=dark, pad=pad, busy=busy)
 
 
-def bubble_region(gray: np.ndarray, bubble: Bubble) -> Region:
-    grown = find_region(gray, bubble.block)
+def bubble_region(gray: np.ndarray, bubble: Bubble, others: tuple[TextBlock, ...] = ()) -> Region:
+    grown = find_region(gray, bubble.block, others)
     if bubble.balloon is None or grown.margin == FRAME_MARGIN or grown.burst or (bubble.shared and not grown.on_art):
         return grown
     if grown.on_art:
-        region = balloon_region(gray, bubble.block, bubble.balloon)
+        region = balloon_region(gray, bubble.block, bubble.balloon, others=others)
         return replace(region, burst=is_burst(gray, bubble.balloon.box, bubble.balloon.mask, region.dark))
     return balloon_region(gray, bubble.block, bubble.balloon, grown.pad)
 
@@ -697,7 +760,8 @@ def typeset(lettering: Lettering, inpainted: np.ndarray, bubbles: list[Bubble]) 
     gray = cv2.cvtColor(inpainted, cv2.COLOR_RGB2GRAY)
     h, w = gray.shape
     blocks = [b.block.box for b in bubbles]
-    grown = [bubble_region(gray, b) for b in bubbles]
+    siblings = [tuple(o.block for o in bubbles if o is not b and b.balloon is not None and o.balloon is b.balloon) for b in bubbles]
+    grown = [bubble_region(gray, b, others) for b, others in zip(bubbles, siblings)]
     candidates = separate(blocks, [(g, art_region(box, w, h, g.dark)) for g, box in zip(grown, blocks)])
     pieces: list[Piece | None] = []
     for bubble, (glyph, px), regions in zip(bubbles, glyph_sizes(bubbles), candidates):

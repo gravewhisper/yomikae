@@ -682,3 +682,30 @@ def test_text_in_an_egg_shaped_bubble_sits_near_its_middle_not_down_at_its_wides
     rendered = typeset.typeset(FONTS, page, [bubble])[0]
     _, cy = ink_center(rendered, page)
     assert abs(cy - 540) <= 30, cy
+
+
+def test_each_lobe_of_a_shared_double_bubble_is_eroded_and_kept_as_its_own_part():
+    shapes = [(560, 260, 110, 170), (380, 520, 190, 200)]
+    columns = [(625, 170, 645, 320), (590, 170, 610, 320), (450, 380, 475, 640), (410, 380, 435, 640), (370, 380, 395, 640), (330, 400, 355, 600)]
+    page, interior = outlined(shapes)
+    gray = cv2.cvtColor(with_glyphs(page, columns), cv2.COLOR_RGB2GRAY)
+    parts = sorted(detect.split_by_bubble(gray, text_block(columns)), key=lambda p: p.box.y0)
+    assert len(parts) == 2, [p.box for p in parts]
+    ys, xs = np.nonzero(interior)
+    balloon = Balloon(Box(int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1), interior[ys.min() : ys.max() + 1, xs.min() : xs.max() + 1], 0.9)
+    texts = ["The window was a lot higher than I thought it would be.", "Ouch, that really hurt!"]
+    bubbles = [Bubble(p, "ごめんね", t, balloon=balloon, shared=True) for p, t in zip(parts, texts)]
+    lobe = np.zeros(interior.shape, np.uint8)
+    cv2.ellipse(lobe, (560, 260), (105, 165), 0, 0, 360, 1, -1)
+    cv2.ellipse(lobe, (380, 520), (185, 195), 0, 0, 360, 0, -1)
+    lobe = lobe > 0
+    regions = [typeset.bubble_region(gray, b, (o.block,)) for b, o in zip(bubbles, bubbles[::-1])]
+    held = []
+    for r in regions:
+        full = np.zeros(interior.shape, bool)
+        full[r.box.y0 : r.box.y1, r.box.x0 : r.box.x1] = r.mask
+        held.append(int((full & lobe).sum()))
+    assert held[0] >= 0.75 * lobe.sum(), held
+    assert held[1] == 0, held
+    rendered = typeset.typeset(FONTS, page, bubbles)[0]
+    assert outside(rendered, page, interior) == 0
