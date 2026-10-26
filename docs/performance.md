@@ -44,6 +44,8 @@ Two settings move work to the CPU:
 
 Plain bubbles are filled with their own color and never reach LaMa, so `YOMIKAE_LOW_VRAM=1` costs least on pages of plain white balloons.
 
+On 2026-10-27, with no GPU visible and the `fake` translator, on an AMD Ryzen 7 7800X3D, three `strip_bench.py --strips page` runs took 4.3 to 5.0 s for the synthetic page: detection 2.3 to 2.5 s, balloons 0.5 to 0.7 s, OCR 1.2 to 1.8 s, and erasing, lettering and encoding about 0.3 s together. Ten OpenMantra pages, two from each work, run three times each with a fresh cache, had medians of 2.9 to 4.5 s per page. Two of them sent one patch to LaMa, at 0.9 and 1.0 s. The LLM was serving a benchmark on the GPU at the same time, with the load average at 3 when the runs started.
+
 On the CPU, the ONNX Runtime sessions run without a memory arena. That keeps about 1.6 GB of RAM free between pages, for about 70 ms more per page.
 
 Detection stays on the GPU by default because 0.95 s is about a third of the 3.1 s page above. [decisions.md](decisions.md#detection-stays-on-the-gpu) has the history.
