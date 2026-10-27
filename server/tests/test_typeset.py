@@ -709,3 +709,18 @@ def test_each_lobe_of_a_shared_double_bubble_is_eroded_and_kept_as_its_own_part(
     assert held[1] == 0, held
     rendered = typeset.typeset(FONTS, page, bubbles)[0]
     assert outside(rendered, page, interior) == 0
+
+
+def test_a_long_word_in_a_bubble_that_tapers_down_sits_at_its_middle_not_up_in_its_widest_rows():
+    page = Image.new("RGB", (900, 900), (120, 120, 120))
+    outline = [(370, 300), (530, 300), (550, 340), (520, 480), (465, 580), (435, 580), (380, 480), (350, 340)]
+    ImageDraw.Draw(page).polygon(outline, fill="white", outline="black", width=4)
+    page = np.asarray(page)
+    block = Box(435, 340, 465, 540)
+    bubble = Bubble(TextBlock(block, True, block, np.zeros((block.h, block.w), np.uint8)), "華鏡丸", "Kakyomaru!!")
+    rendered, sizes = typeset.typeset(FONTS, page, [bubble])
+    interior = np.zeros(page.shape[:2], np.uint8)
+    cv2.fillPoly(interior, [np.array(outline, np.int32)], 1)
+    ys = np.nonzero(interior)[0]
+    _, cy = ink_center(rendered, page)
+    assert abs(cy - ys.mean()) <= 0.06 * (ys.max() - ys.min()), (cy, ys.mean(), sizes)
