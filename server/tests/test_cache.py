@@ -141,3 +141,27 @@ def test_punctuation_and_one_character_lines_are_never_recalled():
     context = ContextStore()
     context.add("work", 1, [ContextLine("？", "during summer break."), ContextLine("え", "Huh?"), ContextLine("はい", "Yes.")])
     assert context.recall("work", ["？", "!?", "え", "はい"]) == [None, None, None, "Yes."]
+
+
+def test_pages_of_one_work_keep_their_context_with_the_same_or_no_page_index(client, synthetic_pages, tmp_path, monkeypatch):
+    from make_test_page import make_page
+
+    engine = client.app.state.engine
+    cache = PageCache(tmp_path / f"v{PIPELINE_VERSION}")
+    monkeypatch.setattr(engine, "cache", cache)
+    monkeypatch.setattr(engine, "context", ContextStore())
+
+    def post(seed, index=None):
+        data = {"context_key": "work"} | ({"page_index": str(index)} if index is not None else {})
+        r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(make_page(seed)[0]), "image/png")}, data=data)
+        assert r.status_code == 200, r.text
+        return len([b for b in r.json()["bubbles"] if b["translation"]])
+
+    counts = [post(240, 1), post(241, 1)]
+    assert len(engine.context.memory("work")) == sum(counts) > counts[0], "a second page at the same index replaced the first"
+    counts += [post(242), post(243)]
+    assert len(engine.context.memory("work")) == sum(counts), "pages without an index did not add up"
+
+    fresh = ContextStore()
+    fresh.rebuild(cache)
+    assert sorted(fresh.memory("work")) == sorted(engine.context.memory("work"))
