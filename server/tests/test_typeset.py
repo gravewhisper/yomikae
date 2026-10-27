@@ -435,6 +435,16 @@ def test_a_two_kana_lobe_beside_a_long_speech_gets_its_own_english():
     assert outside(rendered, page, interior) == 0
 
 
+def test_a_short_last_column_set_close_beside_the_others_stays_in_their_block():
+    shapes = [(590, 450, 130, 200), (400, 380, 100, 100)]
+    columns = [(600, 330, 625, 600), (567, 330, 592, 600), (534, 330, 559, 560), (501, 330, 526, 600), (468, 330, 493, 390)]
+    page, interior = outlined(shapes)
+    assert detect.lobe_marks(interior) is not None, "the distance map shows two lobes, so only the text keeps the block whole"
+    gray = cv2.cvtColor(with_glyphs(page, columns), cv2.COLOR_RGB2GRAY)
+    parts = detect.split_by_bubble(gray, text_block(columns))
+    assert [p.box.as_list() for p in parts] == [text_block(columns).box.as_list()], [p.box for p in parts]
+
+
 def drawn(interior: np.ndarray) -> np.ndarray:
     page = np.full((*interior.shape, 3), 120, np.uint8)
     page[cv2.dilate(interior.astype(np.uint8), np.ones((11, 11), np.uint8)) > 0] = 0
