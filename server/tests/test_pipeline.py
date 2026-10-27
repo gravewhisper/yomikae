@@ -451,6 +451,14 @@ def test_a_connection_closed_mid_reply_means_the_translator_is_unavailable(clien
     assert "RemoteProtocolError" in r.json()["detail"]
 
 
+def test_a_model_the_translator_does_not_know_fails_the_page_instead_of_waiting(client):
+    translator, calls = lm_studio([(404, "model 'nope' not found")])
+    r = post_page_with(client, translator, 226)
+    assert len(calls) == 1
+    assert r.status_code == 500 and r.json()["error"] == "translator_error", r.text
+    assert translator.model in r.json()["detail"] and "model 'nope' not found" in r.json()["detail"], r.text
+
+
 def english(source):
     return f"EN {source.encode().hex()}"
 
