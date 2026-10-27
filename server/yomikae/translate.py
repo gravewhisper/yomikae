@@ -110,7 +110,7 @@ RESPONSE_SCHEMA = {
 }
 
 FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
-JSON_LEAK = re.compile(r'[{}]|"\s*,\s*"|^[\s\[\]",:]*$')
+JSON_LEAK = re.compile(r'[{}]|"\s*,\s*"|^[\s\[\]",:]+$')
 
 
 def parse_translations(content: str, n: int) -> list[str] | None:
