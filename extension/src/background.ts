@@ -331,7 +331,7 @@ async function translate(image: Blob, w: Want): Promise<Ready> {
   const form = new FormData();
   form.append('image', image, 'page');
   form.append('context_key', w.contextKey);
-  form.append('page_index', String(w.pageIndex));
+  if (w.pageIndex !== undefined) form.append('page_index', String(w.pageIndex));
   return readyFrom(server, await postToServer(server, '/v1/pages', form, TRANSLATE_TIMEOUT_MS), w.contextKey);
 }
 
@@ -398,7 +398,7 @@ async function report(port: chrome.runtime.Port, r: ReportRequest): Promise<void
     form.append('page_url', r.pageUrl);
     form.append('image_url', r.imageUrl);
     form.append('context_key', r.want.contextKey);
-    form.append('page_index', String(r.want.pageIndex));
+    if (r.want.pageIndex !== undefined) form.append('page_index', String(r.want.pageIndex));
     form.append('note', r.note);
     form.append('job_state', r.jobState);
     if (r.jobError) form.append('job_error', r.jobError);

@@ -9,6 +9,7 @@ type Layer = { el: HTMLElement; original: string; painted?: string; paintedUrl?:
 type ReadyJob = Extract<PageJob, { state: 'ready' }>;
 type PickPurpose = 'report' | 'retranslate';
 type Pick = { img: HTMLImageElement; areas: ReportArea[]; purpose: PickPurpose };
+type Place = { position: number; pageIndex?: number };
 
 type Tracked = {
   key: string;
@@ -142,23 +143,23 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       if (msg.retryable && adapter.fallback && !fellBack.has(msg.key)) {
         fellBack.add(msg.key);
         const alt = await adapter.fallback(job.url);
-        const pageIndex = wants.get(msg.key)?.pageIndex;
-        if (alt && alive && pageIndex !== undefined && jobs.get(msg.key)?.state === 'failed') request(msg.key, alt, pageIndex, firstElement(msg.key));
+        const want = wants.get(msg.key);
+        if (alt && alive && want && jobs.get(msg.key)?.state === 'failed') request(msg.key, alt, want, firstElement(msg.key));
       }
     }
     chips.render();
   }
 
-  async function makeWant(key: string, url: string, pageIndex: number, img?: HTMLImageElement): Promise<Want> {
-    const priority = Math.abs(pageIndex - currentPos);
+  async function makeWant(key: string, url: string, { position, pageIndex }: Place, img?: HTMLImageElement): Promise<Want> {
+    const priority = Math.abs(position - currentPos);
     const contextKey = adapter.contextKey(location, img, url);
-    return { key, url, candidates: await adapter.fetchCandidates(url), contextKey, pageIndex, priority };
+    return { key, url, candidates: await adapter.fetchCandidates(url), contextKey, pageIndex, position, priority };
   }
 
-  function request(key: string, url: string, pageIndex: number, img?: HTMLImageElement): void {
+  function request(key: string, url: string, place: Place, img?: HTMLImageElement): void {
     if (mode === 'off') return;
-    jobs.set(key, { state: 'queued', url, priority: Math.abs(pageIndex - currentPos) });
-    void makeWant(key, url, pageIndex, img).then((want) => {
+    jobs.set(key, { state: 'queued', url, priority: Math.abs(place.position - currentPos) });
+    void makeWant(key, url, place, img).then((want) => {
       if (!alive || jobs.get(key)?.url !== url) return;
       wants.set(key, want);
       post({ type: 'want', jobs: [want] });
@@ -188,7 +189,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       const img = [...set].find(inView);
       if (!img) continue;
       setRedo(key, job, 'refreshing');
-      void makeWant(key, job.url, positionOf(img), img).then((want) => {
+      void makeWant(key, job.url, placeOf(img), img).then((want) => {
         if (!alive) return;
         wants.set(key, want);
         post({ type: 'want', jobs: [want] });
@@ -216,7 +217,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   function translate(img: HTMLImageElement): void {
     const t = tracked.get(img);
     if (!t || jobs.has(t.key)) return;
-    request(t.key, t.originalSrc, positionOf(img), img);
+    request(t.key, t.originalSrc, placeOf(img), img);
     void prefetchFrom(img);
     chips.render();
   }
@@ -307,7 +308,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     const names: NameFix[] = en ? [{ ja, en, kind: 'name' }] : [];
     closePick();
     setRedo(t.key, job, 'retranslating');
-    const want = wants.get(t.key) ?? (await makeWant(t.key, t.originalSrc, positionOf(img), img));
+    const want = wants.get(t.key) ?? (await makeWant(t.key, t.originalSrc, placeOf(img), img));
     post({ type: 'retranslate', request: { want, bubbles, hint, names } });
     chips.toast('Retranslating…', false);
   }
@@ -320,7 +321,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     if (!t) return;
     const job = jobs.get(t.key);
     const jobError = job?.state === 'failed' ? job.error : job?.state === 'blocked' ? noAccessText(job.host) : null;
-    const want = wants.get(t.key) ?? (await makeWant(t.key, t.originalSrc, positionOf(img), img));
+    const want = wants.get(t.key) ?? (await makeWant(t.key, t.originalSrc, placeOf(img), img));
     post({ type: 'report', report: { want, pageUrl: location.href, imageUrl: t.originalSrc, note, jobState: job?.state ?? 'untracked', jobError, areas } });
     chips.toast('Sending report…', false);
   }
@@ -336,15 +337,14 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     const t = tracked.get(img);
     if (!t) return;
     jobs.delete(t.key);
-    request(t.key, t.originalSrc, positionOf(img), img);
+    request(t.key, t.originalSrc, placeOf(img), img);
     chips.render();
   }
 
-  function positionOf(img: HTMLImageElement): number {
+  function placeOf(img: HTMLImageElement): Place {
     const t = tracked.get(img);
-    const fromUrl = t && adapter.pageIndex(t.originalSrc, img);
-    if (fromUrl !== undefined) return fromUrl;
-    return [...document.images].filter((i) => tracked.has(i)).indexOf(img) + 1;
+    const pageIndex = t && adapter.pageIndex(t.originalSrc, img);
+    return { pageIndex, position: pageIndex ?? [...document.images].filter((i) => tracked.has(i)).indexOf(img) + 1 };
   }
 
   function looksLikePage(img: HTMLImageElement): boolean | undefined {
@@ -510,9 +510,10 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     }
     if (!best || best === current) return;
     current = best;
-    currentPos = positionOf(best);
+    const place = placeOf(best);
+    currentPos = place.position;
     const t = tracked.get(best);
-    if (mode === 'auto' && t && !jobs.has(t.key)) request(t.key, t.originalSrc, currentPos, best);
+    if (mode === 'auto' && t && !jobs.has(t.key)) request(t.key, t.originalSrc, place, best);
     reprioritize();
     if (mode === 'auto' || (t && jobs.has(t.key))) void prefetchFrom(best);
   }
@@ -568,7 +569,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   }
 
   function reprioritize(): void {
-    const pending = pendingWants().map((x) => ({ ...x, priority: Math.abs(x.pageIndex - currentPos) }));
+    const pending = pendingWants().map((x) => ({ ...x, priority: Math.abs(x.position - currentPos) }));
     for (const x of pending) wants.set(x.key, x);
     if (pending.length) post({ type: 'want', jobs: pending });
   }
@@ -579,7 +580,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     const upcoming = await adapter.prefetch(t.originalSrc, location, img);
     for (const u of upcoming) {
       const key = adapter.pageKey(u.url);
-      if (alive && !jobs.has(key)) request(key, u.url, u.pageIndex, img);
+      if (alive && !jobs.has(key)) request(key, u.url, { position: u.pageIndex, pageIndex: u.pageIndex }, img);
     }
   }
 
@@ -588,7 +589,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       for (const e of entries) {
         const img = e.target as HTMLImageElement;
         const t = tracked.get(img);
-        if (mode === 'auto' && e.isIntersecting && t && !jobs.has(t.key)) request(t.key, t.originalSrc, positionOf(img), img);
+        if (mode === 'auto' && e.isIntersecting && t && !jobs.has(t.key)) request(t.key, t.originalSrc, placeOf(img), img);
       }
       updateCurrent();
       announceContext();
