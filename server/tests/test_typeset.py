@@ -725,3 +725,21 @@ def test_a_long_word_in_a_bubble_that_tapers_down_sits_at_its_middle_not_up_in_i
     ys = np.nonzero(interior)[0]
     _, cy = ink_center(rendered, page)
     assert abs(cy - ys.mean()) <= 0.06 * (ys.max() - ys.min()), (cy, ys.mean(), sizes)
+
+
+def test_text_in_a_big_bubble_among_small_ones_grows_until_it_stops_swimming():
+    small = [(40 + i * 140, 40, 160 + i * 140, 200) for i in range(4)]
+    big = (150, 260, 510, 560)
+    page = bubble_page(small + [big], size=(640, 600))
+    texts = ["Where are you going now?", "I told you to wait here.", "We promised, didn't we?", "Say that one more time."]
+    bubbles = [bubble_in(e, t) for e, t in zip(small, texts)]
+    block = Box(290, 320, 370, 500)
+    bubbles.append(Bubble(TextBlock(block, True, block, np.zeros((block.h, block.w), np.uint8)), "流しのガンマンをしているシオラと申します", "I'm Siora, a wandering gunman."))
+    rendered, sizes = typeset.typeset(FONTS, page, bubbles)
+    changed = ink(rendered, page)
+    changed[: big[1]] = False
+    ys, xs = np.nonzero(changed)
+    interior = np.pi * (big[2] - big[0] - 8) * (big[3] - big[1] - 8) / 4
+    covered = (xs.max() - xs.min()) * (ys.max() - ys.min()) / interior
+    assert covered >= 0.18, f"the text swims in its bubble: {covered:.3f} of it, sizes {sizes}"
+    assert sizes[4] <= 1.5 * float(np.median(sizes)) + 1, f"the big bubble jumped too far above the page: {sizes}"
