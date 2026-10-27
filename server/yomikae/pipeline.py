@@ -21,7 +21,7 @@ from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, Settings
 from .model import Box, Bubble, CastEntry, ContextLine
 from .ruby import furigana_names
-from .translate import Context, PageImage, Translator, make_translator, mend_stutters, subset, translate_lines
+from .translate import Context, PageImage, Translator, TranslatorUnavailable, make_translator, mend_stutters, subset, translate_lines
 
 T = TypeVar("T")
 PIPELINE_VERSION = 28
@@ -220,8 +220,12 @@ class Engine:
             picked = sorted(set(stale) | set(picked))
             if not picked:
                 return {**base, "timings_ms": {**{s: 0 for s in STAGES}, "total": 0}, "cached": True}
-            result = await self._run(page_id, data, context_key, page_index, base, set(picked), hint)
-            return {**result, "updated": True} if redo else result
+            if not redo:
+                return await self._run(page_id, data, context_key, page_index, base, set(picked), hint)
+            try:
+                return {**await self._run(page_id, data, context_key, page_index, base, set(picked), hint), "updated": True}
+            except TranslatorUnavailable:
+                return {**base, "timings_ms": {**{s: 0 for s in STAGES}, "total": 0}, "cached": True}
 
     async def _run(
         self,

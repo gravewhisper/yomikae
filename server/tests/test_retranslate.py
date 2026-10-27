@@ -12,7 +12,7 @@ from make_test_page import make_page
 from yomikae.cache import ContextStore, PageCache
 from yomikae.model import CastEntry, ContextLine
 from yomikae.pipeline import stale_bubbles, translate_page
-from yomikae.translate import Context, build_messages
+from yomikae.translate import Context, TranslatorUnavailable, build_messages
 
 
 class Scripted:
@@ -210,6 +210,31 @@ def test_a_name_change_redoes_only_the_bubbles_that_use_it_when_the_page_is_view
         client.put("/v1/names", params={"context_key": key}, json={"names": [{"ja": "", "en": "Arifujii"}]})
         respelled = post(client, data, key, 0)
     assert respelled["updated"] is True, "a bubble that still holds a removed spelling must be redone"
+
+
+def test_a_stale_page_is_served_from_the_cache_while_the_translator_is_down(client):
+    key = "example.com/g/retranslate-offline"
+    _, truth = make_page(641)
+    ja = truth[0].text[:2]
+    data = page(641)
+    with using(client, Scripted(by_call)):
+        first = post(client, data, key, 0)
+    client.put("/v1/names/entry", params={"context_key": key}, json={"ja": ja, "en": "Arifuji"})
+
+    class Down:
+        name = "down"
+
+        async def translate(self, lines, context):
+            raise TranslatorUnavailable("translator unreachable")
+
+        async def health(self):
+            return "down"
+
+    with using(client, Down()):
+        offline = post(client, data, key, 0)
+    assert offline["cached"] is True and "updated" not in offline and offline["bubbles"] == first["bubbles"]
+    with using(client, Scripted(by_call)):
+        assert post(client, data, key, 0)["updated"] is True
 
 
 def test_a_remembered_line_that_misspells_a_listed_name_is_translated_again():
