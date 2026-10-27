@@ -1,6 +1,6 @@
 import { imageReferers } from './adapters';
 import { getServerUrl, parseHealth, parseReportReceipt, parseServerError, parseTranslatedPage, type TranslatedPage } from './contract';
-import { noAccessText, PORT_NAME, type ReportRequest, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
+import { noAccessText, PORT_NAME, type Broadcast, type ReportRequest, type RetranslateRequest, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
 import { addImageHost, enableSite, reconcileSites, siteForUrl, sitesForGrants } from './sites';
 
 const MAX_IN_FLIGHT = 2;
@@ -23,7 +23,7 @@ type Entry = {
   ports: Set<chrome.runtime.Port>;
 };
 type Outage = { attempt: number; detail: string };
-type Ready = { page: TranslatedPage; mime: string; base64: string };
+type Ready = { page: TranslatedPage; mime: string; base64: string; contextKey: string };
 
 class JobError extends Error {
   constructor(message: string, readonly retryable: boolean) {
@@ -47,6 +47,7 @@ const entries = new Map<string, Entry>();
 const results = new Map<string, Ready>();
 const originals = new Map<string, Blob>();
 const slowHosts = new Map<string, number>();
+const ports = new Set<chrome.runtime.Port>();
 let inFlight = 0;
 let outage: Outage | undefined;
 const referersReady = installImageReferers().catch(() => undefined);
@@ -76,6 +77,7 @@ function broadcast(entry: Entry, msg: ToContent): void {
 }
 
 function detach(port: chrome.runtime.Port): void {
+  ports.delete(port);
   for (const [key, entry] of entries) {
     entry.ports.delete(port);
     if (entry.ports.size === 0 && (entry.state === 'queued' || entry.state === 'waiting')) entries.delete(key);
@@ -330,7 +332,10 @@ async function translate(image: Blob, w: Want): Promise<Ready> {
   form.append('image', image, 'page');
   form.append('context_key', w.contextKey);
   form.append('page_index', String(w.pageIndex));
-  const res = await postToServer(server, '/v1/pages', form, TRANSLATE_TIMEOUT_MS);
+  return readyFrom(server, await postToServer(server, '/v1/pages', form, TRANSLATE_TIMEOUT_MS), w.contextKey);
+}
+
+async function readyFrom(server: string, res: Response, contextKey: string): Promise<Ready> {
   let page: TranslatedPage;
   try {
     page = parseTranslatedPage(await res.json());
@@ -343,7 +348,42 @@ async function translate(image: Blob, w: Want): Promise<Ready> {
   if (SERVER_DOWN_STATUSES.has(rendered.status)) throw new ServerDown(`Rendered page fetch failed (${rendered.status}).`);
   if (!rendered.ok) throw new JobError(`Rendered page fetch failed (${rendered.status}).`, true);
   const bytes = new Uint8Array(await rendered.arrayBuffer());
-  return { page, mime: rendered.headers.get('content-type') ?? 'image/webp', base64: toBase64(bytes) };
+  return { page, mime: rendered.headers.get('content-type') ?? 'image/webp', base64: toBase64(bytes), contextKey };
+}
+
+async function pageId(image: Blob): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await image.arrayBuffer()));
+  return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function namesChanged(contextKey: string): void {
+  for (const [key, done] of results) if (done.contextKey === contextKey) results.delete(key);
+  for (const port of ports) send(port, { type: 'stale', contextKey });
+}
+
+async function retranslate(port: chrome.runtime.Port, r: RetranslateRequest): Promise<void> {
+  const { key, contextKey, pageIndex } = r.want;
+  const refusal = loopbackRefusal(port, r.want);
+  if (refusal) return send(port, { type: 'retranslated', key, outcome: { ok: false, error: refusal } });
+  try {
+    const image = originals.get(key) ?? (await fetchImage(r.want.candidates));
+    remember(originals, key, image, ORIGINALS_LIMIT);
+    const server = await getServerUrl();
+    const form = new FormData();
+    form.append('image', image, 'page');
+    form.append('request', JSON.stringify({ context_key: contextKey, page_index: pageIndex, bubbles: r.bubbles, hint: r.hint, names: r.names }));
+    const res = await postToServer(server, `/v1/pages/${await pageId(image)}/retranslate`, form, TRANSLATE_TIMEOUT_MS);
+    const ready = await readyFrom(server, res, contextKey);
+    if (r.names.length) {
+      namesChanged(contextKey);
+      chrome.runtime.sendMessage({ type: 'names', contextKey } satisfies Broadcast).catch(() => undefined);
+    }
+    remember(results, key, ready, RESULT_CACHE_LIMIT);
+    send(port, { type: 'ready', key, ...ready });
+    send(port, { type: 'retranslated', key, outcome: { ok: true } });
+  } catch (err) {
+    send(port, { type: 'retranslated', key, outcome: { ok: false, error: err instanceof Error ? err.message : String(err) } });
+  }
 }
 
 async function report(port: chrome.runtime.Port, r: ReportRequest): Promise<void> {
@@ -379,6 +419,7 @@ function toBase64(bytes: Uint8Array): string {
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== PORT_NAME) return;
+  ports.add(port);
   port.onMessage.addListener((msg: ToBackground) => {
     if (msg.type === 'want') {
       for (const w of msg.jobs) want(port, w);
@@ -389,9 +430,15 @@ chrome.runtime.onConnect.addListener((port) => {
       for (const key of msg.keys) drop(port, key);
     } else if (msg.type === 'report') {
       void report(port, msg.report);
+    } else if (msg.type === 'retranslate') {
+      void retranslate(port, msg.request);
     }
   });
   port.onDisconnect.addListener(() => detach(port));
+});
+
+chrome.runtime.onMessage.addListener((msg: Broadcast) => {
+  if (msg.type === 'names') namesChanged(msg.contextKey);
 });
 
 chrome.runtime.onInstalled.addListener(({ reason }) => void reconcileSites(reason !== 'install'));
