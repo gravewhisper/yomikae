@@ -129,6 +129,14 @@ def test_a_sound_cut_off_before_the_next_bubble_becomes_its_stutter():
     assert out == ["D-", "Don't mess with me!", "Wh-", "...What do you mean?", "I-", "...I see."]
 
 
+def test_a_kana_sound_before_a_line_that_starts_with_kanji_becomes_its_stutter():
+    from yomikae.translate import mend_stutters
+
+    lines = ["み", "見えない…", "か…", "考えるな", "あ", "会いたい"]
+    out = ["Mi", "I can't see...", "Ka...", "Don't think.", "Ah.", "I miss you."]
+    assert mend_stutters(lines, out) == ["I-", "I can't see...", "D-", "Don't think.", "Ah.", "I miss you."]
+
+
 def test_interjections_and_drawn_out_sounds_are_not_stutters():
     from yomikae.translate import mend_stutters
 
