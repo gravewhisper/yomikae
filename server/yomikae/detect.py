@@ -170,7 +170,11 @@ def split_by_bubble(gray: np.ndarray, block: TextBlock) -> list[TextBlock]:
     search = box.expand(BUBBLE_REACH * max(box.w, box.h), w, h)
     mb = block.mask_box
     ty, tx = np.nonzero(block.mask)
-    ty, tx = ty + mb.y0 - search.y0, tx + mb.x0 - search.x0
+    ty, tx = ty + mb.y0, tx + mb.x0
+    mine = (ty >= box.y0) & (ty < box.y1) & (tx >= box.x0) & (tx < box.x1)
+    if not mine.any():
+        return [block]
+    ty, tx = ty[mine] - search.y0, tx[mine] - search.x0
     light = np.where(gray[search.y0 : search.y1, search.x0 : search.x1] >= LIGHT, 255, 0).astype(np.uint8)
     seen = (ty >= 0) & (tx >= 0) & (ty < light.shape[0]) & (tx < light.shape[1])
     light[ty[seen], tx[seen]] = 255
