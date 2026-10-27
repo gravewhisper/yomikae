@@ -11,7 +11,7 @@ Base URL: `http://127.0.0.1:7878`. CORS allows `chrome-extension://*` origins fo
 ### `GET /v1/health`
 
 ```json
-{ "ok": true, "version": "0.1.0", "translator": "openai:google/gemma-4-12b", "gpu": "NVIDIA GeForce RTX 5070 Ti" }
+{ "ok": true, "version": "0.2.0", "translator": "openai:google/gemma-4-12b", "gpu": "NVIDIA GeForce RTX 5070 Ti" }
 ```
 
 ### `POST /v1/pages`

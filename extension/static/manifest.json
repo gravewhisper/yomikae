@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Yomikae",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reads Japanese manga pages in English, translated on your own computer by a local server.",
   "minimum_chrome_version": "116",
   "background": {
