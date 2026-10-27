@@ -1,11 +1,14 @@
 import { adapterFor, type SiteMode } from './adapters';
 import type { SiteAdapter } from './adapter';
-import type { PageJob, TranslatedPage } from './contract';
-import { noAccessText, PORT_NAME, type ReportArea, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
+import type { PageJob, Redo, TranslatedPage } from './contract';
+import { HINT_MAX, noAccessText, PORT_NAME, type Broadcast, type NameFix, type ReportArea, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
 import { getSiteMode, siteForUrl, watchSiteMode, type Site } from './sites';
 import { loadWork, tabMode, watchWorkChoice, type TabMode, type Work } from './works';
 
-type Layer = { el: HTMLElement; original: string; painted?: string };
+type Layer = { el: HTMLElement; original: string; painted?: string; paintedUrl?: string };
+type ReadyJob = Extract<PageJob, { state: 'ready' }>;
+type PickPurpose = 'report' | 'retranslate';
+type Pick = { img: HTMLImageElement; areas: ReportArea[]; purpose: PickPurpose };
 
 type Tracked = {
   key: string;
@@ -49,9 +52,10 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   let currentPos = 0;
   let alive = true;
   let pointer: { x: number; y: number } | undefined;
-  let pick: { img: HTMLImageElement; areas: ReportArea[] } | undefined;
+  let pick: Pick | undefined;
+  let announced: string | undefined;
 
-  const chips = createChips({ retry, translate, openPick, pickPoint, pickRect, submit: submitReport });
+  const chips = createChips({ retry, translate, openPick, pickPoint, pickRect, submit: submitPick });
   const say = debugLog();
   say('start', { site: site.id, mode, work, url: location.href });
 
@@ -79,8 +83,9 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
 
   function pendingWants(): Want[] {
     return [...wants.values()].filter((x) => {
-      const s = jobs.get(x.key)?.state;
-      return s === 'queued' || s === 'fetching' || s === 'translating' || s === 'waiting';
+      const job = jobs.get(x.key);
+      const s = job?.state;
+      return s === 'queued' || s === 'fetching' || s === 'translating' || s === 'waiting' || (job?.state === 'ready' && job.redo === 'refreshing');
     });
   }
 
@@ -95,20 +100,35 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       chips.toast(o.ok ? `Reported · ${o.reportId}` : `Report failed: ${o.error}`, !o.ok);
       return;
     }
+    if (msg.type === 'retranslated') {
+      const o = msg.outcome;
+      if (!o.ok) settle(msg.key, 'retranslating');
+      chips.toast(o.ok ? 'Retranslated' : `Retranslate failed: ${o.error}`, !o.ok);
+      return;
+    }
+    if (msg.type === 'stale') return markStale(msg.contextKey);
     const job = jobs.get(msg.key);
-    if (job?.state === 'ready') return;
+    if (job?.state === 'ready' && msg.type !== 'ready') {
+      if (msg.type === 'failed' || msg.type === 'blocked') settle(msg.key, 'refreshing');
+      return;
+    }
     if (msg.type === 'ready') {
+      if (job?.state === 'ready' && !job.redo) return;
       const first = firstElement(msg.key);
       const url = job?.url ?? (first && tracked.get(first)?.originalSrc);
       if (!url) return;
+      if (job?.state === 'ready' && msg.page.rendered_url === job.page.rendered_url && !msg.page.updated) return settle(msg.key, job.redo);
       const bytes = Uint8Array.from(atob(msg.base64), (c) => c.charCodeAt(0));
       const renderedBlobUrl = URL.createObjectURL(new Blob([bytes], { type: msg.mime }));
       const pre = new Image();
       pre.src = renderedBlobUrl;
       await pre.decode().catch(() => undefined);
-      if (!alive || jobs.get(msg.key)?.state === 'ready') return URL.revokeObjectURL(renderedBlobUrl);
-      jobs.set(msg.key, { state: 'ready', url, page: msg.page, renderedBlobUrl });
-      for (const img of elementsByKey.get(msg.key) ?? []) showTranslated(img, true);
+      const now = jobs.get(msg.key);
+      if (!alive || (now?.state === 'ready' && !now.redo)) return URL.revokeObjectURL(renderedBlobUrl);
+      const replaced = now?.state === 'ready' ? now.renderedBlobUrl : undefined;
+      jobs.set(msg.key, { state: 'ready', url, page: msg.page, renderedBlobUrl, contextKey: msg.contextKey });
+      for (const img of elementsByKey.get(msg.key) ?? []) showTranslated(img, true, replaced);
+      if (replaced) setTimeout(() => URL.revokeObjectURL(replaced), FADE_MS + 200);
     } else if (!job) {
       return;
     } else if (msg.type === 'progress') {
@@ -143,6 +163,50 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       wants.set(key, want);
       post({ type: 'want', jobs: [want] });
     });
+  }
+
+  function setRedo(key: string, job: ReadyJob, redo: Redo | undefined): void {
+    const { state, url, page, renderedBlobUrl, contextKey } = job;
+    jobs.set(key, redo ? { state, url, page, renderedBlobUrl, contextKey, redo } : { state, url, page, renderedBlobUrl, contextKey });
+    chips.render();
+  }
+
+  function settle(key: string, from: Redo | undefined): void {
+    const job = jobs.get(key);
+    if (job?.state === 'ready' && job.redo === from) setRedo(key, job, undefined);
+  }
+
+  function markStale(contextKey: string): void {
+    for (const [key, job] of jobs) if (job.state === 'ready' && job.contextKey === contextKey && !job.redo) setRedo(key, job, 'stale');
+    refreshInView();
+  }
+
+  function refreshInView(): void {
+    for (const [key, set] of elementsByKey) {
+      const job = jobs.get(key);
+      if (job?.state !== 'ready' || job.redo !== 'stale') continue;
+      const img = [...set].find(inView);
+      if (!img) continue;
+      setRedo(key, job, 'refreshing');
+      void makeWant(key, job.url, positionOf(img), img).then((want) => {
+        if (!alive) return;
+        wants.set(key, want);
+        post({ type: 'want', jobs: [want] });
+      });
+    }
+  }
+
+  function currentContext(): string {
+    return adapter.contextKey(location, current, current && tracked.get(current)?.originalSrc);
+  }
+
+  function announceContext(): void {
+    const contextKey = currentContext();
+    if (contextKey === announced) return;
+    announced = contextKey;
+    try {
+      chrome.runtime.sendMessage({ type: 'context', contextKey } satisfies Broadcast).catch(() => undefined);
+    } catch {}
   }
 
   function firstElement(key: string): HTMLImageElement | undefined {
@@ -195,8 +259,8 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     return best;
   }
 
-  function openPick(img: HTMLImageElement): void {
-    if (pick?.img !== img) pick = { img, areas: [] };
+  function openPick(img: HTMLImageElement, purpose: PickPurpose): void {
+    if (pick?.img !== img || pick.purpose !== purpose) pick = { img, areas: [], purpose };
     chips.render();
   }
 
@@ -222,9 +286,30 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   }
 
   function pickRect(img: HTMLImageElement, box: ReportArea['box']): void {
-    if (pick?.img !== img) return;
+    if (pick?.img !== img || pick.purpose !== 'report') return;
     pick.areas = [...pick.areas, { box, bubbleIndex: null }];
     chips.render();
+  }
+
+  function submitPick(img: HTMLImageElement): void {
+    if (pick?.img === img && pick.purpose === 'retranslate') void submitRetranslate(img, pick);
+    else void submitReport(img);
+  }
+
+  async function submitRetranslate(img: HTMLImageElement, picked: Pick): Promise<void> {
+    const t = tracked.get(img);
+    const job = t && jobs.get(t.key);
+    if (!t || job?.state !== 'ready') return;
+    const bubbles = picked.areas.flatMap((a) => (a.bubbleIndex === null ? [] : [a.bubbleIndex]));
+    if (!bubbles.length) return chips.toast('Click the bubbles to retranslate first', true);
+    const { hint, ja, en } = chips.fixText(img);
+    if (ja && !en) return chips.toast('Type the English spelling of the name', true);
+    const names: NameFix[] = en ? [{ ja, en, kind: 'name' }] : [];
+    closePick();
+    setRedo(t.key, job, 'retranslating');
+    const want = wants.get(t.key) ?? (await makeWant(t.key, t.originalSrc, positionOf(img), img));
+    post({ type: 'retranslate', request: { want, bubbles, hint, names } });
+    chips.toast('Retranslating…', false);
   }
 
   async function submitReport(img: HTMLImageElement): Promise<void> {
@@ -340,20 +425,21 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     return t.layer;
   }
 
-  function showTranslated(img: HTMLImageElement, fade: boolean): void {
+  function showTranslated(img: HTMLImageElement, fade: boolean, replaced?: string): void {
     const t = tracked.get(img);
     const job = t && jobs.get(t.key);
     if (!t || job?.state !== 'ready' || peeking) return;
     const layer = layerOf(img, t);
-    const layerShown = !layer || layer.el.style.backgroundImage === layer.painted;
+    const layerShown = !layer || (layer.el.style.backgroundImage === layer.painted && layer.paintedUrl === job.renderedBlobUrl);
     const imgShown = img.getAttribute('src') === job.renderedBlobUrl && !img.hasAttribute('srcset');
     if (layerShown && imgShown) return;
     if (fade && layer && !layerShown && isUncovered(layer.el)) crossfadeLayer(layer.el);
-    else if (fade && !layer && img.complete && img.naturalWidth > 0 && isUncovered(img)) crossfade(img, t.originalSrc);
+    else if (fade && !layer && img.complete && img.naturalWidth > 0 && isUncovered(img)) crossfade(img, replaced ?? t.originalSrc);
     if (layer && !layerShown) {
-      layer.original = layer.el.style.backgroundImage;
+      if (layer.el.style.backgroundImage !== layer.painted) layer.original = layer.el.style.backgroundImage;
       layer.el.style.backgroundImage = `url("${job.renderedBlobUrl}")`;
       layer.painted = layer.el.style.backgroundImage;
+      layer.paintedUrl = job.renderedBlobUrl;
     }
     if (imgShown) return;
     if (img.hasAttribute('srcset')) {
@@ -406,6 +492,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
 
   function updateCurrent(): void {
     syncWork();
+    refreshInView();
     let best: HTMLImageElement | undefined;
     let bestVisible = 0;
     for (const [key, set] of elementsByKey) {
@@ -454,6 +541,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       showOriginal(img);
       untrack(img);
     }
+    for (const [key, job] of jobs) if (job.state === 'ready' && job.redo === 'refreshing') setRedo(key, job, 'stale');
     pick = undefined;
   }
 
@@ -503,6 +591,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
         if (mode === 'auto' && e.isIntersecting && t && !jobs.has(t.key)) request(t.key, t.originalSrc, positionOf(img), img);
       }
       updateCurrent();
+      announceContext();
       chips.render();
     },
     { rootMargin: '100% 0px 300% 0px' },
@@ -528,15 +617,16 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     frame = requestAnimationFrame(() => {
       frame = 0;
       updateCurrent();
+      announceContext();
       chips.render();
     });
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Alt' && !e.repeat) setPeek(true);
-    if (pick && (e.key === 'Enter' || e.key === 'Escape') && !isEditable(e.target)) {
+    if (pick && (e.key === 'Enter' || e.key === 'Escape') && !e.isComposing && !isEditable(e.target)) {
       e.preventDefault();
       e.stopPropagation();
-      if (e.key === 'Enter') void submitReport(pick.img);
+      if (e.key === 'Enter') submitPick(pick.img);
       else closePick();
       return;
     }
@@ -545,7 +635,14 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       if (!img || !jobs.has(tracked.get(img)?.key ?? '')) return;
       e.preventDefault();
       e.stopPropagation();
-      openPick(img);
+      openPick(img, 'report');
+    }
+    if (e.altKey && e.code === 'KeyT' && !e.repeat && !isEditable(e.target)) {
+      const img = imageAtPointer() ?? current;
+      if (!img || !readyPage(img)?.bubbles.length) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openPick(img, 'retranslate');
     }
   };
   const onPointer = (e: MouseEvent) => {
@@ -571,8 +668,9 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   addEventListener('blur', endPeek);
   document.addEventListener('visibilitychange', endPeek);
   const ping = setInterval(() => pendingWants().length && post({ type: 'ping' }), PING_MS);
-  const onCommand = (msg: TabCommand, _sender: chrome.runtime.MessageSender, reply: (work: Work | null) => void) => {
+  const onCommand = (msg: TabCommand, _sender: chrome.runtime.MessageSender, reply: (answer: Work | string | null) => void) => {
     if (msg.type === 'work') reply(work ?? null);
+    else if (msg.type === 'context') reply(currentContext());
     else if (msg.type === 'disable') teardown();
     else retryBlocked();
   };
@@ -630,8 +728,8 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       }
       if (hovered && set.has(hovered)) say('offer', { key, job: job.state });
       for (const img of set) {
-        const picking = pick?.img === img ? { areas: pick.areas, bubbles: job.state === 'ready' ? bubbleAreas(job.page) : [] } : undefined;
-        if (picking || (!peeking && (img === hovered || job.state !== 'ready'))) out.push({ img, job, hover: img === hovered, pick: picking });
+        const picking = pick?.img === img ? { purpose: pick.purpose, areas: pick.areas, bubbles: job.state === 'ready' ? bubbleAreas(job.page) : [] } : undefined;
+        if (picking || (!peeking && (img === hovered || job.state !== 'ready' || isBusy(job)))) out.push({ img, job, hover: img === hovered, pick: picking });
       }
     }
     return out;
@@ -639,7 +737,16 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
 
   document.querySelectorAll('img').forEach(scan);
   updateCurrent();
+  announceContext();
   say('tracked', { keys: [...elementsByKey.keys()], images: document.images.length });
+}
+
+const isBusy = (job: PageJob) => job.state === 'ready' && (job.redo === 'refreshing' || job.redo === 'retranslating');
+
+function inView(img: HTMLImageElement): boolean {
+  if (!img.isConnected) return false;
+  const r = img.getBoundingClientRect();
+  return r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
 }
 
 function bubbleArea(page: TranslatedPage, index: number): ReportArea {
@@ -758,12 +865,12 @@ function fadeOut(ghost: HTMLElement, { left, top, width, height }: { left: numbe
   setTimeout(() => ghost.remove(), FADE_MS + 80);
 }
 
-type ChipItem = { img: HTMLImageElement; job: PageJob | undefined; hover: boolean; pick?: { areas: ReportArea[]; bubbles: ReportArea[] } };
+type ChipItem = { img: HTMLImageElement; job: PageJob | undefined; hover: boolean; pick?: { purpose: PickPurpose; areas: ReportArea[]; bubbles: ReportArea[] } };
 type ChipSource = () => ChipItem[];
 type ChipActions = {
   retry(img: HTMLImageElement): void;
   translate(img: HTMLImageElement): void;
-  openPick(img: HTMLImageElement): void;
+  openPick(img: HTMLImageElement, purpose: PickPurpose): void;
   pickPoint(img: HTMLImageElement, x: number, y: number, add: boolean): void;
   pickRect(img: HTMLImageElement, box: ReportArea['box']): void;
   submit(img: HTMLImageElement): void;
@@ -773,12 +880,18 @@ type Chip = {
   status: HTMLElement;
   translate: HTMLButtonElement;
   report: HTMLButtonElement;
+  retranslate: HTMLButtonElement;
   note: HTMLInputElement;
+  fix: HTMLElement;
+  hint: HTMLInputElement;
+  ja: HTMLInputElement;
+  en: HTMLInputElement;
   send: HTMLButtonElement;
   overlay: HTMLElement;
   marks: HTMLElement;
   statusKey: string;
   marksKey: string;
+  pickKey: string;
 };
 
 const TOAST_MS = 2600;
@@ -806,11 +919,17 @@ function createChips(actions: ChipActions) {
     .waiting .status{gap:6px}
     .waiting .spin{animation-duration:2.4s;opacity:.7}
     .retry{pointer-events:auto;cursor:pointer}
-    .report,.send,.translate{all:unset;pointer-events:auto;cursor:pointer;padding:0 5px;font:inherit;color:inherit}
+    .report,.retranslate,.send,.translate{all:unset;pointer-events:auto;cursor:pointer;padding:0 5px;font:inherit;color:inherit}
     .status:not([hidden])+.report{border-left:1px solid rgba(255,255,255,.35);padding-left:7px}
-    .report:hover,.send:hover,.translate:hover{text-decoration:underline}
-    .note{pointer-events:auto;box-sizing:border-box;width:300px;height:18px;margin:0 -1px;border:0;border-radius:9px;padding:0 8px;
+    .report:not([hidden])+.retranslate{border-left:1px solid rgba(255,255,255,.35);padding-left:7px}
+    .report:hover,.retranslate:hover,.send:hover,.translate:hover{text-decoration:underline}
+    .note,.fix input{pointer-events:auto;box-sizing:border-box;width:300px;height:18px;margin:0 -1px;border:0;border-radius:9px;padding:0 8px;
       font:500 12px/18px system-ui,sans-serif;background:#fff;color:#111;outline:none}
+    .fix{display:flex;align-items:center;gap:5px}
+    .fix .hint{width:230px}
+    .fix .ja{width:80px}
+    .fix .en{width:96px}
+    .fix span{opacity:.8;font-weight:500}
     .pick{position:fixed;pointer-events:auto;cursor:crosshair;box-sizing:border-box;outline:2px solid rgba(255,0,200,.7);outline-offset:-2px;
       background:rgba(255,0,200,.04);touch-action:none;user-select:none}
     .pick div{position:absolute;box-sizing:border-box;pointer-events:none}
@@ -818,6 +937,7 @@ function createChips(actions: ChipActions) {
     .area{border:3px solid #ff00c8;background:rgba(255,0,200,.14)}
     .area span{position:absolute;left:-3px;bottom:100%;padding:2px 5px;background:#ff00c8;color:#fff;font:700 11px/1 system-ui,sans-serif;white-space:nowrap}
     .drag{border:2px dashed #ff00c8;background:rgba(255,0,200,.1)}
+    .bubbles-only .drag{display:none!important}
     .toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);max-width:80vw;padding:9px 16px;border-radius:18px;
       background:rgba(20,20,24,.88);color:#fff;font:600 13px/1.3 system-ui,sans-serif;backdrop-filter:blur(4px);opacity:0;transition:opacity .2s}
     .toast.show{opacity:1}
@@ -843,7 +963,7 @@ function createChips(actions: ChipActions) {
     }
   }
 
-  function makeOverlay(img: HTMLImageElement, note: HTMLInputElement): { overlay: HTMLElement; marks: HTMLElement } {
+  function makeOverlay(img: HTMLImageElement, focus: () => void): { overlay: HTMLElement; marks: HTMLElement } {
     const overlay = document.createElement('div');
     overlay.className = 'pick';
     overlay.hidden = true;
@@ -880,7 +1000,7 @@ function createChips(actions: ChipActions) {
       else actions.pickPoint(img, end.x, end.y, e.shiftKey);
       start = undefined;
       drag.hidden = true;
-      note.focus();
+      focus();
     });
     overlay.addEventListener('pointercancel', () => {
       start = undefined;
@@ -905,21 +1025,41 @@ function createChips(actions: ChipActions) {
     report.className = 'report';
     report.textContent = 'Report';
     report.title = 'Report a problem with this page (Alt+R)';
-    report.addEventListener('click', () => actions.openPick(img));
-    const note = document.createElement('input');
-    note.className = 'note';
-    note.placeholder = 'Click bubbles or drag boxes, add a note, Enter sends';
+    report.addEventListener('click', () => actions.openPick(img, 'report'));
+    const retranslate = document.createElement('button');
+    retranslate.className = 'retranslate';
+    retranslate.textContent = 'Retranslate';
+    retranslate.title = 'Translate some bubbles again, with a hint or a name fix (Alt+T)';
+    retranslate.hidden = true;
+    retranslate.addEventListener('click', () => actions.openPick(img, 'retranslate'));
+    const field = (className: string, placeholder: string, maxLength?: number) => {
+      const input = document.createElement('input');
+      input.className = className;
+      input.placeholder = placeholder;
+      if (maxLength) input.maxLength = maxLength;
+      for (const type of ['keydown', 'keyup', 'keypress']) input.addEventListener(type, (e) => e.stopPropagation());
+      return input;
+    };
+    const note = field('note', 'Click bubbles or drag boxes, add a note, Enter sends');
     note.hidden = true;
-    for (const type of ['keydown', 'keyup', 'keypress']) note.addEventListener(type, (e) => e.stopPropagation());
+    const hint = field('hint', 'Click bubbles, add a hint (optional)', HINT_MAX);
+    const ja = field('ja', 'Name in JP', 200);
+    const en = field('en', 'In English', 100);
+    const arrow = document.createElement('span');
+    arrow.textContent = '→';
+    const fix = document.createElement('div');
+    fix.className = 'fix';
+    fix.hidden = true;
+    fix.append(hint, ja, arrow, en);
     const send = document.createElement('button');
     send.className = 'send';
     send.textContent = 'Send';
     send.hidden = true;
     send.addEventListener('click', () => actions.submit(img));
-    el.append(status, translate, report, note, send);
-    const { overlay, marks } = makeOverlay(img, note);
+    el.append(status, translate, report, retranslate, note, fix, send);
+    const { overlay, marks } = makeOverlay(img, () => (fix.hidden ? note : hint).focus());
     root.append(overlay, el);
-    return { el, status, translate, report, note, send, overlay, marks, statusKey: '', marksKey: '' };
+    return { el, status, translate, report, retranslate, note, fix, hint, ja, en, send, overlay, marks, statusKey: '', marksKey: '', pickKey: '' };
   }
 
   function drawPick(chip: Chip, img: HTMLImageElement, pick: NonNullable<ChipItem['pick']>): void {
@@ -928,6 +1068,7 @@ function createChips(actions: ChipActions) {
     chip.overlay.style.top = `${c.top}px`;
     chip.overlay.style.width = `${c.width}px`;
     chip.overlay.style.height = `${c.height}px`;
+    chip.overlay.classList.toggle('bubbles-only', pick.purpose === 'retranslate');
     const key = JSON.stringify(pick);
     if (chip.marksKey === key) return;
     chip.marksKey = key;
@@ -962,44 +1103,63 @@ function createChips(actions: ChipActions) {
         chip.el.className = 'chip';
         chip.status.hidden = true;
         chip.report.hidden = true;
+        chip.retranslate.hidden = true;
         chip.send.hidden = true;
         chip.overlay.hidden = true;
         chip.note.hidden = true;
+        chip.fix.hidden = true;
+        chip.pickKey = '';
         place(chip, r, top);
         continue;
       }
       const failed = job.state === 'failed';
       const waiting = job.state === 'waiting';
       const blocked = job.state === 'blocked';
-      const statusKey = `${failed ? `failed:${job.retryable}` : blocked ? `blocked:${job.host}` : job.state === 'ready' || job.state === 'queued' || waiting ? job.state : 'busy'}:${!!pick}`;
+      const busy = isBusy(job);
+      const shown = job.state === 'ready' && !busy;
+      const statusKey = `${failed ? `failed:${job.retryable}` : blocked ? `blocked:${job.host}` : shown || job.state === 'queued' || waiting ? job.state : 'busy'}:${!!pick}`;
       if (chip.statusKey !== statusKey) {
         chip.statusKey = statusKey;
         chip.el.className = `chip ${failed || blocked ? 'failed' : job.state === 'queued' || waiting ? job.state : ''} ${pick ? 'picking' : ''}`;
-        chip.status.hidden = job.state === 'ready';
+        chip.status.hidden = shown;
         chip.status.classList.toggle('retry', failed && job.retryable);
         if (blocked) chip.status.textContent = noAccessText(job.host);
         else chip.status.innerHTML = failed
           ? job.retryable
             ? 'Translation failed · Retry'
             : 'Can’t translate'
-          : job.state === 'ready'
+          : shown
             ? ''
             : waiting
               ? '<div class="spin"></div>Waiting for server…'
               : '<div class="spin"></div>';
       }
-      chip.status.title = failed ? job.error : blocked ? noAccessText(job.host) : waiting ? `${job.detail} Retrying automatically.` : job.state === 'queued' ? 'Waiting to translate' : 'Translating';
+      chip.status.title = failed
+        ? job.error
+        : blocked
+          ? noAccessText(job.host)
+          : waiting
+            ? `${job.detail} Retrying automatically.`
+            : job.state === 'queued'
+              ? 'Waiting to translate'
+              : job.state === 'ready' && job.redo === 'retranslating'
+                ? 'Retranslating'
+                : job.state === 'ready' && job.redo === 'refreshing'
+                  ? 'Updating names'
+                  : 'Translating';
       chip.report.hidden = !hover || !!pick;
+      chip.retranslate.hidden = !hover || !!pick || !shown || !job.page.bubbles.length;
       chip.send.hidden = !pick;
       chip.overlay.hidden = !pick;
       if (pick) drawPick(chip, img, pick);
       else chip.marksKey = '';
-      if (chip.note.hidden === !!pick) {
-        chip.note.hidden = !pick;
-        if (pick) {
-          chip.note.value = '';
-          chip.note.focus();
-        }
+      const pickKey = pick?.purpose ?? '';
+      if (chip.pickKey !== pickKey) {
+        chip.pickKey = pickKey;
+        chip.note.hidden = pickKey !== 'report';
+        chip.fix.hidden = pickKey !== 'retranslate';
+        for (const input of [chip.note, chip.hint, chip.ja, chip.en]) input.value = '';
+        if (pickKey) (pickKey === 'report' ? chip.note : chip.hint).focus();
       }
       place(chip, r, top);
     }
@@ -1025,6 +1185,10 @@ function createChips(actions: ChipActions) {
     },
     noteText(img: HTMLImageElement): string {
       return chips.get(img)?.note.value.trim() ?? '';
+    },
+    fixText(img: HTMLImageElement): { hint: string; ja: string; en: string } {
+      const chip = chips.get(img);
+      return { hint: chip?.hint.value.trim() ?? '', ja: chip?.ja.value.trim() ?? '', en: chip?.en.value.trim() ?? '' };
     },
     toast(text: string, error: boolean) {
       toastEl.textContent = text;

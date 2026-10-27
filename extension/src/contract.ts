@@ -13,18 +13,29 @@ export type TranslatedPage = {
   bubbles: Bubble[];
   timings_ms: Record<string, number>;
   cached: boolean;
+  updated: boolean;
 };
+
+export const NAME_SOURCES = ['user', 'furigana', 'auto'] as const;
+export type NameSource = (typeof NAME_SOURCES)[number];
+export const NAME_KINDS = ['name', 'term'] as const;
+export type NameKind = (typeof NAME_KINDS)[number];
+
+export type Name = { ja: string; en: string; reading: string; source: NameSource; kind: NameKind };
+export type Cast = { contextKey: string; names: Name[] };
 
 export type Health =
   | { ok: true; version: string; translator: string; gpu: string }
   | { ok: false; detail: string };
+
+export type Redo = 'stale' | 'refreshing' | 'retranslating';
 
 export type PageJob =
   | { state: 'queued'; url: string; priority: number }
   | { state: 'fetching'; url: string }
   | { state: 'translating'; url: string }
   | { state: 'waiting'; url: string; detail: string }
-  | { state: 'ready'; url: string; page: TranslatedPage; renderedBlobUrl: string }
+  | { state: 'ready'; url: string; page: TranslatedPage; renderedBlobUrl: string; contextKey: string; redo?: Redo }
   | { state: 'failed'; url: string; error: string; retryable: boolean }
   | { state: 'blocked'; url: string; host: string };
 
@@ -81,7 +92,27 @@ export function parseTranslatedPage(v: unknown): TranslatedPage {
     bubbles: o.bubbles.map(parseBubble),
     timings_ms: Object.fromEntries(Object.entries(timings).filter((e): e is [string, number] => typeof e[1] === 'number')),
     cached: bool(o, 'cached'),
+    updated: o.updated === true,
   };
+}
+
+function parseName(v: unknown): Name {
+  const o = obj(v, 'name');
+  const source = NAME_SOURCES.find((x) => x === o.source);
+  if (!source) throw new ParseError('source: expected user, furigana or auto');
+  return {
+    ja: str(o, 'ja'),
+    en: str(o, 'en'),
+    reading: typeof o.reading === 'string' ? o.reading : '',
+    source,
+    kind: NAME_KINDS.find((x) => x === o.kind) ?? 'name',
+  };
+}
+
+export function parseCast(v: unknown): Cast {
+  const o = obj(v, 'names');
+  if (!Array.isArray(o.names)) throw new ParseError('names: expected array');
+  return { contextKey: str(o, 'context_key'), names: o.names.map(parseName) };
 }
 
 export type ReportReceipt = { reportId: string; path: string };

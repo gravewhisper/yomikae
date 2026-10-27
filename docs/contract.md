@@ -191,10 +191,14 @@ type PageJob =
   | { state: 'fetching'; url: string }
   | { state: 'translating'; url: string }
   | { state: 'waiting'; url: string; detail: string }
-  | { state: 'ready'; url: string; page: TranslatedPage; renderedBlobUrl: string }
+  | { state: 'ready'; url: string; page: TranslatedPage; renderedBlobUrl: string; contextKey: string; redo?: Redo }
   | { state: 'failed'; url: string; error: string; retryable: boolean }
   | { state: 'blocked'; url: string; host: string }
+
+type Redo = 'stale' | 'refreshing' | 'retranslating'
 ```
+
+A `ready` job keeps the `contextKey` its page was translated under. `redo` is set while the page shown may be replaced: `stale` after a name of its work changed, `refreshing` while a stale page is requested again, and `retranslating` while the reader's retranslate is on the server. The old render stays in place until the new one arrives, and a failed redo leaves it there.
 
 Priority is distance from the page the reader is looking at, so the current page goes first and the next pages after it. At most 2 jobs are in flight at once.
 
@@ -260,3 +264,29 @@ x.com keys an image as `x:<media id>`, so every size of one image shares one job
 Hovering a page image shows a small chip in its top right corner with a **Report** item. Pages that are still translating or that failed show the item next to their status. `Alt+R` reports the page under the cursor, or the page most in view when the cursor is not over one. Both start pick mode on that image. Detected bubbles show as dashed outlines. Clicking snaps to the nearest bubble and highlights it, shift-click adds another, and clicking a highlighted bubble removes it. Dragging adds a free rectangle, for text the detector missed. Pick mode catches every click on the image, so the site's click-to-advance never fires, and it is drawn in an overlay, so nothing shifts. A one-line note box sits in the chip. Enter or Send sends the report, Esc cancels, and sending with nothing marked reports the whole page. A toast confirms with the report id, or shows why the report failed.
 
 The background worker keeps the original bytes of the last 40 fetched pages, so a report re-sends exactly what was translated. If the bytes were evicted or the worker restarted, it fetches the image again.
+
+## Retranslating bubbles
+
+The chip of a translated page has a **Retranslate** item next to **Report**, shown on hover when the page has bubbles. `Alt+T` starts it on the page under the cursor, or the page most in view. It uses the same pick mode as Report: dashed bubble outlines, click to pick a bubble, shift-click to add one, click a picked bubble to drop it. Dragging adds nothing, since only detected bubbles can be retranslated. The chip holds a hint box (at most 300 characters) and a name fix, Japanese and English. Enter or **Send** sends it and Esc cancels. Enter with no bubble picked sends nothing and says so, and so does a Japanese name without its English. A name fix is sent as one `name` entry, and its Japanese can be left empty.
+
+The content script sends `{ type: 'retranslate', request: { want, bubbles, hint, names } }`. The background worker takes the page's original bytes from its cache of the last 40 fetched pages, or fetches them again, and posts them to `POST /v1/pages/<sha256 of the bytes>/retranslate` with `request` as a JSON string of `{ context_key, page_index, bubbles, hint, names }`. It fetches the new `rendered_url`, stores the result in place of the old one, and answers with a `ready` message followed by `{ type: 'retranslated', key, outcome }`. While it runs the chip shows a spinner. The new render swaps in place with a crossfade, and a toast reads "Retranslated" or "Retranslate failed: <reason>".
+
+## Names changed after a page was translated
+
+When the names of a work change, through a name fix in the retranslate box or through the cast sheet, the background worker drops that work's pages from its result cache and sends `{ type: 'stale', contextKey }` to every tab. Each tab marks its `ready` jobs of that work `stale`. A stale job whose image is in the viewport, now or when the reader scrolls to it, is requested again with an ordinary `want` in any site mode, and `POST /v1/pages` redoes the bubbles that use a changed name. The answer replaces the page in place, unless it has the same `rendered_url` and no `"updated": true`, in which case the page shown is kept. Pages that are not viewed again are never requested. A tab that opens a page of the work later asks the server, since the worker no longer holds the old result.
+
+## Cast sheet
+
+The extension declares a side panel, `sidepanel.html`, with the `sidePanel` permission. That permission adds no install warning: `chrome.management.getPermissionWarningsByManifest` returns the same warnings with and without it, and Chrome's permission list gives it none. The popup's **Names and terms of this work** link opens the panel for its window.
+
+The panel follows the window's active tab. It asks the tab's content script for its work with the tab command `{ type: 'context' }`, answered with the context key of the page most in view, and the content script sends `{ type: 'context', contextKey }` with `chrome.runtime.sendMessage` whenever that key changes, for example when a single-page site moves to another work. A tab without Yomikae shows "Open a page Yomikae translates to see the names of its work."
+
+The panel lists the work's names from `GET /v1/names`, characters and terms apart. Each entry shows its Japanese and reading, its English spelling in an editable box, and where it came from: **yours** (`user`), **furigana**, or **auto**. For an `auto` entry the Japanese shown is the line it came from. The reader can respell an entry (Enter or leaving the box saves, Esc undoes), flip it between character and term, delete it, and add one with Japanese, English, an optional reading and its kind. Every change reads the names again, applies the change, and saves the stored list with `PUT /v1/names`, without `auto` entries:
+
+- A respelt or flipped `user` or `furigana` entry keeps its Japanese and reading and becomes `user`.
+- A respelt or flipped `auto` entry adds a `user` entry with that spelling, its kind and no Japanese, since the server cannot tell which characters of the line spell the name.
+- A deleted entry is left out. `auto` entries cannot be deleted, because the server rebuilds them.
+- An added entry replaces a stored one with the same Japanese, or with the same English when the Japanese is empty.
+
+After a change is saved the panel sends `{ type: 'names', contextKey }` with `chrome.runtime.sendMessage`. The background worker treats it as a names change of that work, and other open panels on that work reload. When a retranslate stores a name fix, the background worker sends the same message, so an open panel shows it.
+

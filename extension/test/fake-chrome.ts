@@ -15,6 +15,7 @@ export function fakeChrome(data: Record<string, unknown> = {}, granted: string[]
   const scripts = new Map<string, Script>();
   const revoked: string[] = [];
   const listeners: Record<string, Handler> = {};
+  const sent: unknown[] = [];
   const event = (name: string) => ({ addListener: (f: Handler) => (listeners[name] = f), removeListener: () => undefined });
   const keys = (k: string | string[]) => [k].flat();
   const chrome = {
@@ -45,7 +46,7 @@ export function fakeChrome(data: Record<string, unknown> = {}, granted: string[]
     },
     tabs: { TAB_ID_NONE: -1, query: async () => [], sendMessage: async () => undefined },
     declarativeNetRequest: { RuleActionType: {}, HeaderOperation: {}, ResourceType: {}, getSessionRules: async () => [], updateSessionRules: async () => undefined },
-    runtime: { onConnect: event('connect'), onInstalled: event('installed'), onStartup: event('startup') },
+    runtime: { onConnect: event('connect'), onMessage: event('message'), onInstalled: event('installed'), onStartup: event('startup'), sendMessage: async (msg: unknown) => void sent.push(msg) },
   };
-  return { chrome, data, grants, scripts, revoked, listeners };
+  return { chrome, data, grants, scripts, revoked, listeners, sent };
 }
