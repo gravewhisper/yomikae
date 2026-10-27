@@ -293,7 +293,7 @@ class OpenAICompatible:
         for delay in (*self.retry_delays, None):
             try:
                 r = await self.client.post(f"{self.base}/chat/completions", json=body)
-            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+            except httpx.TransportError as e:
                 raise TranslatorUnavailable(f"{self.base} unreachable: {e!r}") from e
             if delay is None or not transient(r):
                 break
