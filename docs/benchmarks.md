@@ -103,6 +103,34 @@ A reviewer that saw only the A and B labels reports counts that mean nothing unt
 
 To see how much better translation is possible, have a larger model translate the same lines with the same prompt, write its output into a run directory in `translation_bench.py`'s page format, and score it with `--score`. On 2026-10-26, Claude Opus 5.5 scored COMET 0.756 against Gemma 4 12B's 0.747 to 0.749. [models.md](models.md#measured-on-our-benchmark) has the details.
 
+## Compare against manga-image-translator
+
+On 2026-10-27 Yomikae and manga-image-translator (github.com/zyddnys/manga-image-translator at commit d6de6ab) ran all 214 OpenMantra pages end to end with the same LLM, the Gemma 4 12B build used in development in LM Studio. Vision models ran on the CPU for both. Yomikae ran at df74cf8 with live-server defaults and a context key per work. manga-image-translator ran with its `custom_openai` translator, its stock prompt, the default detector, the 48px OCR, the `lama_large` inpainter and the default renderer. With `custom_openai` it keeps no earlier-page context and no glossary. Its Python version warns on import that it is unstable and points to its Rust rewrite.
+
+It ran twice. Stock is the tool as it ships, which sends no reasoning setting, so the model reasons. The second run added only `reasoning_effort: none` to each request, which is what Yomikae sends.
+
+Each tool's output boxes were matched to the reference lines by overlap (30% of the smaller box), and the matched translations scored with COMET and chrF as in `translation_bench.py`.
+
+| | Yomikae | Stock | Reasoning off |
+| --- | ---: | ---: | ---: |
+| Reference lines translated, of 1586 | 1546 | 1244 | 1498 |
+| Pages that failed, of 214 | 0 | 27 | 0 |
+| COMET, blank lines scored as 0 | 0.7295 | 0.5835 | 0.6900 |
+| COMET, translated lines only | 0.7483 | 0.7439 | 0.7305 |
+| chrF | 38.74 | 31.06 | 36.51 |
+| Names spelled as the reference, of 113 | 90 | 37 | 45 |
+| OCR character error rate | 1.0% | 3.7% | 4.3% |
+| Median seconds per page, CPU | 3.96 | 22.9 | 7.5 |
+
+- On lines both tools translated, Yomikae's COMET was 0.0081 higher than stock (95% CI 0.0026 to 0.0137), under the 0.01 this page treats as noise, and 0.0187 higher than reasoning off (CI 0.0135 to 0.0239).
+- The translated-only COMET rows cover different lines. On the 1244 lines both runs of manga-image-translator translated, stock scored 0.0069 higher than reasoning off (CI 0.0029 to 0.0110), also under the noise line.
+- All 27 stock failures were the model spending the whole 2048-token reply budget on reasoning and returning no text. The tool does not retry by default, so the page is lost.
+- Most of the stock time is reasoning: translation took 17 of 23 s per page. With reasoning off, translation took 1.4 s, as in Yomikae, and the rest of the gap is CPU inpainting (2.6 s) and rendering (1.2 s).
+- Its 48px OCR drops dakuten and cuts lines short, which is most of why it does worst on boureisougi. With no glossary, it names people afresh on each page.
+- It replaces every curly apostrophe and quote in the English with a Japanese corner bracket, so 49 of its 1272 stock bubbles were lettered like "It」s". Restoring them moved COMET by 0.0005.
+
+End-to-end COMET also scores detection, OCR and grouping, and each side ran once. Lettering and cleaning were left to a blind side-by-side read of 30 random pages and are not scored here.
+
 ## Know the noise
 
 Both tools measure an LLM, and its output varies between runs of the same code.
