@@ -136,6 +136,13 @@ On the reported pages themselves, 7 pages from one gallery, the big toned bubble
 
 On 2026-10-27 the per-lobe erosion for shared double bubbles was checked on 67 pages: every OpenMantra page with a double bubble that two lettered blocks share (49), 4 OpenMantra control pages, and 14 such pages from a second book. Detection, OCR and inpainting ran once at the base commit and were reused for both renders, and each block's translation was the dataset's reference English matched by overlap, so only typesetting differed. Of the 154 bubbles that share a balloon, 52 grew, 15 shrank and 87 kept their size. [decisions.md](decisions.md#each-lobe-of-a-shared-double-bubble-is-its-own-region) has the rest. The missed-line rescue change was checked with detection alone on all 214 OpenMantra pages and 243 pages of the second book: one block was added, OCR dropped it, and no bubble changed.
 
+On 2026-10-27 the joined-bubble split fixes were checked the same way on the 90 pages whose detection changed, 43 OpenMantra pages and 47 pages of the second book. Detection, OCR and inpainting ran at the base and at the change, translations were the reference English matched by overlap (a reference line covering two blocks had its words split between them), and both renders were measured against the same lobes of the segmenter's balloons.
+
+- Lobes that held Japanese, were cleared by inpainting and got no English: 30 before, 3 after.
+- Lobes sharing one block's text with another lobe: 170 before, 15 after.
+- Lobes holding two or more lettered blocks: 3 before, 11 after. 1 of the 3, a duplicate block from a neighbour's padding, is gone. Of the 9 new ones, 6 are joined pairs whose two lobes the segmenter's mask does not separate, 1 is a burst holding two shouts, and 2 are wrong splits of one bubble.
+- Lettered bubbles: 754 before, 853 after. Of the 645 bubbles whose block kept its box, 470 kept their size, 64 grew and 111 shrank, most by 1 or 2 px as the page target moved; 6 shrank by 5 px or more.
+
 ## Avoid these mistakes
 
 **Use the same lettering font in every checkout.** Anime Ace 2 is ignored by git, so a new worktree does not have it, and the server silently falls back to the bundled Shantell Sans. One comparison was void because the run in a worktree set dialogue in the bundled font while the base used Anime Ace, which changed sizes on most bubbles. Link or copy `server/fonts/animeace2_reg.ttf` into each worktree, and check that `dialogue_font` in `meta.json` matches between the runs you compare. The line under the title of `scorecard.md` shows it too.

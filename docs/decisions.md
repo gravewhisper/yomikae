@@ -40,6 +40,25 @@ Typesetting did not cause the small text. With the reported pages' detection hel
 
 **Tried and rejected.** Nothing else was built. A rule from the median gray alone would not work: the reported toned bubbles ranged from 133 to 240, and an OpenMantra white bubble with a dark outline also split its columns.
 
+## A joined bubble is cut at its notches, and a block owns only its own text
+
+**Decision.** `detect.split_by_bubble` follows the rules above, with four changes:
+
+1. Only the text pixels inside the block's own box count. The block's mask covers a padded box, and the padding can hold the edge of a neighbour's text.
+2. The column reach, twice the column width, uses the width measured in each lobe, capped at the width over the whole block.
+3. When the distance map shows one lobe, the bubble is cut along the line between its two deepest outline notches. Both notches must be at least 20% of the inscribed radius deep, the line must lie at least 90% inside the bubble, and each side must hold at least 15% of its area. An outline with more than 5 notches deeper than 5% of the radius is never cut, so spiky bursts and jagged boxes keep their blocks whole. The text rules then decide as before.
+4. A part is kept from 5% of the block's text, down from 10%. The 10% gate for a light area's size is unchanged.
+
+**Why.** On 2026-10-27 the owner reported a joined pair whose English all went into one lobe while the other lobe was left blank, another joined pair handled as one bubble, and one bubble with two boxes. On OpenMantra, 57 blocks held text from two reference lines. By eye, 51 of them were joined pairs and 6 were single bubbles. 44 of the 51 never reached a lobe split, because the distance map has no second peak when a small lobe hangs on the side of a big one. Stacked lobes whose columns are offset side to side read as one column about 79 px wide over the whole block, so the reach bridged the 75 px gap at the neck. A two-kana lobe held 7% to 8% of its block's text. The one bubble with two boxes came from the padding: the top row of the next bubble's text became a third part of the bubble above.
+
+**Measured.** Detection was run at the base and at the change on all 214 OpenMantra pages and 282 pages of a second book. 90 pages changed, and 213 blocks were added and 112 removed, matching blocks with an IoU of 0.8. 43 of the 51 joined pairs are now split, and 1 of the 6 single bubbles is split wrongly. The shallower notch of the kept pairs is at least 0.22 of the inscribed radius, while the single bubbles that a 0.15 depth split wrongly sat at 0.15 to 0.17, so 0.2 sits in that gap. The jagged single bubbles had 7 notches deeper than 5% of the radius, and the pairs had 5 or fewer. Read side by side, nearly every changed spot is a joined pair now lettered per lobe. 6 lettered spots are wrong new splits: a cloud bubble cut into by hair, a tall bubble and a cloud with shallow waists on one page, a jagged bubble, a two-word caption on art, and a last kana split off its sentence. Typeset results on the changed pages are in [benchmarks.md](benchmarks.md#a-development-set-check).
+
+**Tried and rejected.**
+
+- Finer distance-map levels (80 instead of 40) found 3 of the 51 pairs, and they would change typesetting of every shared bubble.
+- Flooding the lobe seeds down to the neck in detection, as typesetting does. It fixed a synthetic bubble but did worse on all 6 real pages where it made a difference: text near a neck crossed the flooded cut, and the straddle rule then kept the block whole.
+- A notch depth of 15% of the radius. It split 5 more single bubbles, mostly clouds and boxes with two sentences, for 1 more joined pair.
+
 ## Text sits at the bubble's centroid
 
 **Decision.** A block is laid out around the centroid of the bubble interior. The centre of the largest inscribed circle is a fallback for a number of lines that does not fit at the centroid.
