@@ -17,12 +17,12 @@ The server sends `temperature: 0.3` and `reasoning_effort` from `YOMIKAE_OPENAI_
 By default the model shares one GPU with the Yomikae server and your desktop. Add up three things:
 
 - **The model.** The tables below estimate it as the GGUF file size, plus the KV cache for 8192 tokens in f16 from each model's `config.json`, plus about 0.4 GB of compute buffers. They skip the vision projector, because Yomikae does its own OCR.
-- **The server.** Measured right after start, it held 2.6 GB with the default settings. `YOMIKAE_DETECT_DEVICE=cpu` holds less, and `YOMIKAE_LOW_VRAM=1` holds none, at a cost in speed. [performance.md](performance.md#graphics-memory) has the numbers.
+- **The server.** With the default settings it held 2.6 GB right after start and about 3.1 GB while reading. `YOMIKAE_DETECT_DEVICE=cpu` holds less, and `YOMIKAE_LOW_VRAM=1` holds none, at a cost in speed. [performance.md](performance.md#graphics-memory) has the numbers.
 - **The desktop.** Keep 1 to 2 GB free. A nearly full GPU makes the desktop glitch and stutter.
 
 Treat the estimates as a floor. The development model's estimate is 8.0 to 8.3 GB, and LM Studio held about 9.7 GB for it on the development machine with an 8192-token context.
 
-The tiers below leave about 1.5 GB of the card for everything else. That is enough for the desktop when the server runs with `YOMIKAE_LOW_VRAM=1`. With the server's default settings, add its 2.6 GB, or pick from the tier below your card.
+The tiers below leave about 1.5 GB of the card for everything else. That is enough for the desktop when the server runs with `YOMIKAE_LOW_VRAM=1`. With the server's default settings, add its 3.1 GB, or pick from the tier below your card.
 
 ## Choose by graphics memory
 

@@ -16,8 +16,6 @@ The name comes from 読み替え (yomikae), Japanese for "reading something as s
 
 *Demo pages from the OpenMantra dataset (Hinami et al., AAAI 2021), CC BY-NC 4.0, translated by Yomikae.*
 
-<!-- Screenshots go here. Use OpenMantra pages or synthetic pages from server/tools/make_test_page.py, never pages from the sites in docs/sites.md. -->
-
 ## What reading with Yomikae looks like
 
 - Switch Yomikae on for a site and read as usual. In automatic mode, each page shows up in English in the same place on the site.
@@ -48,9 +46,9 @@ Any other site works in click-to-translate mode. Hover an image that is at least
 
 Yomikae was developed on Linux with an NVIDIA GeForce RTX 5070 Ti (16 GB). Other platforms are untested.
 
-The default setup runs the server and the LLM on one GPU. On that machine, LM Studio holds about 9.7 GB for the 12B Gemma 4 build used in development, and the server a few GB: every model on the GPU, with the text detector's and balloon segmenter's memory pools capped at 1.5 GB each. The server gives back its working memory after every page, so it does not grow while you read. `YOMIKAE_DETECT_DEVICE=cpu` moves detection to the CPU, saving that GPU memory for about 0.95 s more per page. If the GPU is still too full, `YOMIKAE_LOW_VRAM=1` runs everything on the CPU and the server uses no GPU memory, at about 2 s more per page plus about 0.9 s for each patch of text on screentone or art. [docs/performance.md](docs/performance.md) has the measurements.
+The default setup runs the server and the LLM on one GPU. On that machine, LM Studio holds about 9.7 GB for the 12B Gemma 4 build used in development, and the server a few GB: every model on the GPU, with the text detector's and balloon segmenter's memory pools capped at 1.5 GB each. All GPU work runs on one thread and the server gives back its working memory after every page, so it stays at about 3.1 GB while you read. `YOMIKAE_DETECT_DEVICE=cpu` moves detection to the CPU, saving that GPU memory for about 0.95 s more per page. If the GPU is still too full, `YOMIKAE_LOW_VRAM=1` runs everything on the CPU and the server uses no GPU memory, at about 2 s more per page plus about 0.9 s for each patch of text on screentone or art. [docs/performance.md](docs/performance.md) has the measurements.
 
-Translation is the heavy part. Detection, OCR, erasing, and lettering need much less. When CUDA is not available, the server runs those steps on the CPU, at about 3 to 4.5 s per page on real OpenMantra pages and about 5 s in a `server/tools/strip_bench.py` run on a synthetic page with plain white bubbles, on an 8-core desktop CPU. Each patch of text on screentone or art goes through LaMa, at about 1 s each on the CPU, so pages with a lot of such text take longer. The install steps below install the CUDA build of PyTorch, and a CPU-only install is not documented or tested.
+Translation is the heavy part. Detection, OCR, erasing, and lettering need much less. When CUDA is not available, the server runs those steps on the CPU, at about 1.4 to 4.6 s per page on real OpenMantra pages (median 2.8 s) and about 2 s in a `server/tools/strip_bench.py` run on a synthetic page with plain white bubbles, on an 8-core desktop CPU. Each patch of text on screentone or art goes through LaMa, at about 1 s each on the CPU, so pages with a lot of such text take longer. The install steps below install the CUDA build of PyTorch, and a CPU-only install is not documented or tested.
 
 The LLM does not have to run on the same machine. Point `YOMIKAE_OPENAI_BASE_URL` at another computer on your network or at a cloud API. With a cloud API, the Japanese text of each page leaves your computer, along with the dialogue of up to two earlier pages as context. Page images never leave it. Cloud models may refuse some content, which leaves those lines in Japanese or fails the page.
 

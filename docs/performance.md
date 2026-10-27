@@ -26,11 +26,15 @@ Detection, balloon segmentation, OCR, and inpainting share one GPU lock. Transla
 
 By default the LLM and the server share the GPU. On the development machine, LM Studio held about 9.7 GB for the 12B model with an 8192-token context.
 
-### The server stays at its startup size
+### The server stays near its startup size
 
 Before 2026-10-26, the server grew while you read. It started at about 3.0 GB, held 4.0 GB a few minutes into reading, and reached 5.0 GB after a long session. PyTorch's caching allocator kept the memory of each page's peak for reuse, and the ONNX Runtime memory arenas of the text detector and the balloon segmenter grew and kept what they took.
 
 Since the fix, the server hands PyTorch's cached memory back to the driver every time a page's work leaves the GPU lock, so nothing from one page stays cached for the next. The detector's and the segmenter's CUDA arenas grow only by what each request asks for, and each stops at 1.5 GB. Right after start, the server then held 2,636 MiB, about 2.6 GB.
+
+That fix was not the whole story. Earlier on 2026-10-27 the live server still grew from 2.6 GB to 5.3 GB during a reading session, and a page failed when LaMa ran out of GPU memory. The cause was threads. The server ran each page's GPU work on whichever worker thread asyncio handed it, and every thread that touched the GPU kept its own CUDA state, about 150 to 200 MB each, outside PyTorch's allocator. Later that day, all 214 OpenMantra pages went through one engine two at a time with the `fake` translator, as the extension sends them. Before the fix the server grew from 2,636 MiB to 6,416 MiB as the worker pool filled to 23 threads, with PyTorch's reserved memory flat at 644 to 872 MiB. The same run at 1.6 times the page size ended at 6,414 MiB, so page size did not matter. Each page in its own fresh event loop stayed flat at 3,118 MiB, because those threads ended after every page.
+
+Since then, all GPU work runs on one dedicated thread. The same two-at-a-time run held 3,102 to 3,130 MiB from the 10th page to the 214th, with a peak of 3,710 MiB during a page.
 
 ### Trade speed for memory
 
@@ -38,13 +42,15 @@ Two settings move work to the CPU:
 
 | Setting | Server's GPU memory | Cost |
 | --- | --- | --- |
-| Default | 2.6 GB idle after start | None |
+| Default | 2.6 GB idle after start, about 3.1 GB while reading | None |
 | `YOMIKAE_DETECT_DEVICE=cpu` | Less, by the detector's and segmenter's share. Not measured. | About 0.95 s more per page. The detector's two passes take about 0.8 s, and the segmenter takes 0.15 s. |
 | `YOMIKAE_LOW_VRAM=1` | 0 MiB | Detection as above, plus OCR at 0.6 to 0.75 s for a page with 4 bubbles, plus LaMa at about 0.9 s for each region of text on screentone or art. A page with 11 such regions took 12 s. |
 
 Plain bubbles are filled with their own color and never reach LaMa, so `YOMIKAE_LOW_VRAM=1` costs least on pages of plain white balloons.
 
 On 2026-10-27, with no GPU visible and the `fake` translator, on an AMD Ryzen 7 7800X3D, three `strip_bench.py --strips page` runs took 4.3 to 5.0 s for the synthetic page: detection 2.3 to 2.5 s, balloons 0.5 to 0.7 s, OCR 1.2 to 1.8 s, and erasing, lettering and encoding about 0.3 s together. Ten OpenMantra pages, two from each work, run three times each with a fresh cache, had medians of 2.9 to 4.5 s per page. Two of them sent one patch to LaMa, at 0.9 and 1.0 s. The LLM was serving a benchmark on the GPU at the same time, with the load average at 3 when the runs started.
+
+Those numbers were slowed by that load. Later that day, on the same CPU with nothing else running, the same three runs took 1.8 to 2.1 s for the synthetic page: detection 0.84 to 1.11 s, balloons 0.14 to 0.19 s, and OCR 0.61 to 0.66 s. Ten OpenMantra pages (pages 010 and 020 of each work, three runs each with a fresh cache) had medians of 1.4 to 4.6 s per page, 2.8 s across all ten, with detection at 0.73 to 0.89 s. OCR was the largest step at about 1.4 s median. Four of them sent patches to LaMa, at 0.1 to 0.8 s a page.
 
 On the CPU, the ONNX Runtime sessions run without a memory arena. That keeps about 1.6 GB of RAM free between pages, for about 70 ms more per page.
 
