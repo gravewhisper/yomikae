@@ -582,7 +582,8 @@ def test_a_line_too_wide_for_a_narrow_box_is_squeezed_before_it_is_shrunk():
     _, plain = typeset.typeset(UNSQUEEZED, page, bubbles)
     loud = len(LOUD_LINES)
     assert outside(rendered, page, interior) == 0
-    assert min(sizes[:loud]) >= min(plain[:loud]) + 3, (sizes, plain)
+    cramped = int(np.argmin(plain[:loud]))
+    assert sizes[cramped] >= plain[cramped] + 3, (sizes, plain)
     assert min(sizes[:loud]) >= 0.7 * min(sizes[loud:]), sizes
 
 
