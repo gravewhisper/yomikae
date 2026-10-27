@@ -7,9 +7,11 @@ import json
 import re
 import unicodedata
 from collections.abc import Callable, Sequence
+from functools import cache
 from dataclasses import dataclass, field, replace
 from typing import Protocol
 
+import fugashi
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
@@ -223,15 +225,27 @@ async def translate_lines(translator: Translator, lines: list[str], context: Con
 CUT_SOUND = re.compile(r"([\u3041-\u3096\u30a1-\u30f6])[っッ]?[\s.…‥・―─\-、]*")
 FIRST_SOUND = re.compile(r"[\s.…‥・ー―─\-~、「『（(]*([\u3041-\u3096\u30a1-\u30f6])[っッ]?(.?)")
 FIRST_WORD = re.compile(r"[^A-Za-z]*([A-Za-z])(h?)")
+KANJI_START = re.compile(r"[\s.…‥・ー―─\-~、「『（(]*[\u3400-\u9fff]")
 
 
 def hiragana(ch: str) -> str:
     return chr(ord(ch) - 0x60) if "\u30a1" <= ch <= "\u30f6" else ch
 
 
+@cache
+def tagger() -> fugashi.Tagger:
+    return fugashi.Tagger()
+
+
+def spoken(text: str) -> str:
+    if not KANJI_START.match(text):
+        return text
+    return "".join(kana if (kana := getattr(w.feature, "kana", None)) and kana != "*" else w.surface for w in tagger()(text))
+
+
 def stutter_of(cut: str, following: str) -> bool:
     m = CUT_SOUND.fullmatch(unicodedata.normalize("NFKC", cut).strip())
-    n = FIRST_SOUND.match(unicodedata.normalize("NFKC", following))
+    n = FIRST_SOUND.match(spoken(unicodedata.normalize("NFKC", following)))
     if not m or not n or (m.group(0) == m.group(1) and hiragana(m.group(1)) in "あいうえお"):
         return False
     sound = hiragana(m.group(1))
