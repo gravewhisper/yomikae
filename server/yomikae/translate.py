@@ -298,7 +298,9 @@ class OpenAICompatible:
             if delay is None or not transient(r):
                 break
             await asyncio.sleep(delay)
-        if r.status_code >= 500 or r.status_code in (401, 403, 404):
+        if r.status_code == 404:
+            raise TranslatorFailed(f"translator at {self.base} has no model {self.model!r} (404); set YOMIKAE_OPENAI_MODEL to a model it lists: {r.text[:200]}")
+        if r.status_code >= 500 or r.status_code in (401, 403):
             raise TranslatorUnavailable(f"{self.base} returned {r.status_code}: {r.text[:200]}")
         if r.status_code >= 400:
             tries = f" after {len(self.retry_delays) + 1} tries" if transient(r) else ""

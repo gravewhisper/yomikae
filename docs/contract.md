@@ -179,7 +179,7 @@ Response `200 application/json`:
 
 ### Errors
 
-Non-2xx responses return `{ "error": "<code>", "detail": "<human text>" }`. Codes: `bad_image`, `bad_request`, `not_found`, `translator_unavailable`, `translator_error`, `internal`. A request with missing or malformed fields also gets `bad_image`. `translator_error` (500) means the translator answered but refused the request, for example a 400. The server resends a 400 whose body contains `Channel Error` or `predict request failed: fetch failed`, which LM Studio returns now and then for a request that succeeds when sent again, up to twice, after 0.5 s and then 1 s, before it answers `translator_error`. If the translator is down, the server still answers `/v1/health` with `"ok": false` and a `detail`.
+Non-2xx responses return `{ "error": "<code>", "detail": "<human text>" }`. Codes: `bad_image`, `bad_request`, `not_found`, `translator_unavailable`, `translator_error`, `internal`. A request with missing or malformed fields also gets `bad_image`. `translator_error` (500) means the translator answered but refused the request, for example a 400, or a 404 because it has no model named by `YOMIKAE_OPENAI_MODEL`. A 404 fails the page rather than waiting, because the health check only asks whether the translator answers, so waiting would resend the page forever. The server resends a 400 whose body contains `Channel Error` or `predict request failed: fetch failed`, which LM Studio returns now and then for a request that succeeds when sent again, up to twice, after 0.5 s and then 1 s, before it answers `translator_error`. If the translator is down, the server still answers `/v1/health` with `"ok": false` and a `detail`.
 
 ## Extension page state
 
