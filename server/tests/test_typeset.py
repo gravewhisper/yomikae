@@ -412,6 +412,37 @@ def test_text_of_a_nearby_bubble_inside_the_mask_padding_never_becomes_a_part():
     assert all(p.box.center[0] < 610 for p in parts), "the nearby bubble keeps only its own block"
 
 
+def test_a_small_lobe_hung_on_the_side_of_a_big_one_gets_its_own_english():
+    shapes = [(380, 520, 170, 220), (540, 380, 120, 120)]
+    columns = [(390, 440, 415, 680), (340, 440, 365, 680), (290, 440, 315, 680), (555, 310, 580, 420), (600, 310, 625, 420)]
+    assert detect.lobe_marks(outlined(shapes)[1]) is None, "the distance map shows one lobe, so only the notches tell them apart"
+    texts = ["No matter how hard I try, the rope will not come loose.", "Hold on!"]
+    parts, rendered, page, interior = split_and_set(shapes, columns, texts)
+    assert len(parts) == 2, [p.box for p in parts]
+    marked = ink(rendered, page)
+    assert marked[250:460, 520:700].any() and marked[460:740, 210:450].any(), "both lobes are lettered"
+    assert outside(rendered, page, interior) == 0
+
+
+def drawn(interior: np.ndarray) -> np.ndarray:
+    page = np.full((*interior.shape, 3), 120, np.uint8)
+    page[cv2.dilate(interior.astype(np.uint8), np.ones((11, 11), np.uint8)) > 0] = 0
+    page[interior] = 255
+    return page
+
+
+def test_an_oval_with_a_tail_or_a_spiky_burst_keeps_its_block_whole():
+    columns = [(560, 340, 585, 560), (510, 340, 535, 560), (390, 340, 415, 520), (340, 340, 365, 520)]
+    oval = np.zeros((900, 900), np.uint8)
+    cv2.ellipse(oval, (450, 450), (230, 190), 0, 0, 360, 1, -1)
+    cv2.fillPoly(oval, [np.array([(360, 600), (430, 620), (250, 820)], np.int32)], 1)
+    burst = np.zeros((900, 900), np.uint8)
+    cv2.fillPoly(burst, [burst_outline(450, 450, 260, 220)], 1)
+    for shape in (oval, burst):
+        gray = cv2.cvtColor(with_glyphs(drawn(shape > 0), columns), cv2.COLOR_RGB2GRAY)
+        assert len(detect.split_by_bubble(gray, text_block(columns))) == 1
+
+
 def test_a_column_running_through_the_neck_keeps_its_block_whole():
     page, _ = outlined([(450, 250, 90, 160), (450, 560, 140, 170)])
     columns = [(440, 150, 465, 640)]
