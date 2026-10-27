@@ -23,6 +23,8 @@ The name comes from 読み替え (yomikae), Japanese for "reading something as s
 - Hold **Alt** to see the original Japanese page. Let go to go back to English.
 - Hover a page to see its chip in the top right corner. The chip shows progress while the page translates, and **Retry** if it failed.
 - To report a bad page, click **Report** in the chip or press **Alt+R**. Click the bubbles that are wrong or drag a box around text that was missed, type a note, and press Enter. The server saves the original page, the render, and your marks to `~/.local/share/yomikae/reports/`.
+- To fix some bubbles, click **Retranslate** in the chip or press **Alt+T**. Click the bubbles to translate again, add a hint such as "Lene is a girl" or fix a name in Japanese and English, and press Enter. Only those bubbles change, and the page updates in place.
+- The cast sheet in Chrome's side panel lists the characters and terms of the work you are reading, with their English spellings. Open it from the popup. You can respell, delete, add, or switch an entry between character and term. Pages that still use an old spelling are redone the next time you look at them.
 - If the server stops, pages show "Waiting for server…" and continue when it comes back. You don't need to reload the tab.
 - The server caches every translated page on disk, so a page you have read before loads at once.
 

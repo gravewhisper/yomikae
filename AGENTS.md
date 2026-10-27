@@ -44,7 +44,7 @@ The scripts in `extension/tools/` drive Chromium over the DevTools protocol. The
 
 - Each script takes an output directory as its first argument and keeps a Chromium profile and screenshots there. Give every run a new directory outside the repo, such as `node tools/e2e-local.mjs "$(mktemp -d)"`. Some scripts reuse a profile they find there.
 - Each script uses fixed ports, so two runs of the same script cannot share a machine. Some scripts check that their ports are free before they start, and the rest do not.
-- These scripts use only local mock pages: `e2e-local.mjs`, `e2e-outage.mjs`, `e2e-slow.mjs`, `e2e-sites.mjs`, `e2e-access.mjs`, and `e2e-reload.mjs`. `e2e-report.mjs` also starts the real server on port 7880 with the `fake` translator on the CPU. Build `dist` first, except for `e2e-sites.mjs`, `e2e-access.mjs`, and `e2e-reload.mjs`, which build their own `dist-sites`, `dist-access`, and `dist-reload`.
+- These scripts use only local mock pages: `e2e-local.mjs`, `e2e-outage.mjs`, `e2e-slow.mjs`, `e2e-sites.mjs`, `e2e-access.mjs`, `e2e-reload.mjs`, and `e2e-retranslate.mjs`. `e2e-report.mjs` also starts the real server on port 7880 with the `fake` translator on the CPU. Build `dist` first, except for `e2e-sites.mjs`, `e2e-access.mjs`, and `e2e-reload.mjs`, which build their own `dist-sites`, `dist-access`, and `dist-reload`.
 - `e2e-sites.mjs` also serves the routes and runs the checks of local adapters' mock modules, as `docs/adapters.md` describes.
 - The scripts with `real` in the name load live sites. Run one only when you change that site's adapter. They build `dist-sites`, which grants the sites' access at install, because a headless run cannot answer Chrome's permission prompt.
 

@@ -23,7 +23,7 @@ In `auto` mode, every page image near the viewport is translated, plus the pages
 
 ## Skipping a work
 
-An adapter that names the work on a page lets the reader turn that work off in the popup with **Translate this gallery**. The choice is remembered for that work only, so other works on the site still follow the site's mode. An adapter that also reports the work's language skips a work that is already in English, and the popup offers **Translate anyway**. [contract.md](contract.md#skipping-a-work) has the details. Of the built-in adapters, only pixiv.net names its works, and none reports a language.
+An adapter that names the work on a page lets the reader turn that work off in the popup with **Translate this gallery**. The choice is remembered for that work only, so other works on the site still follow the site's mode. An adapter that also reports the work's language skips a work that is already in English, and the popup offers **Translate anyway**. [contract.md](contract.md#skipping-a-work) has the details. Of the built-in adapters, only pixiv.net names its works, and none reports a language. The cast sheet works on every site: it shows the names of the adapter's context key for the page most in view, so on x.com it follows the tweet and on pixiv the artwork.
 
 ## Fetching a page
 
