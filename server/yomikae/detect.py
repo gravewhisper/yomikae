@@ -22,6 +22,11 @@ LOBE_LEVELS = 40
 LOBE_SCAN = 64
 LOBE_MIN_PEAK = 0.4
 MIN_PART_SHARE = 0.1
+NOTCH_DEPTH = 0.2
+NOTCH_SHALLOW = 0.05
+NOTCH_JAGS = 5
+NOTCH_PART = 0.15
+NOTCH_ON_LINE = 0.9
 PAPER = 3
 STRADDLE = 0.1
 OVERLAP_FRAC = 0.3
@@ -148,11 +153,45 @@ def nearest_mark(marks: np.ndarray) -> np.ndarray:
     return owner[near]
 
 
+def notch_marks(interior: np.ndarray) -> np.ndarray | None:
+    contour = max(cv2.findContours(interior.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[0], key=cv2.contourArea)
+    try:
+        defects = cv2.convexityDefects(contour, cv2.convexHull(contour, returnPoints=False))
+    except cv2.error:
+        return None
+    if defects is None:
+        return None
+    defects = defects.reshape(-1, 4)
+    radius = float(cv2.distanceTransform(np.pad(interior, 1).astype(np.uint8), cv2.DIST_L2, 3).max())
+    depth = defects[:, 3] / 256 / radius
+    if (depth >= NOTCH_SHALLOW).sum() > NOTCH_JAGS:
+        return None
+    notches = [(d, tuple(int(v) for v in contour[f][0])) for f, d in zip(defects[:, 2], depth) if d >= NOTCH_DEPTH]
+    best, marks = 0.0, None
+    for i, (da, a) in enumerate(notches):
+        for db, b in notches[:i]:
+            if min(da, db) <= best:
+                continue
+            line = cv2.line(np.zeros(interior.shape, np.uint8), a, b, 1, 3) > 0
+            if interior[line].mean() < NOTCH_ON_LINE:
+                continue
+            n, labels = cv2.connectedComponents((interior & ~line).astype(np.uint8), connectivity=4)
+            sizes = np.bincount(labels[interior & ~line], minlength=n)
+            sizes[0] = 0
+            big = np.argsort(sizes)[::-1][:2]
+            if n < 3 or sizes[big[1]] < NOTCH_PART * interior.sum():
+                continue
+            best = min(da, db)
+            marks = ((labels == big[0]) + 2 * (labels == big[1])).astype(np.uint8)
+    return marks
+
+
 def lobes(interior: np.ndarray) -> np.ndarray:
     found = lobe_marks(interior)
-    if found is None:
+    marks = found[1] if found is not None else notch_marks(interior)
+    if marks is None:
         return np.zeros(interior.shape, np.int32)
-    return nearest_mark(found[1])
+    return nearest_mark(marks)
 
 
 def column_width(mask: np.ndarray, vertical: bool) -> int:
