@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from contextlib import contextmanager
@@ -9,7 +10,8 @@ from conftest import decode, png_bytes
 
 from make_test_page import make_page
 from yomikae.cache import ContextStore, PageCache
-from yomikae.pipeline import stale_bubbles
+from yomikae.model import CastEntry, ContextLine
+from yomikae.pipeline import stale_bubbles, translate_page
 from yomikae.translate import Context, build_messages
 
 
@@ -103,15 +105,19 @@ def test_only_the_picked_bubbles_get_new_english_and_the_page_is_replaced(client
 
 def test_a_retranslated_line_skips_recall_and_is_what_later_pages_recall(client):
     key = "example.com/g/retranslate-memory"
-    translator = Scripted(lambda call, lines, _: [f"fixed {i}" if call == 3 else f"call {call} line {i}" for i in range(len(lines))])
+    texts = {t.text for t in make_page(650)[1]}
+    later = next(s for s in range(651, 700) if texts & {t.text for t in make_page(s)[1]})
+    fixing = []
+    translator = Scripted(lambda call, lines, _: [f"fixed {i}" if fixing else f"call {call} line {i}" for i in range(len(lines))])
     with using(client, translator):
-        first = post(client, page(206), key, 0)
-        second = post(client, page(403), key, 1)
+        first = post(client, page(650), key, 0)
+        second = post(client, page(later), key, 1)
         earlier = {b["source"]: b["translation"] for b in first["bubbles"]}
         shared = next(i for i, b in enumerate(second["bubbles"]) if b["source"] in earlier)
         source = second["bubbles"][shared]["source"]
         assert second["bubbles"][shared]["translation"] == earlier[source]
-        r = retranslate(client, page(403), {"context_key": key, "page_index": 1, "bubbles": [shared]})
+        fixing.append(True)
+        r = retranslate(client, page(later), {"context_key": key, "page_index": 1, "bubbles": [shared]})
     assert r.status_code == 200, r.text
     assert translator.calls[-1][0] == [source], "the picked line was recalled instead of translated"
     assert r.json()["bubbles"][shared]["translation"] == "fixed 0"
@@ -204,6 +210,17 @@ def test_a_name_change_redoes_only_the_bubbles_that_use_it_when_the_page_is_view
         client.put("/v1/names", params={"context_key": key}, json={"names": [{"ja": "", "en": "Arifujii"}]})
         respelled = post(client, data, key, 0)
     assert respelled["updated"] is True, "a bubble that still holds a removed spelling must be redone"
+
+
+def test_a_remembered_line_that_misspells_a_listed_name_is_translated_again():
+    store = ContextStore()
+    store.add("g/1", 0, [ContextLine("在藤さん、待って", "Wait, Zaito-san!"), ContextLine("行くぞ", "Let's go!")])
+    translator = Scripted(lambda call, lines, _: ["Wait, Arifuji-san!"] * len(lines))
+    lines = ["在藤さん、待って", "行くぞ"]
+    assert asyncio.run(translate_page(translator, store, lines, "g/1", 1)) == ["Wait, Zaito-san!", "Let's go!"]
+    store.set_name("g/1", CastEntry("在藤", "Arifuji", "", "user"))
+    assert asyncio.run(translate_page(translator, store, lines, "g/1", 1)) == ["Wait, Arifuji-san!", "Let's go!"]
+    assert translator.calls[-1][0] == ["在藤さん、待って"]
 
 
 def test_which_bubbles_a_name_change_makes_stale():

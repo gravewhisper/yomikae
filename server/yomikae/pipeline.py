@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -18,7 +19,7 @@ from PIL import Image, UnidentifiedImageError
 from . import balloon, detect, inpaint, ocr, ruby, typeset
 from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, Settings
-from .model import Bubble, ContextLine
+from .model import Box, Bubble, CastEntry, ContextLine
 from .ruby import furigana_names
 from .translate import Context, PageImage, Translator, make_translator, mend_stutters, subset, translate_lines
 
@@ -27,6 +28,7 @@ PIPELINE_VERSION = 28
 STAGES = ("detect", "balloons", "ocr", "translate", "inpaint", "typeset")
 WEBP_QUALITY = 90
 JPEG_QUALITY = 90
+MATCH_IOU = 0.5
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,54 @@ def encode(image: np.ndarray) -> tuple[str, bytes]:
     return f"rendered.{fmt.ext}", buf.getvalue()
 
 
+def iou(a: Box, b: Box) -> float:
+    ix = max(0, min(a.x1, b.x1) - max(a.x0, b.x0))
+    iy = max(0, min(a.y1, b.y1) - max(a.y0, b.y0))
+    inter = ix * iy
+    return inter / max(1, a.w * a.h + b.w * b.h - inter)
+
+
+def match_bubbles(old: list[dict], new: list[Bubble]) -> list[int | None]:
+    taken: set[int] = set()
+    out: list[int | None] = []
+    for b in new:
+        scored = [(o["source"] == b.source, iou(Box(*o["box"]), b.block.box), j) for j, o in enumerate(old) if j not in taken]
+        best = max((c for c in scored if c[1] >= MATCH_IOU), default=None)
+        out.append(best[2] if best else None)
+        if best:
+            taken.add(best[2])
+    return out
+
+
+def names_in_force(cast: list[CastEntry]) -> list[dict]:
+    return [{"ja": e.ja, "en": e.en} for e in cast if e.source != "auto"]
+
+
+def spells(text: str, name: str) -> bool:
+    return re.search(rf"(?<![A-Za-z]){re.escape(name)}(?![A-Za-z])", text, re.I) is not None
+
+
+def stale_bubbles(result: dict, current: list[dict]) -> list[int]:
+    recorded = result.get("names_in_force")
+    if recorded is None or not result.get("context_key"):
+        return []
+    before = {n["ja"] or n["en"].lower(): n for n in recorded}
+    now = {n["ja"] or n["en"].lower(): n for n in current}
+    changed = [
+        (n["ja"], before[k]["en"] if k in before else None, now[k]["en"] if k in now else None)
+        for k, n in {**before, **now}.items()
+        if (before.get(k) or {}).get("en") != (now.get(k) or {}).get("en")
+    ]
+    return [
+        i
+        for i, b in enumerate(result["bubbles"])
+        if any(
+            (old and spells(b["translation"], old)) or (ja and new and ja in b["source"] and not spells(b["translation"], new))
+            for ja, old, new in changed
+        )
+    ]
+
+
 def keep_original(image: np.ndarray, inpainted: np.ndarray, bubbles: list[Bubble]) -> np.ndarray:
     _, mask = inpaint.text_mask(image, bubbles)
     return np.where(mask[..., None] > 0, image, inpainted)
@@ -105,6 +155,7 @@ class Engine:
         self.context = ContextStore(settings.cache_dir / "names")
         self.context.rebuild(self.cache)
         self.inflight: dict[str, asyncio.Future] = {}
+        self.editing: dict[str, asyncio.Lock] = {}
 
     @cached_property
     def cpu_lama(self):
@@ -141,7 +192,10 @@ class Engine:
         page_id = hashlib.sha256(data).hexdigest()
         cached = self.cache.load(page_id)
         if cached is not None:
-            return {**cached, "timings_ms": {**{s: 0 for s in STAGES}, "total": 0}, "cached": True}
+            stale = stale_bubbles(cached, names_in_force(self.context.cast(cached.get("context_key"))))
+            if not stale:
+                return {**cached, "timings_ms": {**{s: 0 for s in STAGES}, "total": 0}, "cached": True}
+            return await self.retranslate(page_id, data, cached["context_key"], cached.get("page_index"), [], redo=True)
         if page_id in self.inflight:
             return await asyncio.shield(self.inflight[page_id])
         fut = asyncio.get_running_loop().create_future()
@@ -157,7 +211,28 @@ class Engine:
         finally:
             del self.inflight[page_id]
 
-    async def _run(self, page_id: str, data: bytes, context_key: str | None, page_index: int | None) -> dict:
+    async def retranslate(self, page_id: str, data: bytes, context_key: str | None, page_index: int | None, picked: list[int], hint: str = "", redo: bool = False) -> dict:
+        async with self.editing.setdefault(page_id, asyncio.Lock()):
+            base = self.cache.load(page_id)
+            if base is None:
+                return await self.process(data, context_key, page_index)
+            stale = stale_bubbles(base, names_in_force(self.context.cast(base.get("context_key"))))
+            picked = sorted(set(stale) | set(picked))
+            if not picked:
+                return {**base, "timings_ms": {**{s: 0 for s in STAGES}, "total": 0}, "cached": True}
+            result = await self._run(page_id, data, context_key, page_index, base, set(picked), hint)
+            return {**result, "updated": True} if redo else result
+
+    async def _run(
+        self,
+        page_id: str,
+        data: bytes,
+        context_key: str | None,
+        page_index: int | None,
+        base: dict | None = None,
+        picked: set[int] = frozenset(),
+        hint: str = "",
+    ) -> dict:
         start = time.perf_counter()
         timer = Timer()
         image = await asyncio.to_thread(decode_image, data)
@@ -183,9 +258,12 @@ class Engine:
 
         loop = asyncio.get_running_loop()
         bubbles, unsure = await loop.run_in_executor(self.gpu_thread, read_page)
+        matched = match_bubbles(base["bubbles"], bubbles) if base else [None] * len(bubbles)
+        pinned = [base["bubbles"][j]["translation"] if j is not None and j not in picked else None for j in matched] if base else None
+        fixed = [i for i, j in enumerate(matched) if j is not None and (j in picked or j in base.get("fixed", []))] if base else []
         if bubbles:
             readings = [pair for b in bubbles for pair in b.ruby]
-            translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings))
+            translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings, pinned, hint))
             try:
                 inpainted = await remove_text_anywhere(bubbles)
             finally:
@@ -199,11 +277,12 @@ class Engine:
         name, encoded = await asyncio.to_thread(timer.run, "encode", encode, rendered)
 
         h, w = image.shape[:2]
+        revision = base.get("revision", 0) + 1 if base else 0
         result = {
             "page_id": page_id,
             "width": w,
             "height": h,
-            "rendered_url": f"/v1/pages/{page_id}/{name}",
+            "rendered_url": f"/v1/pages/{page_id}/{name}" + (f"?v={revision}" if revision else ""),
             "bubbles": [
                 {"box": b.block.box.as_list(), "source": b.source, "translation": b.translation, "vertical": b.block.vertical}
                 for b in bubbles
@@ -212,17 +291,32 @@ class Engine:
             "page_index": page_index,
             "font_sizes": font_sizes,
             "skipped": [{"box": b.block.box.as_list(), "source": b.source} for b in unsure],
+            "names_in_force": names_in_force(self.context.cast(context_key)),
+            "revision": revision,
+            "fixed": fixed,
         }
         await asyncio.to_thread(self.cache.store, page_id, name, encoded, result)
+        if base:
+            self.context.forget(base)
         if context_key:
-            self.context.add(context_key, page_index, [ContextLine(b.source, b.translation) for b in bubbles])
+            lines = [ContextLine(b.source, b.translation) for b in bubbles]
+            self.context.add(context_key, page_index, lines, [lines[i] for i in fixed])
         timings = {**timer.ms, "total": round((time.perf_counter() - start) * 1000)}
         return {**result, "timings_ms": timings, "cached": False}
 
-    async def _translate(self, lines: list[str], context_key: str | None, page_index: int | None, timer: Timer, readings: list[tuple[str, str]]) -> list[str]:
+    async def _translate(
+        self,
+        lines: list[str],
+        context_key: str | None,
+        page_index: int | None,
+        timer: Timer,
+        readings: list[tuple[str, str]],
+        pinned: list[str | None] | None,
+        hint: str,
+    ) -> list[str]:
         t = time.perf_counter()
         try:
-            return await translate_page(self.translator, self.context, lines, context_key, page_index, ruby=readings)
+            return await translate_page(self.translator, self.context, lines, context_key, page_index, ruby=readings, pinned=pinned, hint=hint)
         finally:
             timer.ms["translate"] = round((time.perf_counter() - t) * 1000)
 
@@ -235,8 +329,14 @@ async def translate_page(
     page_index: int | None,
     page: PageImage | None = None,
     ruby: list[tuple[str, str]] = (),
+    pinned: list[str | None] | None = None,
+    hint: str = "",
 ) -> list[str]:
-    recalled = store.recall(context_key, lines)
+    if pinned is None:
+        listed = [e for e in store.cast(context_key) if e.source != "auto" and e.ja]
+        recalled = [None if known and any(e.ja in line and not spells(known, e.en) for e in listed) else known for line, known in zip(lines, store.recall(context_key, lines))]
+    else:
+        recalled = pinned
     todo = [line for line, known in zip(lines, recalled) if known is None]
     names: dict[str, str] = {}
     terms: dict[str, str] = {}
@@ -247,13 +347,16 @@ async def translate_page(
     context = Context(
         store.before(context_key, page_index),
         names,
-        [ContextLine(line, known) for line, known in zip(lines, recalled) if known is not None],
+        [ContextLine(line, known) for line, known in zip(lines, recalled) if known],
         page,
         readings,
         terms,
+        hint,
     )
     context = subset(context, [i for i, known in enumerate(recalled) if known is None])
     fresh = iter(await translate_lines(translator, todo, context) if todo else [])
     out = mend_stutters(lines, [known if known is not None else next(fresh) for known in recalled])
+    if pinned is not None:
+        out = [known if known is not None else line for known, line in zip(pinned, out)]
     store.learn_names(context_key, furigana_names(lines, out, list(ruby), store.memory(context_key)))
     return out

@@ -70,10 +70,11 @@ class PageCache:
         with self.lock:
             self.writing.add(page_id)
         try:
+            before = dir_size(self.root / page_id)
             write_atomic(self.root / page_id / rendered_name, rendered)
             write_atomic(self.root / page_id / "result.json", data)
             with self.lock:
-                self.size += len(rendered) + len(data)
+                self.size += dir_size(self.root / page_id) - before
         finally:
             with self.lock:
                 self.writing.discard(page_id)
@@ -167,11 +168,13 @@ class ContextStore:
         self.pages: dict[str, dict[float, list[ContextLine]]] = {}
         self.names_dir = names_dir
         self.saved: dict[str, list[CastEntry]] = {}
+        self.fixed: dict[str, dict[float, list[ContextLine]]] = {}
 
     def rebuild(self, cache: PageCache) -> None:
         for r in cache.all_results():
             if r.get("context_key"):
-                self.add(r["context_key"], r.get("page_index"), [ContextLine(b["source"], b["translation"]) for b in r["bubbles"]])
+                lines = [ContextLine(b["source"], b["translation"]) for b in r["bubbles"]]
+                self.add(r["context_key"], r.get("page_index"), lines, [lines[i] for i in r.get("fixed", []) if i < len(lines)])
 
     def position(self, key: str, page_index: int | None) -> float:
         if page_index is not None:
@@ -186,9 +189,14 @@ class ContextStore:
         earlier = sorted(p for p in self.pages[key] if pos - CONTEXT_REACH <= p < pos)[-CONTEXT_PAGES:]
         return [self.pages[key][p] for p in earlier if self.pages[key][p]]
 
-    def add(self, key: str, page_index: int | None, lines: list[ContextLine]) -> None:
+    def add(self, key: str, page_index: int | None, lines: list[ContextLine], fixed: list[ContextLine] = ()) -> None:
         pos = self.position(key, page_index)
         self.pages.setdefault(key, {})[pos] = [line for line in lines if line.translation]
+        fixed = [line for line in fixed if line.translation]
+        if fixed:
+            self.fixed.setdefault(key, {})[pos] = fixed
+        else:
+            self.fixed.get(key, {}).pop(pos, None)
 
     def forget(self, result: dict) -> None:
         key = result.get("context_key")
@@ -201,9 +209,11 @@ class ContextStore:
         for pos in preferred + sorted(pages):
             if pages.get(pos) == lines:
                 del pages[pos]
+                self.fixed.get(key, {}).pop(pos, None)
                 break
         if not pages:
             del self.pages[key]
+            self.fixed.pop(key, None)
 
     def memory(self, key: str | None) -> list[ContextLine]:
         pages = self.pages.get(key, {}) if key else {}
@@ -211,7 +221,8 @@ class ContextStore:
 
     def recall(self, key: str | None, sources: list[str]) -> list[str | None]:
         known: dict[str, str] = {}
-        for line in self.memory(key):
+        fixed = self.fixed.get(key, {}) if key else {}
+        for line in [line for p in sorted(fixed) for line in fixed[p]] + self.memory(key):
             known.setdefault(normalize(line.source), line.translation)
         return [lookup(known, normalize(s)) for s in sources]
 

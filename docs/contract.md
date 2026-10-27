@@ -45,13 +45,52 @@ Response `200 application/json`, a `TranslatedPage`:
 }
 ```
 
-Boxes are in pixels of the original image. Re-posting identical bytes returns the cached result with `"cached": true` and near-zero timings. The cache lives on disk under `server/cache/v<pipeline version>/` keyed by `page_id`, so a server whose rendering changed re-renders pages instead of serving old results. At startup the server deletes the folders of older pipeline versions and the unversioned `<page_id>` folders of the first cache layout, and nothing else. The current version's cache is capped at `YOMIKAE_CACHE_MAX_BYTES`, 2 GiB by default. After a newly rendered page is written, a background task evicts the least recently read pages until the cache fits again. Every cache hit counts as a read. The page just written and pages still being written are never evicted. An evicted page drops out of the translation memory, names and context of its work, exactly as if the server had restarted without it, and is re-rendered the next time it is posted.
+Boxes are in pixels of the original image. Re-posting identical bytes returns the cached result with `"cached": true` and near-zero timings, unless a name of the work changed since the page was translated in a way that touches one of its bubbles (see [Old pages after a name change](#old-pages-after-a-name-change)). `rendered_url` can end in a query such as `?v=2`, which changes whenever the page is rendered again; treat the whole URL as opaque. The cache lives on disk under `server/cache/v<pipeline version>/` keyed by `page_id`, so a server whose rendering changed re-renders pages instead of serving old results. At startup the server deletes the folders of older pipeline versions and the unversioned `<page_id>` folders of the first cache layout, and nothing else. The current version's cache is capped at `YOMIKAE_CACHE_MAX_BYTES`, 2 GiB by default. After a newly rendered page is written, a background task evicts the least recently read pages until the cache fits again. Every cache hit counts as a read. The page just written and pages still being written are never evicted. An evicted page drops out of the translation memory, names and context of its work, exactly as if the server had restarted without it, and is re-rendered the next time it is posted.
 
 A page with no text returns `bubbles: []` and `rendered_url` pointing at an unchanged copy.
 
+### `POST /v1/pages/{page_id}/retranslate`
+
+Translates some bubbles of a page again and renders the page anew. The extension sends this from the page chip's Retranslate box.
+
+Multipart form:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `image` | file | The same bytes that were sent to `POST /v1/pages`. Required, because the server keeps only the rendered page. |
+| `request` | JSON string | What to retranslate, below. |
+
+```json
+{ "context_key": "example.com/g/1", "page_index": 3, "bubbles": [2, 5], "hint": "Lene is a girl", "names": [{ "ja": "在藤", "en": "Arifuji", "kind": "name" }] }
+```
+
+| Field | Meaning |
+| --- | --- |
+| `context_key` | As in `POST /v1/pages`. Optional, but required when `names` is not empty. |
+| `page_index` | As in `POST /v1/pages`. Optional. |
+| `bubbles` | Indexes into the page's `bubbles` array as `POST /v1/pages` returned it. At least one. |
+| `hint` | Optional, at most 300 characters. A note from the reader that goes to the translator with this request only. It is never stored, in the cache, the names or anywhere else. |
+| `names` | Optional, at most 20 `Name`s. Each is stored as a `user` name of the work before anything is translated, exactly as `PUT /v1/names/entry` would store it. |
+
+- `page_id` must be the sha256 of `image`. A page that is not in the cache is first translated in full, as `POST /v1/pages` would, and then the picked bubbles are translated again.
+- The picked bubbles are translated fresh: the line memory is not asked for them, and the earlier pages' context and the work's names apply as usual. Every other bubble keeps its cached English exactly, and goes to the translator as an already translated line of the page.
+- A bubble that the `names` in this request make stale, by the rule in [Old pages after a name change](#old-pages-after-a-name-change), is translated again too, so a name fixed from one bubble is fixed in the whole page.
+- The server reads the page again from `image` (detection, OCR and erasing) to render it, and matches the bubbles it finds to the cached ones by their boxes. A bubble that matches no cached one is translated fresh too.
+- The page's cache entry is replaced, and the work's line memory holds the new English for those source lines. A retranslated line wins over the same line on any other page of the work, so later pages recall the new English, not the old, also after a restart.
+- Response `200`: a `TranslatedPage` as from `POST /v1/pages`, with `"cached": false` and real timings. Its `rendered_url` ends in `?v=<n>`, where `n` counts the times the page has been rendered again, so no browser cache serves the old image.
+- A page id that does not match, `request` that is not a JSON object, an empty `bubbles`, an index that is not an integer or is out of range, a `hint` over 300 characters, more than 20 `names`, a malformed name, or `names` without a `context_key` return `400 bad_request`.
+
+### Old pages after a name change
+
+Each cached page records the `user` and `furigana` names of its work that were in force when it was translated, after the names that page itself taught were learned.
+
+When `POST /v1/pages` hits a cached page whose work's names have changed since, the server compares the two lists. A name changed when its spelling differs, when it was added, or when it was removed; names are matched by `ja`, or by `en` when `ja` is empty. A bubble is stale when its English holds a changed name's old spelling, or when its Japanese holds the `ja` of a changed name and its English does not already hold the new spelling. Spellings match as whole words, ignoring case. Stale bubbles are retranslated as in `POST /v1/pages/{page_id}/retranslate`, with no hint, and the page is rendered again before the response, which then carries `"cached": false` and `"updated": true`. A page with no stale bubble is served from the cache as before, with `"cached": true` and no `updated` field. Nothing runs for pages that are not posted again.
+
+A page cached before the server recorded names in force has no record and is always served as cached until it is rendered again.
+
 ### `GET /v1/pages/{page_id}/rendered.<ext>`
 
-The final page. Same pixel size as the input. Always fetch it through `rendered_url`, whose extension names the format. A page whose sides are both at most 16383 px, WebP's limit, is `rendered.webp` (`image/webp`). A taller or wider page, such as a long vertical strip, is `rendered.jpg` (`image/jpeg`, quality 90), and one with a side over 65535 px is `rendered.png` (`image/png`). The `Content-Type` header matches. Any other extension for the page answers `404 not_found`, as does a page that has been evicted or cleared.
+The final page. Same pixel size as the input. Always fetch it through `rendered_url`, whose extension names the format. The server ignores the query in `rendered_url`. A page whose sides are both at most 16383 px, WebP's limit, is `rendered.webp` (`image/webp`). A taller or wider page, such as a long vertical strip, is `rendered.jpg` (`image/jpeg`, quality 90), and one with a side over 65535 px is `rendered.png` (`image/png`). The `Content-Type` header matches. Any other extension for the page answers `404 not_found`, as does a page that has been evicted or cleared.
 
 Strips and spreads more than twice as long as they are wide are read in overlapping tiles 1.5 times as long as the short side, so their text is not shrunk to fit one detector input. Each bubble is reported once, in full-image pixels. A bubble no longer than half the short side is always found whole even where it crosses a tile edge.
 
@@ -84,7 +123,7 @@ Each work, as grouped by `context_key`, has a name list that the translator foll
 - `auto` names are always `name`. A `furigana` name gets its `kind` from the line it was learned from: `term` when the Japanese ends in a technique or place suffix such as 術, 眼 or 流, or when the English puts "the", "a" or a possessive word before it or quotes it; `name` when an honorific follows it or the English addresses it or uses it with 's; `name` when neither side wins. The translator gets `name` entries in the `names` map and `term` entries in a `terms` map.
 - `user` names are what the reader typed, including their `kind`. A `user` name always wins: it is never overwritten, a `furigana` name with the same `ja` is hidden, and an `auto` name is hidden when its spelling is close to the `user` name's or its line holds the `user` name's `ja` followed by the same honorific.
 - `furigana` and `user` names are stored per work in `server/cache/names/<sha256 of context_key>.json`, outside the versioned page cache, so they survive restarts, `DELETE /v1/cache`, eviction, and a new pipeline version.
-- New names apply to pages translated after the change. Cached pages keep their translation.
+- New names apply to pages translated after the change. A cached page whose bubbles use a changed name is redone the next time it is posted, as [Old pages after a name change](#old-pages-after-a-name-change) describes. Other cached pages keep their translation. A line seen earlier in the work is reused on a new page only when its English spells every `user` and `furigana` name whose `ja` it holds; otherwise it is translated again, so a fixed name does not come back through the line memory.
 
 #### `GET /v1/names?context_key=<key>`
 
@@ -100,7 +139,7 @@ Body: one `Name` as JSON. `source` is ignored and the name is stored as `user`. 
 
 #### `PUT /v1/names?context_key=<key>`
 
-Body: `{ "names": [Name, ...] }`, at most 500. Replaces the work's stored names. Entries with source `auto` are skipped, since those are rebuilt; an entry without a `source` is stored as `user`. To delete a name, leave it out. Response: as `GET /v1/names`.
+Body: `{ "names": [Name, ...] }`, at most 500. Replaces the work's stored names. Entries with source `auto` are skipped, since those are rebuilt; an entry without a `source` is stored as `user`. To delete a name, leave it out: read the list with `GET /v1/names`, drop the entry and send the rest back. There is no `DELETE` route for one name. Response: as `GET /v1/names`.
 
 A missing `context_key`, a body that is not JSON, an empty `en`, a field that is too long (`ja` 200 characters, `en` and `reading` 100), an unknown `source`, or a `kind` other than `name` or `term` return `400 bad_request`.
 
@@ -127,7 +166,7 @@ The server writes one directory per report under `~/.local/share/yomikae/reports
 | File | Present | Contents |
 | --- | --- | --- |
 | `original.<ext>` | always | The bytes from `image`. The extension comes from the image format (`jpg`, `png`, `webp`, `gif`, `avif`, `bmp`, the lowercase Pillow name of another format, `svg`, or `bin`). |
-| `result.json` | when the page is in the cache for the current pipeline version | The cached `TranslatedPage` with bubbles, plus `context_key`, `page_index`, `font_sizes`, and `skipped`. |
+| `result.json` | when the page is in the cache for the current pipeline version | The cached `TranslatedPage` with bubbles, plus `context_key`, `page_index`, `font_sizes`, `skipped`, `names_in_force` (the `ja` and `en` of the names in force when it was translated), `revision` (how many times it was retranslated) and `fixed` (the indexes of its retranslated bubbles). |
 | `rendered.<ext>` | with `result.json` | The rendered page from the cache, under the same name as in its `rendered_url`. |
 | `marked.png` | when areas were marked and the original decodes | The original page with each area outlined in magenta and labelled `bubble <i>` or `area <n>`. |
 | `report.json` | always | `page_url`, `image_url`, `context_key`, `page_index`, `page_id`, `pipeline_version`, `note`, `job_state`, `job_error`, `areas`, `areas_units`, `created_at`, and the names of the other files: `original`, `result` (`"result.json"` or `null`), `rendered` (`"rendered.webp"`, `"rendered.jpg"`, `"rendered.png"`, or `null`), `marked` (`"marked.png"` or `null`). `areas` is `[{"box": [x0, y0, x1, y1], "bubble_index": int | null}]` in original image pixels, converted with the decoded image's real size. A snapped area takes the exact box of that bubble in `result.json`, and `bubble_index` is kept only when `result.json` has that bubble. `areas_units` is `"pixels"`, or `"fraction"` when the original could not be decoded. |
