@@ -115,6 +115,7 @@ function entryRow(name: Name): HTMLElement {
   en.maxLength = 100;
   en.title = 'English spelling';
   en.addEventListener('keydown', (e) => {
+    if (e.isComposing) return;
     if (e.key === 'Enter') en.blur();
     if (e.key === 'Escape') {
       en.value = name.en;

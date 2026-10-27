@@ -166,6 +166,11 @@ try {
   await page.evaluate(`window.scrollBy(0, 40)`);
   await panel.waitFor(`document.getElementById('work').textContent === '${CONTEXT}/other'`, 10000);
   check(results, true, 'the cast sheet follows the tab to another work');
+  const follower = await attach(await openTab(CDP_PORT, `chrome-extension://${extId}/sidepanel.html`));
+  await follower.waitFor(`document.readyState === 'complete'`);
+  await page.send('Page.bringToFront');
+  await follower.waitFor(`document.getElementById('work').textContent === '${CONTEXT}/other'`, 10000);
+  check(results, true, 'without a forced tab the cast sheet follows the tab that becomes active');
 } catch (err) {
   check(results, false, 'run completed', err.message);
   console.log('mock stats', JSON.stringify(await stats().catch(() => null)));

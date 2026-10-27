@@ -623,7 +623,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Alt' && !e.repeat) setPeek(true);
-    if (pick && (e.key === 'Enter' || e.key === 'Escape') && !isEditable(e.target)) {
+    if (pick && (e.key === 'Enter' || e.key === 'Escape') && !e.isComposing && !isEditable(e.target)) {
       e.preventDefault();
       e.stopPropagation();
       if (e.key === 'Enter') submitPick(pick.img);
