@@ -21,6 +21,8 @@ MAX_SIZE = 32
 BAND = 0.2
 SAME_SIZE = 0.1
 MIN_FILL = 0.3
+SWIM_FILL = 0.2
+SWIM_BAND = 0.5
 MARGIN = 0.35
 FRAME_MARGIN = 0.2
 FRAME_PAD = 3
@@ -611,18 +613,27 @@ def fill(layout: Layout, region: Region) -> float:
     return text_area / max(1, int(region.mask.sum()))
 
 
-def grow(text: str, region: Region, layout: Layout, limit: int) -> int:
+def grow(text: str, region: Region, layout: Layout, limit: int, goal: float = MIN_FILL) -> Layout:
     if region.on_art or len(layout.lines) < 2:
-        return layout.size
-    best = layout.size
-    for size in range(layout.size, limit + 1):
+        return layout
+    best = layout
+    for size in range(layout.size + 1, limit + 1):
         bigger = try_layout(text, region, layout.style, size, False)
         if bigger is None or bigger.off > layout.off:
             break
-        best = size
-        if fill(bigger, region) >= MIN_FILL:
+        best = bigger
+        if fill(bigger, region) >= goal:
             break
     return best
+
+
+def wanted_size(piece: Piece, region: Region, layout: Layout, page_size: int) -> int:
+    if fill(layout, region) >= MIN_FILL:
+        return layout.size
+    grown = grow(piece.text, region, layout, min(piece.largest[1].size, round(page_size * (1 + BAND))))
+    if fill(grown, region) < SWIM_FILL:
+        grown = grow(piece.text, region, grown, min(piece.largest[1].size, round(page_size * (1 + SWIM_BAND))), SWIM_FILL)
+    return grown.size
 
 
 def same_sizes(sizes: list[int]) -> list[int]:
@@ -758,11 +769,7 @@ def dialogue_sizes(pieces: list[Piece]) -> tuple[list[int], int, int]:
     floor = round(target * HYPHEN_FLOOR)
     base = [p.refit(target, floor) if p.largest[1].size > target or p.largest[1].size < floor else p.largest for p in pieces]
     page_size = round(np.median(same_sizes([layout.size for _, layout in base])))
-    limit = round(page_size * (1 + BAND))
-    wanted = [
-        grow(p.text, region, layout, min(p.largest[1].size, limit)) if fill(layout, region) < MIN_FILL else layout.size
-        for p, (region, layout) in zip(pieces, base)
-    ]
+    wanted = [wanted_size(p, region, layout, page_size) for p, (region, layout) in zip(pieces, base)]
     return same_sizes([p.lifted(size) for p, size in zip(pieces, wanted)]), page_size, floor
 
 
