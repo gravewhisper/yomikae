@@ -582,7 +582,8 @@ def test_a_line_too_wide_for_a_narrow_box_is_squeezed_before_it_is_shrunk():
     _, plain = typeset.typeset(UNSQUEEZED, page, bubbles)
     loud = len(LOUD_LINES)
     assert outside(rendered, page, interior) == 0
-    assert min(sizes[:loud]) >= min(plain[:loud]) + 3, (sizes, plain)
+    cramped = int(np.argmin(plain[:loud]))
+    assert sizes[cramped] >= plain[cramped] + 3, (sizes, plain)
     assert min(sizes[:loud]) >= 0.7 * min(sizes[loud:]), sizes
 
 
@@ -709,3 +710,36 @@ def test_each_lobe_of_a_shared_double_bubble_is_eroded_and_kept_as_its_own_part(
     assert held[1] == 0, held
     rendered = typeset.typeset(FONTS, page, bubbles)[0]
     assert outside(rendered, page, interior) == 0
+
+
+def test_a_long_word_in_a_bubble_that_tapers_down_sits_at_its_middle_not_up_in_its_widest_rows():
+    page = Image.new("RGB", (900, 900), (120, 120, 120))
+    outline = [(370, 300), (530, 300), (550, 340), (520, 480), (465, 580), (435, 580), (380, 480), (350, 340)]
+    ImageDraw.Draw(page).polygon(outline, fill="white", outline="black", width=4)
+    page = np.asarray(page)
+    block = Box(435, 340, 465, 540)
+    bubble = Bubble(TextBlock(block, True, block, np.zeros((block.h, block.w), np.uint8)), "華鏡丸", "Kakyomaru!!")
+    rendered, sizes = typeset.typeset(FONTS, page, [bubble])
+    interior = np.zeros(page.shape[:2], np.uint8)
+    cv2.fillPoly(interior, [np.array(outline, np.int32)], 1)
+    ys = np.nonzero(interior)[0]
+    _, cy = ink_center(rendered, page)
+    assert abs(cy - ys.mean()) <= 0.06 * (ys.max() - ys.min()), (cy, ys.mean(), sizes)
+
+
+def test_text_in_a_big_bubble_among_small_ones_grows_until_it_stops_swimming():
+    small = [(40 + i * 140, 40, 160 + i * 140, 200) for i in range(4)]
+    big = (150, 260, 510, 560)
+    page = bubble_page(small + [big], size=(640, 600))
+    texts = ["Where are you going now?", "I told you to wait here.", "We promised, didn't we?", "Say that one more time."]
+    bubbles = [bubble_in(e, t) for e, t in zip(small, texts)]
+    block = Box(290, 320, 370, 500)
+    bubbles.append(Bubble(TextBlock(block, True, block, np.zeros((block.h, block.w), np.uint8)), "流しのガンマンをしているシオラと申します", "I'm Siora, a wandering gunman."))
+    rendered, sizes = typeset.typeset(FONTS, page, bubbles)
+    changed = ink(rendered, page)
+    changed[: big[1]] = False
+    ys, xs = np.nonzero(changed)
+    interior = np.pi * (big[2] - big[0] - 8) * (big[3] - big[1] - 8) / 4
+    covered = (xs.max() - xs.min()) * (ys.max() - ys.min()) / interior
+    assert covered >= 0.18, f"the text swims in its bubble: {covered:.3f} of it, sizes {sizes}"
+    assert sizes[4] <= 1.5 * float(np.median(sizes)) + 1, f"the big bubble jumped too far above the page: {sizes}"

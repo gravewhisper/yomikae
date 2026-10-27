@@ -123,10 +123,10 @@ ones. It has two parts: the overall shape of the block, and where each break fal
     (suggested).
   - Keep a page-level consistency term, but make it soft. Within one text role (dialogue), keep sizes within
     about ±20% of the page median (suggested), rather than capping every bubble at the median.
-- **Ours:** Partial. We fit the largest size per bubble, then cap every bubble at the page median and at 32 px.
-  Small bubbles end up correctly sized. Big bubbles get pulled down to the median and can swim with too much
-  empty space. The guide favors per-bubble sizing, while our docstring takes the opposite view ("text on a page
-  reads at one size"). A soft band keeps the consistency without leaving large bubbles half empty.
+- **Ours:** Mostly. The page gets one target size, and a bubble whose text covers less than 30% of it grows up to
+  20% above it. A bubble of two or more lines still under 20% there keeps growing to 20%, up to 50% above the
+  target, so a big bubble does not swim. A single short line stays at the page size. See
+  [decisions.md](decisions.md#a-big-bubble-whose-text-swims-grows-past-the-page-band).
 
 ### 2.2 Shouts are big
 

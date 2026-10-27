@@ -21,6 +21,8 @@ MAX_SIZE = 32
 BAND = 0.2
 SAME_SIZE = 0.1
 MIN_FILL = 0.3
+SWIM_FILL = 0.2
+SWIM_BAND = 0.5
 MARGIN = 0.35
 FRAME_MARGIN = 0.2
 FRAME_PAD = 3
@@ -54,6 +56,8 @@ MAX_HOLE = 0.05
 MAX_BUBBLE_GROWTH = 14
 GUTTER = 12
 RIDGE = 1.5
+WALK = 3
+OFF_CENTRE = 0.05
 FRAME_GAP = 0.6
 FRAME_REACH = 6
 FRAME_CONTRAST = 6
@@ -87,6 +91,7 @@ class Layout:
     style: Style
     faults: int = 0
     clip: bool = False
+    off: bool = False
 
 
 class Fonts:
@@ -509,8 +514,13 @@ def layout_centers(region: Region) -> tuple[tuple[int, int], ...]:
     ys, xs = np.nonzero(d >= float(d.max()) - RIDGE)
     i = int(np.argmin((ys - ys.mean()) ** 2 + (xs - xs.mean()) ** 2))
     pole = (int(xs[i]), int(ys[i]))
-    if abs(pole[0] - centers[0][0]) + abs(pole[1] - centers[0][1]) > 2:
-        centers.append(pole)
+    (cx, cy), (px, py) = centers[0], pole
+    reach = OFF_CENTRE * region.mask.shape[0]
+    steps = max(1, round(np.hypot(px - cx, py - cy) / WALK))
+    for k in range(1, steps + 1):
+        point = (round(cx + (px - cx) * k / steps), round(cy + (py - cy) * k / steps))
+        if (k == steps or abs(point[1] - cy) <= reach) and region.mask[point[1], point[0]] and point != centers[-1]:
+            centers.append(point)
     return tuple(centers)
 
 
@@ -536,11 +546,12 @@ def try_layout(
     mh, mw = mask.shape
     items = lining.atoms(text)
     measure = lambda t: fonts.measure(t, size)  # noqa: E731
-    best: tuple[lining.Lined, int, list[tuple[int, int]], list[int]] | None = None
+    best: tuple[lining.Lined, int, list[tuple[int, int]], list[int], bool] | None = None
+    centers = layout_centers(region)
     tried = 0
     for n in range(1, (mh - above - below) // pitch + 2):
         found = False
-        for cx, cy in layout_centers(region):
+        for cx, cy in centers:
             first = cy - (above + (n - 1) * pitch + below) // 2 + above
             baselines = [first + i * pitch for i in range(n)]
             spans = [row_span(mask, b - above, b + below, cx) for b in baselines]
@@ -554,8 +565,9 @@ def try_layout(
             if lined is None:
                 continue
             found = True
-            if best is None or lined.cost < best[0].cost:
-                best = (lined, axis, spans, baselines)
+            off = abs(cy - centers[0][1]) > OFF_CENTRE * mh
+            if best is None or (off, lined.cost) < (best[4], best[0].cost):
+                best = (lined, axis, spans, baselines, off)
             break
         if not found:
             if best:
@@ -566,13 +578,13 @@ def try_layout(
             break
     if best is None:
         return None
-    lined, axis, spans, baselines = best
+    lined, axis, spans, baselines, off = best
     placed = []
     for line, (l, r), b in zip(lined.lines, spans, baselines):
         lw = fonts.length(line, size)
         x = round(min(max(axis - lw / 2, l), r - lw))
         placed.append((line, region.box.x0 + x, region.box.y0 + b))
-    return Layout(size=size, lines=placed, style=style, faults=lined.faults)
+    return Layout(size=size, lines=placed, style=style, faults=lined.faults + off, off=off)
 
 
 def looks(style: Style) -> list[tuple[Style, bool]]:
@@ -601,18 +613,27 @@ def fill(layout: Layout, region: Region) -> float:
     return text_area / max(1, int(region.mask.sum()))
 
 
-def grow(text: str, region: Region, layout: Layout, limit: int) -> int:
+def grow(text: str, region: Region, layout: Layout, limit: int, goal: float = MIN_FILL) -> Layout:
     if region.on_art or len(layout.lines) < 2:
-        return layout.size
-    best = layout.size
-    for size in range(layout.size, limit + 1):
+        return layout
+    best = layout
+    for size in range(layout.size + 1, limit + 1):
         bigger = try_layout(text, region, layout.style, size, False)
-        if bigger is None:
+        if bigger is None or bigger.off > layout.off:
             break
-        best = size
-        if fill(bigger, region) >= MIN_FILL:
+        best = bigger
+        if fill(bigger, region) >= goal:
             break
     return best
+
+
+def wanted_size(piece: Piece, region: Region, layout: Layout, page_size: int) -> int:
+    if fill(layout, region) >= MIN_FILL:
+        return layout.size
+    grown = grow(piece.text, region, layout, min(piece.largest[1].size, round(page_size * (1 + BAND))))
+    if fill(grown, region) < SWIM_FILL:
+        grown = grow(piece.text, region, grown, min(piece.largest[1].size, round(page_size * (1 + SWIM_BAND))), SWIM_FILL)
+    return grown.size
 
 
 def same_sizes(sizes: list[int]) -> list[int]:
@@ -748,11 +769,7 @@ def dialogue_sizes(pieces: list[Piece]) -> tuple[list[int], int, int]:
     floor = round(target * HYPHEN_FLOOR)
     base = [p.refit(target, floor) if p.largest[1].size > target or p.largest[1].size < floor else p.largest for p in pieces]
     page_size = round(np.median(same_sizes([layout.size for _, layout in base])))
-    limit = round(page_size * (1 + BAND))
-    wanted = [
-        grow(p.text, region, layout, min(p.largest[1].size, limit)) if fill(layout, region) < MIN_FILL else layout.size
-        for p, (region, layout) in zip(pieces, base)
-    ]
+    wanted = [wanted_size(p, region, layout, page_size) for p, (region, layout) in zip(pieces, base)]
     return same_sizes([p.lifted(size) for p, size in zip(pieces, wanted)]), page_size, floor
 
 
