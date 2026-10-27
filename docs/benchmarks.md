@@ -129,7 +129,7 @@ Each tool's output boxes were matched to the reference lines by overlap (30% of 
 - Its 48px OCR drops dakuten and cuts lines short, which is most of why it does worst on boureisougi. With no glossary, it names people afresh on each page.
 - It replaces every curly apostrophe and quote in the English with a Japanese corner bracket, so 49 of its 1272 stock bubbles were lettered like "It」s". Restoring them moved COMET by 0.0005.
 
-End-to-end COMET also scores detection, OCR and grouping, and each side ran once. Lettering and cleaning were left to a blind side-by-side read of 30 random pages and are not scored here.
+End-to-end COMET also scores detection, OCR and grouping, and each side ran once. Lettering and cleaning were judged in a blind side-by-side read of 30 random pages from the stock run, with the two tools shuffled as A and B on each page and the key kept apart. The project owner picked Yomikae on all 30. manga-image-translator's lettering often ran past the bubble outline or off the page, mixed text sizes on one page, and sat over Japanese it had not erased; Yomikae kept its lettering inside each bubble. The read covers presentation, not wording: on lines both tools translated, the translations scored within about 0.02 COMET.
 
 ## Know the noise
 
