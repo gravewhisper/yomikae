@@ -124,6 +124,11 @@ function parseMultipart(body, contentType) {
   return fields;
 }
 
+function svgPage(buf) {
+  const n = buf.toString('utf8', 0, Math.min(buf.length, 4000)).match(/ページ(\d+)です/)?.[1];
+  return n ? Number(n) : undefined;
+}
+
 const escapeXml = (t) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 function renderSvg(original, page) {
@@ -211,7 +216,7 @@ const server = createServer(async (req, res) => {
     const w = work(contextKey);
     let page = pages.get(retranslate[1]);
     if (!page) {
-      page = { id: retranslate[1], size, pageIndex: request.page_index, contextKey, rev: 0 };
+      page = { id: retranslate[1], size, pageIndex: request.page_index ?? svgPage(image), contextKey, rev: 0 };
       translateBubbles(page, w);
       pages.set(page.id, page);
     }
@@ -238,8 +243,8 @@ const server = createServer(async (req, res) => {
     if (TRANSLATOR_DOWN) return json(res, 503, { error: 'translator_unavailable', detail: 'mock translator down' });
     const pageId = createHash('sha256').update(image).digest('hex');
     const contextKey = fields.context_key?.toString() ?? '';
-    const pageIndex = fields.page_index ? Number(fields.page_index.toString()) : undefined;
-    if (fields.page_index?.toString() === INTERNAL_PAGE) return json(res, 500, { error: 'internal', detail: 'mock internal error' });
+    const pageIndex = fields.page_index ? Number(fields.page_index.toString()) : svgPage(image);
+    if (String(pageIndex) === INTERNAL_PAGE) return json(res, 500, { error: 'internal', detail: 'mock internal error' });
     stats.posts++;
     stats.requests.push(`page ${pageIndex}`);
     (stats.byContext[contextKey] ??= []).push(pageIndex);
