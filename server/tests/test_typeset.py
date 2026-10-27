@@ -385,6 +385,75 @@ def test_a_double_lobe_bubble_gets_one_part_per_lobe_and_no_ink_crosses_its_outl
     assert outside(rendered, page, interior) == 0
 
 
+def test_stacked_lobes_whose_columns_interleave_side_to_side_each_get_their_own_english():
+    shapes = [(450, 250, 150, 150), (450, 560, 170, 170)]
+    columns = [(500, 160, 525, 340), (450, 160, 475, 340), (400, 160, 425, 340), (475, 460, 500, 660), (425, 460, 450, 660), (375, 460, 400, 660)]
+    texts = ["What are you looking so surprised about?", "Balloons will not float without helium!"]
+    parts, rendered, page, interior = split_and_set(shapes, columns, texts)
+    assert len(parts) == 2, [p.box for p in parts]
+    marked = ink(rendered, page)
+    assert marked[:390].any() and marked[410:].any(), "both lobes are lettered"
+    assert outside(rendered, page, interior) == 0
+
+
+def test_text_of_a_nearby_bubble_inside_the_mask_padding_never_becomes_a_part():
+    shapes = [(560, 260, 110, 170), (380, 520, 190, 200), (690, 600, 80, 110)]
+    columns = [(600, 150, 625, 380), (560, 150, 585, 380), (520, 160, 545, 360), (450, 420, 475, 640), (410, 420, 435, 640), (370, 420, 395, 640), (330, 420, 355, 600)]
+    neighbour = [(645, 530, 665, 670), (675, 530, 695, 670)]
+    page, _ = outlined(shapes)
+    gray = cv2.cvtColor(with_glyphs(page, columns + neighbour), cv2.COLOR_RGB2GRAY)
+    box = text_block(columns).box
+    mask_box = box.expand(int(min(box.w, box.h) * detect.MASK_PAD_FRAC) + 4, 900, 900)
+    mask = np.zeros((mask_box.h, mask_box.w), np.uint8)
+    for x0, y0, x1, y1 in columns + neighbour:
+        mask[max(y0, mask_box.y0) - mask_box.y0 : min(y1, mask_box.y1) - mask_box.y0, max(x0, mask_box.x0) - mask_box.x0 : min(x1, mask_box.x1) - mask_box.x0] = 255
+    parts = detect.split_by_bubble(gray, TextBlock(box, True, mask_box, mask))
+    assert len(parts) == 2, [p.box for p in parts]
+    assert all(p.box.center[0] < 610 for p in parts), "the nearby bubble keeps only its own block"
+
+
+def test_a_small_lobe_hung_on_the_side_of_a_big_one_gets_its_own_english():
+    shapes = [(380, 520, 170, 220), (540, 380, 120, 120)]
+    columns = [(390, 440, 415, 680), (340, 440, 365, 680), (290, 440, 315, 680), (555, 310, 580, 420), (600, 310, 625, 420)]
+    assert detect.lobe_marks(outlined(shapes)[1]) is None, "the distance map shows one lobe, so only the notches tell them apart"
+    texts = ["No matter how hard I try, the rope will not come loose.", "Hold on!"]
+    parts, rendered, page, interior = split_and_set(shapes, columns, texts)
+    assert len(parts) == 2, [p.box for p in parts]
+    marked = ink(rendered, page)
+    assert marked[250:460, 520:700].any() and marked[460:740, 210:450].any(), "both lobes are lettered"
+    assert outside(rendered, page, interior) == 0
+
+
+def test_a_two_kana_lobe_beside_a_long_speech_gets_its_own_english():
+    shapes = [(420, 540, 200, 210), (600, 330, 80, 80)]
+    columns = [(480, 400, 505, 700), (430, 400, 455, 700), (380, 400, 405, 700), (330, 420, 355, 680), (588, 290, 612, 370)]
+    texts = ["I have told you a hundred times not to touch my things without asking.", "Hmph!"]
+    parts, rendered, page, interior = split_and_set(shapes, columns, texts)
+    assert len(parts) == 2, [p.box for p in parts]
+    marked = ink(rendered, page)
+    assert marked[250:400, 530:680].any() and marked[400:740, 230:600].any(), "both lobes are lettered"
+    assert outside(rendered, page, interior) == 0
+
+
+def drawn(interior: np.ndarray) -> np.ndarray:
+    page = np.full((*interior.shape, 3), 120, np.uint8)
+    page[cv2.dilate(interior.astype(np.uint8), np.ones((11, 11), np.uint8)) > 0] = 0
+    page[interior] = 255
+    return page
+
+
+def test_an_oval_with_a_tail_or_a_spiky_burst_keeps_its_block_whole():
+    columns = [(560, 340, 585, 560), (510, 340, 535, 560), (390, 340, 415, 520), (340, 340, 365, 520)]
+    oval = np.zeros((900, 900), np.uint8)
+    cv2.ellipse(oval, (450, 450), (230, 190), 0, 0, 360, 1, -1)
+    cv2.fillPoly(oval, [np.array([(360, 600), (430, 620), (250, 820)], np.int32)], 1)
+    burst = np.zeros((900, 900), np.uint8)
+    cv2.fillPoly(burst, [burst_outline(450, 450, 260, 220)], 1)
+    for shape in (oval, burst):
+        gray = cv2.cvtColor(with_glyphs(drawn(shape > 0), columns), cv2.COLOR_RGB2GRAY)
+        assert len(detect.split_by_bubble(gray, text_block(columns))) == 1
+
+
 def test_a_column_running_through_the_neck_keeps_its_block_whole():
     page, _ = outlined([(450, 250, 90, 160), (450, 560, 140, 170)])
     columns = [(440, 150, 465, 640)]

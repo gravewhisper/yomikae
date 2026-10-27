@@ -138,6 +138,13 @@ On 2026-10-27 the per-lobe erosion for shared double bubbles was checked on 67 p
 
 On 2026-10-27 the centring and big-bubble size fixes were checked the same way on all 214 OpenMantra pages and every fifth page of the second book (57 pages): detection, OCR and inpainting ran once, translations were the reference English, and each bubble's rendered ink box was measured against its region for fill and for space above and below the text. [decisions.md](decisions.md#text-sits-at-the-bubbles-centroid) has the numbers.
 
+On 2026-10-27 the joined-bubble split fixes were checked the same way on the 90 pages whose detection changed, 43 OpenMantra pages and 47 pages of the second book. Detection, OCR and inpainting ran at the base and at the change, translations were the reference English matched by overlap (a reference line covering two blocks had its words split between them), and both renders were measured against the same lobes of the segmenter's balloons.
+
+- Lobes that held Japanese, were cleared by inpainting and got no English: 30 before, 3 after.
+- Lobes sharing one block's text with another lobe: 170 before, 15 after.
+- Lobes holding two or more lettered blocks: 3 before, 11 after. 1 of the 3, a duplicate block from a neighbour's padding, is gone. Of the 9 new ones, 6 are joined pairs whose two lobes the segmenter's mask does not separate, 1 is a burst holding two shouts, and 2 are wrong splits of one bubble.
+- Lettered bubbles: 754 before, 853 after. Of the 645 bubbles whose block kept its box, 470 kept their size, 64 grew and 111 shrank, most by 1 or 2 px as the page target moved; 6 shrank by 5 px or more.
+
 ## Avoid these mistakes
 
 **Use the same lettering font in every checkout.** Anime Ace 2 is ignored by git, so a new worktree does not have it, and the server silently falls back to the bundled Shantell Sans. One comparison was void because the run in a worktree set dialogue in the bundled font while the base used Anime Ace, which changed sizes on most bubbles. Link or copy `server/fonts/animeace2_reg.ttf` into each worktree, and check that `dialogue_font` in `meta.json` matches between the runs you compare. The line under the title of `scorecard.md` shows it too.
