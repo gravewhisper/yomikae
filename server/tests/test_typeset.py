@@ -424,6 +424,17 @@ def test_a_small_lobe_hung_on_the_side_of_a_big_one_gets_its_own_english():
     assert outside(rendered, page, interior) == 0
 
 
+def test_a_two_kana_lobe_beside_a_long_speech_gets_its_own_english():
+    shapes = [(420, 540, 200, 210), (600, 330, 80, 80)]
+    columns = [(480, 400, 505, 700), (430, 400, 455, 700), (380, 400, 405, 700), (330, 420, 355, 680), (588, 290, 612, 370)]
+    texts = ["I have told you a hundred times not to touch my things without asking.", "Hmph!"]
+    parts, rendered, page, interior = split_and_set(shapes, columns, texts)
+    assert len(parts) == 2, [p.box for p in parts]
+    marked = ink(rendered, page)
+    assert marked[250:400, 530:680].any() and marked[400:740, 230:600].any(), "both lobes are lettered"
+    assert outside(rendered, page, interior) == 0
+
+
 def drawn(interior: np.ndarray) -> np.ndarray:
     page = np.full((*interior.shape, 3), 120, np.uint8)
     page[cv2.dilate(interior.astype(np.uint8), np.ones((11, 11), np.uint8)) > 0] = 0
