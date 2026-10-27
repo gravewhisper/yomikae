@@ -385,6 +385,22 @@ def test_a_double_lobe_bubble_gets_one_part_per_lobe_and_no_ink_crosses_its_outl
     assert outside(rendered, page, interior) == 0
 
 
+def test_text_of_a_nearby_bubble_inside_the_mask_padding_never_becomes_a_part():
+    shapes = [(560, 260, 110, 170), (380, 520, 190, 200), (690, 600, 80, 110)]
+    columns = [(600, 150, 625, 380), (560, 150, 585, 380), (520, 160, 545, 360), (450, 420, 475, 640), (410, 420, 435, 640), (370, 420, 395, 640), (330, 420, 355, 600)]
+    neighbour = [(645, 530, 665, 670), (675, 530, 695, 670)]
+    page, _ = outlined(shapes)
+    gray = cv2.cvtColor(with_glyphs(page, columns + neighbour), cv2.COLOR_RGB2GRAY)
+    box = text_block(columns).box
+    mask_box = box.expand(int(min(box.w, box.h) * detect.MASK_PAD_FRAC) + 4, 900, 900)
+    mask = np.zeros((mask_box.h, mask_box.w), np.uint8)
+    for x0, y0, x1, y1 in columns + neighbour:
+        mask[max(y0, mask_box.y0) - mask_box.y0 : min(y1, mask_box.y1) - mask_box.y0, max(x0, mask_box.x0) - mask_box.x0 : min(x1, mask_box.x1) - mask_box.x0] = 255
+    parts = detect.split_by_bubble(gray, TextBlock(box, True, mask_box, mask))
+    assert len(parts) == 2, [p.box for p in parts]
+    assert all(p.box.center[0] < 610 for p in parts), "the nearby bubble keeps only its own block"
+
+
 def test_a_column_running_through_the_neck_keeps_its_block_whole():
     page, _ = outlined([(450, 250, 90, 160), (450, 560, 140, 170)])
     columns = [(440, 150, 465, 640)]
