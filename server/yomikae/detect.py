@@ -22,6 +22,7 @@ LOBE_LEVELS = 40
 LOBE_SCAN = 64
 LOBE_MIN_PEAK = 0.4
 MIN_PART_SHARE = 0.1
+MIN_TEXT_SHARE = 0.05
 NOTCH_DEPTH = 0.2
 NOTCH_SHALLOW = 0.05
 NOTCH_JAGS = 5
@@ -276,7 +277,7 @@ def split_by_bubble(gray: np.ndarray, block: TextBlock) -> list[TextBlock]:
         mine = (run == r) & (owner >= 0)
         owner[mine] = np.bincount(owner[mine]).argmax()
     shares = np.bincount(owner[owner >= 0], minlength=parts) / len(owner)
-    kept = [p for p in range(parts) if shares[p] >= MIN_PART_SHARE]
+    kept = [p for p in range(parts) if shares[p] >= MIN_TEXT_SHARE]
     if len(kept) < 2:
         return [block]
     boxes = []
