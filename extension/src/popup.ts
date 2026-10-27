@@ -60,6 +60,7 @@ async function showSite(): Promise<void> {
     mode.hidden = !toggle.checked;
     showAccess(access);
     showWork(toggle.checked ? work : undefined);
+    $('open-cast').hidden = !toggle.checked;
   };
   const refresh = async () => {
     access = await siteAccess(site);
@@ -82,6 +83,9 @@ async function showSite(): Promise<void> {
   });
   workToggle.addEventListener('change', () => chooseWork(workToggle.checked ? 'on' : 'off'));
   $('work-anyway').addEventListener('click', () => chooseWork('on'));
+  $('open-cast').addEventListener('click', () => {
+    void chrome.sidePanel.open({ windowId: tab.windowId }).then(() => window.close());
+  });
   mode.addEventListener('change', () => {
     const picked = parseSiteMode(mode.value);
     if (picked) void setSiteMode(site, picked);

@@ -21,7 +21,7 @@ const localAdaptersPlugin = {
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 await build({
-  entryPoints: { background: 'src/background.ts', content: 'src/content.ts', popup: 'src/popup.ts' },
+  entryPoints: { background: 'src/background.ts', content: 'src/content.ts', popup: 'src/popup.ts', sidepanel: 'src/sidepanel.ts' },
   outdir,
   bundle: true,
   format: 'iife',
