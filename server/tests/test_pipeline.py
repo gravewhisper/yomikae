@@ -440,6 +440,17 @@ def test_another_400_from_the_translator_is_not_resent(client):
     assert "'messages' field is required" in r.json()["detail"], r.text
 
 
+def test_a_connection_closed_mid_reply_means_the_translator_is_unavailable(client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.RemoteProtocolError("peer closed connection without sending complete message body")
+
+    translator = OpenAICompatible(replace(Settings.from_env(), translator="openai"))
+    translator.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    r = post_page_with(client, translator, 225)
+    assert r.status_code == 503 and r.json()["error"] == "translator_unavailable", r.text
+    assert "RemoteProtocolError" in r.json()["detail"]
+
+
 def english(source):
     return f"EN {source.encode().hex()}"
 
