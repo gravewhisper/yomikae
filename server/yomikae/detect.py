@@ -211,7 +211,10 @@ def split_by_bubble(gray: np.ndarray, block: TextBlock) -> list[TextBlock]:
         return [block]
     text = np.zeros(light.shape, np.uint8)
     text[ty, tx] = 1
-    reach = 2 * column_width(block.mask > 0, block.vertical)
+    owned = np.bincount(owner[owner >= 0], minlength=parts)
+    widths = [column_width(text * (part == p), block.vertical) for p in np.flatnonzero(owned >= MIN_PART_SHARE * len(owner))]
+    whole = column_width(text, block.vertical)
+    reach = 2 * min(whole, max(widths, default=whole))
     kernel = np.ones((reach, 1) if block.vertical else (1, reach), np.uint8)
     closed = cv2.morphologyEx(text, cv2.MORPH_CLOSE, kernel)
     columns = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel) * (part >= 0)
