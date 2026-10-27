@@ -575,3 +575,31 @@ def test_a_page_whose_inpainting_runs_out_of_gpu_memory_is_inpainted_on_the_cpu(
         x0, y0, x1, y1 = t.text_box
         ink = original[y0:y1, x0:x1] < 128
         assert (out[y0:y1, x0:x1] < 128)[ink].mean() < 0.35, t.text
+
+
+def test_every_page_runs_its_gpu_work_on_one_thread_so_gpu_memory_stays_flat(client, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from yomikae import detect, ocr
+
+    seen = set()
+
+    def recording(fn):
+        def run(*args, **kwargs):
+            seen.add(threading.get_ident())
+            return fn(*args, **kwargs)
+
+        return run
+
+    monkeypatch.setattr(detect, "detect", recording(detect.detect))
+    monkeypatch.setattr(ocr, "read", recording(ocr.read))
+    pages = [png_bytes(make_page(seed)[0]) for seed in range(240, 246)]
+
+    def post(data):
+        return client.post("/v1/pages", files={"image": ("p.png", data, "image/png")})
+
+    with ThreadPoolExecutor(6) as pool:
+        responses = list(pool.map(post, pages))
+    assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
+    assert len(seen) == 1
