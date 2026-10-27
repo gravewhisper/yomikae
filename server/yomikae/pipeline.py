@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from functools import cached_property
 from typing import TypeVar
 
 import numpy as np
@@ -103,6 +104,10 @@ class Engine:
         self.context.rebuild(self.cache)
         self.inflight: dict[str, asyncio.Future] = {}
 
+    @cached_property
+    def cpu_lama(self):
+        return inpaint.load_model("cpu")
+
     @contextmanager
     def gpu(self) -> Iterator[None]:
         with self.gpu_lock:
@@ -160,8 +165,13 @@ class Engine:
                 return timer.run("ocr", ruby.attach, self.ocr, image, bubbles), unsure
 
         def remove_text(bubbles: list[Bubble]) -> np.ndarray:
-            with self.gpu():
-                return timer.run("inpaint", inpaint.inpaint, self.lama, image, bubbles).image
+            import torch
+
+            try:
+                with self.gpu():
+                    return timer.run("inpaint", inpaint.inpaint, self.lama, image, bubbles).image
+            except torch.OutOfMemoryError:
+                return timer.run("inpaint", inpaint.inpaint, self.cpu_lama, image, bubbles).image
 
         bubbles, unsure = await asyncio.to_thread(read_page)
         if bubbles:

@@ -6,6 +6,7 @@ from dataclasses import replace
 import httpx
 import numpy as np
 import pytest
+import torch
 from conftest import decode, png_bytes
 from PIL import Image
 
@@ -546,3 +547,31 @@ def test_a_bubble_cut_by_a_tile_edge_is_found_once_and_whole(client):
     assert len(cover) > 2 and [b["source"] for b in bubbles] == texts, bubbles
     for seam, b in zip(seams, bubbles):
         assert b["box"][1] < seam - 80 and b["box"][3] > seam + 60, (seam, b["box"])
+
+
+class FullGpu(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.weight = torch.nn.Parameter(torch.zeros(1))
+        self.calls = 0
+
+    def forward(self, x, mask):
+        self.calls += 1
+        raise torch.OutOfMemoryError("CUDA out of memory. Tried to allocate 114.00 MiB.")
+
+
+def test_a_page_whose_inpainting_runs_out_of_gpu_memory_is_inpainted_on_the_cpu(client, monkeypatch):
+    engine = client.app.state.engine
+    full = FullGpu()
+    monkeypatch.setattr(engine, "lama", full)
+    monkeypatch.setattr("yomikae.inpaint.flat_fill", lambda *args: None)
+    img, truth = make_page(230)
+    r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")})
+    assert r.status_code == 200, r.text
+    assert full.calls >= 1
+    out = np.asarray(Image.fromarray(decode(client.get(r.json()["rendered_url"]).content)).convert("L"))
+    original = np.asarray(img.convert("L"))
+    for t in truth:
+        x0, y0, x1, y1 = t.text_box
+        ink = original[y0:y1, x0:x1] < 128
+        assert (out[y0:y1, x0:x1] < 128)[ink].mean() < 0.35, t.text
