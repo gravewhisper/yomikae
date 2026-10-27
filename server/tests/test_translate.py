@@ -9,7 +9,7 @@ CAPTION = "Today I'll finish one alone... or not."
 def work_with(*pages: list[ContextLine]) -> ContextStore:
     store = ContextStore()
     for idx, lines in pages:
-        store.add("g/1", idx, lines)
+        store.add("g/1", str(idx), idx, lines)
     return store
 
 
@@ -71,7 +71,7 @@ def test_a_misread_name_copied_from_the_glossary_gives_way_to_the_real_one():
     outs = []
     for idx, lines in enumerate(pages):
         outs.append(asyncio.run(translate_page(SometimesCopies(), store, lines, "g/1", idx)))
-        store.add("g/1", idx, [ContextLine(a, b) for a, b in zip(lines, outs[-1])])
+        store.add("g/1", str(idx), idx, [ContextLine(a, b) for a, b in zip(lines, outs[-1])])
     assert outs[1][0].startswith("Nagina-nee") and outs[3] == ["Nagisa-nee, ほら"], outs
     assert store.names("g/1") == {"Nagisa": "ナギサ姉、早く"}
 

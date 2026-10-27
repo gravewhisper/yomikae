@@ -102,7 +102,7 @@ async def run(args) -> None:
         path = page_path(out, series, index)
         if done(path):
             saved = json.loads(path.read_text())
-            store.add(series, index, [ContextLine(line["ja"], line["hyp"]) for line in saved["lines"]])
+            store.add(series, str(index), index, [ContextLine(line["ja"], line["hyp"]) for line in saved["lines"]])
             continue
         sources = [line["ja"] for line in page["lines"]]
         recalled = store.recall(series, sources)
@@ -120,7 +120,7 @@ async def run(args) -> None:
             hyps, error = [""] * len(sources), str(e)
         ms = round((time.perf_counter() - t) * 1000)
         if error is None:
-            store.add(series, index, [ContextLine(ja, hyp) for ja, hyp in zip(sources, hyps)])
+            store.add(series, str(index), index, [ContextLine(ja, hyp) for ja, hyp in zip(sources, hyps)])
         record = {
             "series": series,
             "page_index": index,

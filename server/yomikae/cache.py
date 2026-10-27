@@ -8,6 +8,7 @@ import shutil
 import tempfile
 import threading
 import unicodedata
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -162,76 +163,71 @@ def dir_size(page_dir: Path) -> int:
     return total
 
 
+@dataclass
+class ContextPage:
+    position: float
+    lines: list[ContextLine]
+    fixed: list[ContextLine]
+
+
 class ContextStore:
 
     def __init__(self, names_dir: Path | None = None):
-        self.pages: dict[str, dict[float, list[ContextLine]]] = {}
+        self.pages: dict[str, dict[str, ContextPage]] = {}
         self.names_dir = names_dir
         self.saved: dict[str, list[CastEntry]] = {}
-        self.fixed: dict[str, dict[float, list[ContextLine]]] = {}
 
     def rebuild(self, cache: PageCache) -> None:
         for r in cache.all_results():
             if r.get("context_key"):
                 lines = [ContextLine(b["source"], b["translation"]) for b in r["bubbles"]]
-                self.add(r["context_key"], r.get("page_index"), lines, [lines[i] for i in r.get("fixed", []) if i < len(lines)])
+                self.add(r["context_key"], r["page_id"], r.get("page_index"), lines, [lines[i] for i in r.get("fixed", []) if i < len(lines)])
 
-    def position(self, key: str, page_index: int | None) -> float:
+    def ordered(self, key: str | None) -> list[ContextPage]:
+        return sorted(self.pages.get(key, {}).values(), key=lambda p: p.position) if key else []
+
+    def position(self, key: str, page_index: int | None, page_id: str | None = None) -> float:
         if page_index is not None:
             return float(page_index)
         known = self.pages.get(key, {})
-        return max(known, default=-1.0) + 0.5
+        if page_id in known:
+            return known[page_id].position
+        return max((p.position for p in known.values()), default=-1.0) + 0.5
 
     def before(self, key: str | None, page_index: int | None) -> list[list[ContextLine]]:
         if not key or key not in self.pages:
             return []
         pos = self.position(key, page_index)
-        earlier = sorted(p for p in self.pages[key] if pos - CONTEXT_REACH <= p < pos)[-CONTEXT_PAGES:]
-        return [self.pages[key][p] for p in earlier if self.pages[key][p]]
+        earlier = [p for p in self.ordered(key) if pos - CONTEXT_REACH <= p.position < pos][-CONTEXT_PAGES:]
+        return [p.lines for p in earlier if p.lines]
 
-    def add(self, key: str, page_index: int | None, lines: list[ContextLine], fixed: list[ContextLine] = ()) -> None:
-        pos = self.position(key, page_index)
-        self.pages.setdefault(key, {})[pos] = [line for line in lines if line.translation]
-        fixed = [line for line in fixed if line.translation]
-        if fixed:
-            self.fixed.setdefault(key, {})[pos] = fixed
-        else:
-            self.fixed.get(key, {}).pop(pos, None)
+    def add(self, key: str, page_id: str, page_index: int | None, lines: list[ContextLine], fixed: list[ContextLine] = ()) -> None:
+        pos = self.position(key, page_index, page_id)
+        self.pages.setdefault(key, {})[page_id] = ContextPage(pos, [line for line in lines if line.translation], [line for line in fixed if line.translation])
 
     def forget(self, result: dict) -> None:
         key = result.get("context_key")
         pages = self.pages.get(key) if key else None
         if not pages:
             return
-        lines = [ContextLine(b["source"], b["translation"]) for b in result.get("bubbles", []) if b.get("translation")]
-        index = result.get("page_index")
-        preferred = [float(index)] if index is not None else []
-        for pos in preferred + sorted(pages):
-            if pages.get(pos) == lines:
-                del pages[pos]
-                self.fixed.get(key, {}).pop(pos, None)
-                break
+        pages.pop(result.get("page_id"), None)
         if not pages:
             del self.pages[key]
-            self.fixed.pop(key, None)
 
     def memory(self, key: str | None) -> list[ContextLine]:
-        pages = self.pages.get(key, {}) if key else {}
-        return [line for p in sorted(pages) for line in pages[p]]
+        return [line for p in self.ordered(key) for line in p.lines]
 
     def recall(self, key: str | None, sources: list[str]) -> list[str | None]:
         known: dict[str, str] = {}
-        fixed = self.fixed.get(key, {}) if key else {}
-        for line in [line for p in sorted(fixed) for line in fixed[p]] + self.memory(key):
+        for line in [line for p in self.ordered(key) for line in p.fixed] + self.memory(key):
             known.setdefault(normalize(line.source), line.translation)
         return [lookup(known, normalize(s)) for s in sources]
 
     def names(self, key: str | None) -> dict[str, str]:
         seen: dict[str, dict[str, str]] = {}
         kept: dict[str, str] = {}
-        pages = self.pages.get(key, {}) if key else {}
-        for p in sorted(pages):
-            for line in pages[p]:
+        for p in self.ordered(key):
+            for line in p.lines:
                 for m in NAME.finditer(line.translation):
                     name = m.group(0).rsplit("-", 1)[0]
                     if name not in kept:

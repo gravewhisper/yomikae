@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import time
 from dataclasses import replace
@@ -18,7 +20,7 @@ def page(key: str | None, index: int | None, *lines: tuple[str, str]) -> dict:
 
 
 def stored(cache: PageCache, page_id: str, result: dict, size: int = 1000, read_at: float | None = None) -> None:
-    cache.store(page_id, "rendered.webp", b"w" * size, result)
+    cache.store(page_id, "rendered.webp", b"w" * size, {**result, "page_id": page_id})
     if read_at is not None:
         os.utime(cache.root / page_id / "result.json", (read_at, read_at))
 
@@ -86,7 +88,7 @@ def test_context_drops_evicted_pages_and_matches_a_rebuild(tmp_path):
     ]
     for i, result in enumerate(pages):
         stored(cache, f"p{i}", result, read_at=1000 + i)
-        context.add(result["context_key"], result["page_index"], [ContextLine(b["source"], b["translation"]) for b in result["bubbles"]])
+        context.add(result["context_key"], f"p{i}", result["page_index"], [ContextLine(b["source"], b["translation"]) for b in result["bubbles"]])
 
     for result in cache.evict(max_bytes=2500):
         context.forget(result)
@@ -139,7 +141,7 @@ def test_a_new_page_triggers_eviction_after_the_response(client, synthetic_pages
 
 def test_punctuation_and_one_character_lines_are_never_recalled():
     context = ContextStore()
-    context.add("work", 1, [ContextLine("？", "during summer break."), ContextLine("え", "Huh?"), ContextLine("はい", "Yes.")])
+    context.add("work", "p1", 1, [ContextLine("？", "during summer break."), ContextLine("え", "Huh?"), ContextLine("はい", "Yes.")])
     assert context.recall("work", ["？", "!?", "え", "はい"]) == [None, None, None, "Yes."]
 
 
@@ -162,6 +164,12 @@ def test_pages_of_one_work_keep_their_context_with_the_same_or_no_page_index(cli
     counts += [post(242), post(243)]
     assert len(engine.context.memory("work")) == sum(counts), "pages without an index did not add up"
 
+    order = [line.source for line in engine.context.memory("work")]
+    data = png_bytes(make_page(242)[0])
+    r = client.post(f"/v1/pages/{hashlib.sha256(data).hexdigest()}/retranslate", files={"image": ("p.png", data, "image/png")}, data={"request": json.dumps({"context_key": "work", "bubbles": [0]})})
+    assert r.status_code == 200, r.text
+    assert [line.source for line in engine.context.memory("work")] == order, "a retranslated page without an index moved in the work"
+
     fresh = ContextStore()
     fresh.rebuild(cache)
-    assert sorted(fresh.memory("work")) == sorted(engine.context.memory("work"))
+    assert sorted(map(repr, fresh.memory("work"))) == sorted(map(repr, engine.context.memory("work")))

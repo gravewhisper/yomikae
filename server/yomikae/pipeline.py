@@ -300,11 +300,11 @@ class Engine:
             "fixed": fixed,
         }
         await asyncio.to_thread(self.cache.store, page_id, name, encoded, result)
-        if base:
+        if base and base.get("context_key") != context_key:
             self.context.forget(base)
         if context_key:
             lines = [ContextLine(b.source, b.translation) for b in bubbles]
-            self.context.add(context_key, page_index, lines, [lines[i] for i in fixed])
+            self.context.add(context_key, page_id, page_index, lines, [lines[i] for i in fixed])
         timings = {**timer.ms, "total": round((time.perf_counter() - start) * 1000)}
         return {**result, "timings_ms": timings, "cached": False}
 
