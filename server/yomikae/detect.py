@@ -292,6 +292,10 @@ def split_by_bubble(gray: np.ndarray, block: TextBlock) -> list[TextBlock]:
             gap = b.y0 - a.y1 if block.vertical else b.x0 - a.x1
             if across >= 0.5 * min((a.w, b.w) if block.vertical else (a.h, b.h)) and -reach < gap < reach // 2:
                 return [block]
+            along = min(a.y1, b.y1) - max(a.y0, b.y0) if block.vertical else min(a.x1, b.x1) - max(a.x0, b.x0)
+            beside = b.x0 - a.x1 if block.vertical else b.y0 - a.y1
+            if along >= 0.5 * min((a.h, b.h) if block.vertical else (a.w, b.w)) and 0 <= beside < whole / 2:
+                return [block]
     full = np.zeros((h, w), np.uint8)
     full[mb.y0 : mb.y1, mb.x0 : mb.x1] = block.mask
     out = []
