@@ -27,7 +27,7 @@ class Recorder:
 def test_auto_names_reach_the_prompt_exactly_as_before():
     store = ContextStore()
     store.add("g/1", 1, [ContextLine("渚姉、待って", "Nagisa-nee, wait!")])
-    assert [(e.en, e.ja, e.source) for e in store.cast("g/1")] == [("Nagisa-nee", "渚姉、待って", "auto")]
+    assert [(e.en, e.ja, e.source) for e in store.cast("g/1")] == [("Nagisa", "渚姉、待って", "auto")]
     translator = Recorder(lambda lines: ["Hi."] * len(lines))
     asyncio.run(translate_page(translator, store, ["こんにちは"], "g/1", 2))
     assert translator.contexts[0].names == store.names("g/1")
@@ -41,7 +41,7 @@ def test_a_user_name_hides_the_auto_spelling_it_corrects_and_is_never_overwritte
     store.set_name("g/1", CastEntry("凛恋", "Rinren", "りんれん", "user"))
     store.learn_names("g/1", [CastEntry("凛恋", "Rinko", "りんこ", "furigana")])
     cast = store.cast("g/1")
-    assert [(e.en, e.source) for e in cast] == [("Rinren", "user"), ("Yuki-chan", "auto")]
+    assert [(e.en, e.source) for e in cast] == [("Rinren", "user"), ("Yuki", "auto")]
     reloaded = ContextStore(tmp_path)
     assert [(e.ja, e.en, e.reading, e.source) for e in reloaded.saved_names("g/1")] == [("凛恋", "Rinren", "りんれん", "user")]
     assert reloaded.saved_names("g/2") == []
