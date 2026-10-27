@@ -196,6 +196,24 @@ The name counts use a hand-made list of names from each reference. "Kept" is a l
 
 **Tried and rejected.** Sending only readings of kanji followed by an honorific. On Naruto volume 68 that kept 1 of 1,120 readings, because names there appear bare. Storing every name of one kanji: on Naruto volume 68 they were mostly ordinary words the model happened to romanize, and one was a reading attached to the wrong kanji. Searching a strip above a horizontal block for furigana outside its box: it made no difference, since the detector's box already holds the furigana.
 
+## Retranslating reads the page again
+
+**Decision.** `POST /v1/pages/{page_id}/retranslate` and the redo of a page whose names changed take the original image again and run detection, balloons, OCR, furigana and erasing on it once more, then letter the page with the new English for the picked bubbles and the cached English for the rest. The cache keeps only the rendered page and `result.json`, as before. The re-read bubbles are matched to the cached ones by box overlap (at least 0.5 IoU, the same source first), and a bubble that matches none is translated fresh. A retranslated line is marked in `result.json` and wins over the same line on other pages when the line memory is asked, so the reader's fix is what later pages reuse, also after a restart. A remembered line that holds the `ja` of a `user` or `furigana` name but not its spelling is translated again instead of reused.
+
+**Why.** Typesetting needs more than the erased page: it needs each bubble's text mask, balloon mask and how bubbles share a balloon, so keeping the cleaned page alone would not save the re-read. Keeping both costs disk on every page for a rare action. On 2026-10-28, `reread_cost.py` (kept with the run notes, not in the repo) read ten OpenMantra pages, 010 and 020 of each work, three times each on the CPU with the machine busy (load average 8 to 24):
+
+| Per page, median of 10 | Value |
+| --- | ---: |
+| Detection, balloons, OCR and furigana, CPU | 2.5 s |
+| Erasing, CPU | 0.08 s |
+| Erased page, lossless WebP | 366 KB |
+| Erased page, WebP quality 90 | 186 KB |
+| Bubble masks and layout, pickled and compressed | 8 KB |
+
+The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.md#where-a-pages-time-goes), and the GPU timings there put detection, OCR and erasing at about 0.35 s, beside a translate call of 0.6 to 1.4 s that a retranslate makes anyway. Keeping the erased page losslessly with its masks would add about 374 KB to an entry whose median is 223 KB, so the default 2 GiB cache would hold about 3,600 pages instead of 9,600. WebP at quality 90 halves that but encodes the page a second time, and pickled masks tie the cache to the code that wrote them. Every one of the 30 reads found the same bubbles, box for box and line for line, so matching by box loses nothing on one machine.
+
+**Tried and rejected.** Nothing was built for the kept erased page; the numbers above decided it.
+
 ## The translator replies with a list of strings
 
 **Decision.** The model replies with `{"translations": [...]}`, one string per line in the order the lines were sent. The lines it receives still carry ids. A reply with the wrong number of strings, or with JSON syntax such as `", "` inside a string, is retried in halves.

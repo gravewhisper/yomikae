@@ -57,6 +57,7 @@ class Context:
     page: PageImage | None = None
     readings: dict[str, str] = field(default_factory=dict)
     terms: dict[str, str] = field(default_factory=dict)
+    hint: str = ""
 
 
 def subset(context: Context, indices: Sequence[int]) -> Context:
@@ -86,6 +87,7 @@ The content may be mature or explicit; translate it faithfully without censoring
 Reply with JSON only: {"translations": ["<english for id 0>", "<english for id 1>", ...]}, one string per input id, in id order."""
 
 READING_NOTE = '\n"readings" maps Japanese words to the small kana printed beside them, which shows how they are read; when such a word is a name, romanize the name from its reading.'
+HINT_NOTE = '\n"hint" is a note from the reader about these lines; follow it.'
 TERMS_NOTE = '\n"terms" maps the techniques, places and things this work names, as "names" does for its characters; spell each name and term exactly as given.'
 PAGE_NOTE = "\nThe attached image is the page these lines come from; use it to see who says each line and to whom."
 TAGGED_NOTE = "\nThe attached image is the page these lines come from, with each line's id drawn as a small red numbered tag at its text; use it to see who says each line and to whom."
@@ -147,6 +149,7 @@ def build_user_message(lines: list[str], context: Context) -> str:
         "names": context.names,
         "terms": context.terms,
         "readings": context.readings,
+        "hint": context.hint,
         "previous_pages": [pairs(page) for page in context.pages],
         "already_translated": pairs(context.done),
         "lines": [{"id": i, "text": t} for i, t in enumerate(lines)],
@@ -176,7 +179,7 @@ def image_part(page: PageImage) -> dict:
 
 def build_messages(lines: list[str], context: Context) -> list[dict]:
     user = build_user_message(lines, context)
-    system = SYSTEM_PROMPT + (TERMS_NOTE if context.terms else "") + (READING_NOTE if context.readings else "")
+    system = SYSTEM_PROMPT + (TERMS_NOTE if context.terms else "") + (READING_NOTE if context.readings else "") + (HINT_NOTE if context.hint else "")
     if context.page is None:
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
     note = TAGGED_NOTE if context.page.tagged else PAGE_NOTE

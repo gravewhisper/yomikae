@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -25,8 +26,10 @@ from .translate import TranslatorFailed, TranslatorUnavailable
 
 log = logging.getLogger("yomikae")
 PAGE_ID_CHARS = set("0123456789abcdef")
-INTERNAL_FIELDS = ("context_key", "page_index", "font_sizes", "skipped")
+INTERNAL_FIELDS = ("context_key", "page_index", "font_sizes", "skipped", "names_in_force", "revision", "fixed")
 MAX_NAMES = 500
+MAX_RETRANSLATE_NAMES = 20
+MAX_HINT = 300
 NAME_FIELDS = {"ja": 200, "en": 100, "reading": 100}
 
 
@@ -206,6 +209,61 @@ async def put_name(request: Request, context_key: str = ""):
     engine: Engine = request.app.state.engine
     engine.context.set_name(context_key, CastEntry(entry.ja, entry.en, entry.reading, "user", entry.kind))
     return cast_body(engine, context_key)
+
+
+def parse_retranslate(raw: str) -> dict:
+    try:
+        body = json.loads(raw)
+    except ValueError as e:
+        raise BadReport(f"request is not JSON: {e}") from e
+    if not isinstance(body, dict):
+        raise BadReport("request must be a JSON object")
+    key = body.get("context_key") or None
+    index = body.get("page_index")
+    bubbles = body.get("bubbles")
+    hint = body.get("hint") or ""
+    names = body.get("names") or []
+    if key is not None and not isinstance(key, str):
+        raise BadReport("context_key must be a string")
+    if index is not None and (not isinstance(index, int) or isinstance(index, bool)):
+        raise BadReport("page_index must be an integer")
+    if not isinstance(bubbles, list) or not bubbles or not all(isinstance(i, int) and not isinstance(i, bool) for i in bubbles):
+        raise BadReport("bubbles must be a list of at least one bubble index")
+    if not isinstance(hint, str) or len(hint) > MAX_HINT:
+        raise BadReport(f"hint must be a string of at most {MAX_HINT} characters")
+    if not isinstance(names, list) or len(names) > MAX_RETRANSLATE_NAMES:
+        raise BadReport(f"names must be a list of at most {MAX_RETRANSLATE_NAMES} entries")
+    if names and key is None:
+        raise BadReport("names need a context_key")
+    entries = [CastEntry(e.ja, e.en, e.reading, "user", e.kind) for e in map(parse_entry, names)]
+    return {"context_key": key, "page_index": index, "bubbles": sorted(set(bubbles)), "hint": hint.strip(), "names": entries}
+
+
+def check_bubbles(result: dict, picked: list[int]) -> None:
+    if any(not 0 <= i < len(result["bubbles"]) for i in picked):
+        raise BadReport(f"bubbles must be indexes below {len(result['bubbles'])}")
+
+
+@app.post("/v1/pages/{page_id}/retranslate")
+async def retranslate(request: Request, page_id: str, image: Annotated[UploadFile, File()], raw: Annotated[str, Form(alias="request")]):
+    ask = parse_retranslate(raw)
+    data = await image.read()
+    if not data:
+        raise BadImage("empty image")
+    if hashlib.sha256(data).hexdigest() != page_id:
+        raise BadReport("page_id is not the sha256 of image")
+    engine: Engine = request.app.state.engine
+    key, index, picked = ask["context_key"], ask["page_index"], ask["bubbles"]
+    cached = engine.cache.load(page_id)
+    if cached is not None:
+        check_bubbles(cached, picked)
+    for entry in ask["names"]:
+        engine.context.set_name(key, entry)
+    if cached is None:
+        check_bubbles(await engine.process(data, key, index), picked)
+    result = await engine.retranslate(page_id, data, key, index, picked, ask["hint"])
+    schedule_eviction(request.app)
+    return {k: v for k, v in result.items() if k not in INTERNAL_FIELDS}
 
 
 @app.get("/v1/pages/{page_id}/rendered.{ext}")
