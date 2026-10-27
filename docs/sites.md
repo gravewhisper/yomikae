@@ -66,7 +66,7 @@ The default adapter applies to every site without an adapter of its own.
 - In `auto` mode, an image counts as a page when it is drawn at least 300 px wide and its file is at least 500 px on each side.
 - The key and the only candidate are the image URL.
 - The work is the page's host and path, without a trailing `/<number>`. For example, `/read/abc/3` and `/read/abc/4` are one work.
-- The page number is the image's position among the pages the extension tracks on the page.
+- The page number is unknown. Jobs are ordered by the image's position among the pages the extension tracks on the page, and the server gets no `page_index`, so it places each page after the work's latest one.
 - There is no prefetch.
 
 Known limits:

@@ -22,7 +22,7 @@ Multipart form:
 | --- | --- | --- |
 | `image` | file | Original page bytes (webp, jpeg, png). |
 | `context_key` | string, optional | Groups pages of one work (for example `example.com/g/12345`). The translator sees earlier pages' dialogue with the same key, so names and tone stay consistent. |
-| `page_index` | int, optional | Order within the context. Used to pick which earlier pages are context. |
+| `page_index` | int, optional | Order within the context. Used to pick which earlier pages are context. The extension sends it only when the site adapter knows the page number, so the default adapter omits it. A page without one is placed after the work's latest page, and a page posted again keeps its place. Two pages with the same `page_index` are both kept as context. |
 
 Response `200 application/json`, a `TranslatedPage`:
 
