@@ -150,6 +150,8 @@ Reading the kanji added 2 OpenMantra pairs, whose cut-off sounds now come out as
 
 **Tried and rejected.** Counting a bare vowel. あ before ありがとう became "Th-", where the reference reads "oh...".
 
+A prompt line telling the model that a lone cut-off sound before a line starting with that sound is usually a stutter, to be written as "D-". On 2026-10-28, OpenMantra scored COMET 0.7488 with it (`w6-stutline3-om`) against 0.7480 without (`w6-stut-om`), within noise, with 32 blank lines against 31. Of the 133 short kana fragments before another line, 28 read differently. The real stutters were already fixed by the rule, so the prompt only added hyphen fragments where the reference has none: あ before ありがとう became "A-" again, a cut-off ラん became "Ra-", and a pained ててっ became "T-Tee!". It also split a called-out name in two, "Ni-" and "-sama...". The rule alone stays.
+
 ## A bare うち is the speaker
 
 **Decision.** The prompt says that うち or ウチ on its own is usually the speaker's "I", "me" or "my", or the speaker's home or family, and is "we", "us" or "our" only when the speaker clearly speaks for a group.
