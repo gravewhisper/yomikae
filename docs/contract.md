@@ -6,7 +6,7 @@ The server never fetches URLs. Only the extension touches the network for page i
 
 ## Server
 
-Base URL: `http://127.0.0.1:7878`. CORS allows `chrome-extension://*` origins for `GET`, `POST`, `PUT` and `DELETE`.
+Base URL: `http://127.0.0.1:7878`. The browser tests point the extension at a mock server by setting `serverUrl` in `chrome.storage.local`. It is a test hook, not a setting: nothing in the extension writes it. CORS allows `chrome-extension://*` origins for `GET`, `POST`, `PUT` and `DELETE`.
 
 ### `GET /v1/health`
 
@@ -209,6 +209,8 @@ The background worker refuses a `want` or a report whose candidates include an a
 A job that fails because the server is unavailable moves to `waiting` instead of `failed`. Unavailable means the connection failed, the rendered page could not be fetched, or the server answered 502, 503 or 504, which includes `translator_unavailable`. While any job waits, the background worker sends no `POST /v1/pages`. It moves every queued job to `waiting` and polls `GET /v1/health` after 2, 4, 8 and 16 seconds, then every 30 seconds. When health answers `"ok": true`, the waiting jobs go back to `queued` and run in their usual priority order, reusing the image bytes they already fetched. The chip reads "Waiting for server…", and its tooltip gives the last health detail. Polling stops when no tab still wants a waiting job. A request that times out, `bad_image`, and other errors on one page still end in `failed`, with Retry and Report on the chip.
 
 A job ends in `blocked` when an image fetch fails and the extension has no host permission for that image's host, which also keeps the Referer rule from applying. The chip reads "No access to <host>. Open the Yomikae popup and click Allow access." instead of the generic failure, and keeps Report. The background worker records that host as an image host of the site of each tab that wanted the job (see Enabled sites). A site stays enabled while its own pattern is granted, even when one of its adapter's extra image origins or recorded image hosts is not. The popup shows such a site as on, reads "Images on this site come from <hosts>." listing every missing host, and offers one **Allow access** button that requests only the missing origins. Nothing is requested before that click. When any origin is granted, the background worker tells every tab, and blocked jobs go back to `queued` without a reload. `POST /v1/reports` requires the image, so a report from a blocked page fails with the same message.
+
+While any of its jobs is still pending, the content script sends `{ type: 'ping' }` on its port every 20 seconds. The background worker does nothing with it. The message only keeps Chrome from stopping the idle service worker while pages are queued or waiting.
 
 ## Enabled sites
 
