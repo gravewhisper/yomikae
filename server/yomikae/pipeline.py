@@ -6,6 +6,7 @@ import io
 import threading
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from functools import cached_property
@@ -92,6 +93,7 @@ class Engine:
         self.device = "cuda" if torch.cuda.is_available() and not settings.low_vram else "cpu"
         self.gpu_name = torch.cuda.get_device_name(0) if self.device == "cuda" else "cpu"
         self.gpu_lock = threading.Lock()
+        self.gpu_thread = ThreadPoolExecutor(1, thread_name_prefix="gpu")
         detect_device = settings.detect_device if self.device == "cuda" else "cpu"
         self.detector = detect.load_session(DETECTOR_PATH, detect_device)
         self.balloons = detect.load_session(BUBBLE_MODEL_PATH, detect_device)
@@ -120,6 +122,9 @@ class Engine:
                     torch.cuda.empty_cache()
 
     def warmup(self) -> None:
+        self.gpu_thread.submit(self._warmup).result()
+
+    def _warmup(self) -> None:
         blank = np.full((1816, 1280, 3), 255, np.uint8)
         blank[800:1000, 600:680] = 0
         with self.gpu():
@@ -165,20 +170,24 @@ class Engine:
                 return timer.run("ocr", ruby.attach, self.ocr, image, bubbles), unsure
 
         def remove_text(bubbles: list[Bubble]) -> np.ndarray:
+            with self.gpu():
+                return timer.run("inpaint", inpaint.inpaint, self.lama, image, bubbles).image
+
+        async def remove_text_anywhere(bubbles: list[Bubble]) -> np.ndarray:
             import torch
 
             try:
-                with self.gpu():
-                    return timer.run("inpaint", inpaint.inpaint, self.lama, image, bubbles).image
+                return await loop.run_in_executor(self.gpu_thread, remove_text, bubbles)
             except torch.OutOfMemoryError:
-                return timer.run("inpaint", inpaint.inpaint, self.cpu_lama, image, bubbles).image
+                return (await asyncio.to_thread(timer.run, "inpaint", inpaint.inpaint, self.cpu_lama, image, bubbles)).image
 
-        bubbles, unsure = await asyncio.to_thread(read_page)
+        loop = asyncio.get_running_loop()
+        bubbles, unsure = await loop.run_in_executor(self.gpu_thread, read_page)
         if bubbles:
             readings = [pair for b in bubbles for pair in b.ruby]
             translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings))
             try:
-                inpainted = await asyncio.to_thread(remove_text, bubbles)
+                inpainted = await remove_text_anywhere(bubbles)
             finally:
                 translations = await translate_task
             bubbles = [replace(b, translation=t) for b, t in zip(bubbles, translations)]
