@@ -459,6 +459,27 @@ def test_a_model_the_translator_does_not_know_fails_the_page_instead_of_waiting(
     assert translator.model in r.json()["detail"] and "model 'nope' not found" in r.json()["detail"], r.text
 
 
+def test_an_empty_translation_is_kept_without_retrying_in_halves():
+    import asyncio
+    import json
+
+    from yomikae.translate import Context, translate_lines
+
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        lines = json.loads(json.loads(request.content)["messages"][-1]["content"])["lines"]
+        calls.append(len(lines))
+        items = [english(line["text"]) if line["text"] != "…" else "" for line in lines]
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({"translations": items}, ensure_ascii=False)}}]})
+
+    translator = OpenAICompatible(replace(Settings.from_env(), translator="openai"))
+    translator.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    out = asyncio.run(translate_lines(translator, ["おはよう", "…", "行くぞ", "待って"], Context()))
+    assert out == [english("おはよう"), "", english("行くぞ"), english("待って")]
+    assert calls == [4]
+
+
 def english(source):
     return f"EN {source.encode().hex()}"
 
