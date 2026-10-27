@@ -385,6 +385,17 @@ def test_a_double_lobe_bubble_gets_one_part_per_lobe_and_no_ink_crosses_its_outl
     assert outside(rendered, page, interior) == 0
 
 
+def test_stacked_lobes_whose_columns_interleave_side_to_side_each_get_their_own_english():
+    shapes = [(450, 250, 150, 150), (450, 560, 170, 170)]
+    columns = [(500, 160, 525, 340), (450, 160, 475, 340), (400, 160, 425, 340), (475, 460, 500, 660), (425, 460, 450, 660), (375, 460, 400, 660)]
+    texts = ["What are you looking so surprised about?", "Balloons will not float without helium!"]
+    parts, rendered, page, interior = split_and_set(shapes, columns, texts)
+    assert len(parts) == 2, [p.box for p in parts]
+    marked = ink(rendered, page)
+    assert marked[:390].any() and marked[410:].any(), "both lobes are lettered"
+    assert outside(rendered, page, interior) == 0
+
+
 def test_text_of_a_nearby_bubble_inside_the_mask_padding_never_becomes_a_part():
     shapes = [(560, 260, 110, 170), (380, 520, 190, 200), (690, 600, 80, 110)]
     columns = [(600, 150, 625, 380), (560, 150, 585, 380), (520, 160, 545, 360), (450, 420, 475, 640), (410, 420, 435, 640), (370, 420, 395, 640), (330, 420, 355, 600)]
