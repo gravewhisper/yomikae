@@ -37,7 +37,7 @@ Any other site works in click-to-translate mode. Hover an image that is at least
 ## Requirements
 
 - Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), git, and a C++ compiler. The install builds `pydensecrf` from source.
-- Node.js 22.6 or newer and pnpm, to build and test the extension.
+- Node.js 22.23.4, 24.22.1 or 26.12.1 or newer, and pnpm, to build and test the extension. Older releases have the Brotli decoder flaw CVE-2026-111497.
 - Chrome or Chromium 116 or newer.
 - An LLM server with an OpenAI-compatible API, such as [LM Studio](https://lmstudio.ai/) or Ollama, or a cloud API.
 - An NVIDIA GPU with CUDA for the default setup.
