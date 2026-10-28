@@ -183,6 +183,20 @@ try {
   const keysAfterGrant = await sw.evaluate(siteKeys);
   check(results, afterGrant.includes(`site:${READER}`) && noCdnSite(afterGrant) && noCdnSite(keysAfterGrant), 'granting the image host registers no site for it', { afterGrant, keysAfterGrant });
 
+  await sw.evaluate(`chrome.storage.local.get('siteModes').then(({ siteModes }) => chrome.storage.local.set({ siteModes: { ...siteModes, '${READER}': 'auto' } }))`);
+  const bounce = await attach(await openTab(CDP_PORT, `http://${READER}/bounce`));
+  await bounce.send('Page.enable');
+  await bounce.send('DOM.enable');
+  const bounced = await bounce.waitFor(`document.getElementById('to-web').src.startsWith('blob:')`, 30000).then(() => true, () => false);
+  check(results, bounced, 'an image that redirects to another web host still translates');
+  const LOCAL_REFUSED = /Refused to fetch 127\.0\.0\.1: media\.imgcdn\.test redirected to this computer\./;
+  const refusedChip = await waitChip(bounce, '.status', (n) => n.visible && LOCAL_REFUSED.test(n.outerHTML), 20000).catch(async () => (await chipNodes(bounce, '.status')).map((n) => n.outerHTML));
+  check(results, LOCAL_REFUSED.test(refusedChip?.outerHTML ?? ''), 'an image that redirects to this computer is refused and the chip says so', refusedChip?.outerHTML ?? refusedChip);
+  const sent = (await (await fetch(`${MOCK}/mock/stats`)).json()).requests;
+  check(results, sent.includes('page 8') && !sent.includes('page 7') && !(await bounce.evaluate(`document.getElementById('to-local').src.startsWith('blob:')`)), 'only the image that stays on the web is sent to the server', sent);
+  await bounce.screenshot(`${out}/redirect-refused.png`);
+  bounce.close();
+
   await extensions.evaluate(`chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true })`);
   await extensions.evaluate(`chrome.developerPrivate.reload('${extId}', { failQuietly: true })`);
   await sleep(1500);

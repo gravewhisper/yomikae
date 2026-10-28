@@ -62,8 +62,23 @@ function serveSlow(req, res, n, mode) {
   req.on('close', () => clearInterval(timer));
 }
 
+const bounceHtml = `<!doctype html><html><head><meta charset="utf-8"><title>redirecting images</title>
+<style>body{margin:0;background:#333} img{display:block;width:700px;margin:0 auto 24px}</style></head><body>
+<img class="page" id="to-local" src="${IMAGE_ORIGIN}/bounce/7.svg?to=${encodeURIComponent(`http://127.0.0.1:${PORT}/pages/7.svg`)}" alt="redirects to this computer">
+<img class="page" id="to-web" src="${IMAGE_ORIGIN}/bounce/8.svg?to=${encodeURIComponent(`${IMAGE_ORIGIN}/pages/8.svg`)}" alt="redirects on the web">
+</body></html>`;
+
 createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
+  if (url.pathname === '/bounce') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    return res.end(bounceHtml);
+  }
+  const bounce = url.pathname.match(/^\/bounce\/(\d+)\.svg$/);
+  if (bounce) {
+    res.writeHead(302, { location: url.searchParams.get('to') ?? '/', 'cache-control': 'no-store' });
+    return res.end();
+  }
   if (url.pathname === '/served') {
     res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
     return res.end(JSON.stringify(served));
