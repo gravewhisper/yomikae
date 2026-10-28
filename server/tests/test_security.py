@@ -177,3 +177,24 @@ def test_web_image_formats_still_decode(fmt):
     buf = io.BytesIO()
     Image.fromarray(np.full((40, 30, 3), 90, np.uint8)).save(buf, format=fmt)
     assert decode_image(buf.getvalue()).shape == (40, 30, 3)
+
+
+REPORT_FIELDS = {"page_url": "https://a.example/1", "image_url": "https://a.example/1.png"}
+
+
+@pytest.mark.parametrize("areas", [[{"box": [0.1, 0.1, 0.2, 0.2]}] * 101, [{"box": [float("nan"), 0, 1, 1]}], [{"box": [0, 0, float("inf"), 1]}]])
+def test_report_areas_are_bounded_and_finite(client, areas):
+    r = client.post("/v1/reports", files={"image": ("p.png", plain_image(14), "image/png")}, data={**REPORT_FIELDS, "areas": json.dumps(areas)})
+    assert r.status_code == 400, r.text
+    assert r.json()["error"] == "bad_request"
+
+
+def test_a_huge_page_index_is_a_bad_request_not_a_crash(client):
+    huge = "1" + "0" * 400
+    r = client.post("/v1/pages", files={"image": ("p.png", plain_image(15), "image/png")}, data={"context_key": "big.example/w", "page_index": huge})
+    assert r.status_code == 400, r.text
+    data = plain_image(16)
+    ask = {"context_key": "big.example/w", "page_index": 10**400, "bubbles": [0]}
+    r = client.post(f"/v1/pages/{hashlib.sha256(data).hexdigest()}/retranslate", files={"image": ("p.png", data, "image/png")}, data={"request": json.dumps(ask)})
+    assert r.status_code == 400, r.text
+    assert r.json()["error"] == "bad_request"
