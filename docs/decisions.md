@@ -333,3 +333,15 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 **Measured.** On all 214 OpenMantra pages, with detection, OCR, inpainting and translations held fixed and only typesetting differing, 79 of 1549 bubbles were squeezed at main, 58 to 80% and 21 to 70%. 77 of them now get normal-width letters 1 to 5 px smaller (mean 2.4 px, median size 12 px before and 9 px after). 40 of those 77 now sit under 10 px, down to 7 px; none did before. The other 2 were already at 7 px squeezed to 70%. At normal width nothing fits them even at the smallest size, so they fall back to 10 px with one word per line and a white halo, and run a little past the outline. Before this change that fallback drew one line cut off at the bubble edge ("COURA…"), which only these two bubbles reached. 41 other bubbles moved by 1 or 2 px (23 up, 18 down), all on pages that also had a squeezed bubble, because the page's same-size grouping shifted. In tencho_isoro, the work with the smallest panels, 13 bubbles were squeezed and each lost 1 to 3 px. [benchmarks.md](benchmarks.md#a-development-set-check) has the setup.
 
 **Tried and rejected.** Squeezing to 80% and then 70% width, described in [Lettering stays inside the bubble](#lettering-stays-inside-the-bubble).
+
+## A line whose translation has no words is asked again
+
+**Decision.** When the model answers a line that has words with only symbols, such as `♡` for `変態♡`, that line is sent again on its own, the way an echoed line is. If the second answer has no words either, the line is left blank and its bubble keeps the original Japanese. Lines of only sounds and dots (`っ`, `．．．．．．っ`, `ー`) may still come back as `!` or `...`. PIPELINE_VERSION went to 34.
+
+**Why.** On 2026-10-29 the owner reported page 5 of an e-hentai gallery whose 変態♡ bubble showed only a heart. OCR hands the translator a fragment of the title (凛恋さんはたから) and the lone 作 of the author credit, in reading order just before the bubble. With the gallery's earlier page and names as context, the model treats the three as one sentence and moves the word: "Riren-san is a" / "perv" / "♡". The reply still has one string per line, so nothing caught the move.
+
+**Measured.** Through `Engine.process` on the reported page, with the gallery's cache and the page itself removed from it, 10 runs each: the bubble was left with only the heart 6 times before the change and 0 times after. Asked alone with the same context, 変態♡ came back "Pervert♡" 10 times out of 10. Detection and OCR give the same six lines at v0.2.0, v0.3.0 and main. Without the 作 line, or without the gallery context, the model kept the word in the bubble 5 times out of 5.
+
+**Tried and rejected.** Changing the reply format. On the same input the list of strings left the heart alone 7 times in 10, an object keyed by id 10 in 10, and the older id and text objects 10 in 10, so the format is not what moves the word.
+
+**Not fixed.** The 作 badge still gets "perv" or "treasure", and about 2 runs in 10 split the word as "per-" / "verted♡". The bubble then has words, so this check does not see it. The title is also read only in part, which leaves 知らない uninpainted.
