@@ -39,7 +39,7 @@ export type PageJob =
   | { state: 'failed'; url: string; error: string; retryable: boolean }
   | { state: 'blocked'; url: string; host: string };
 
-export const SERVER_ERROR_CODES = ['bad_image', 'bad_request', 'not_found', 'translator_unavailable', 'translator_error', 'internal'] as const;
+export const SERVER_ERROR_CODES = ['bad_image', 'bad_request', 'forbidden', 'not_found', 'translator_unavailable', 'translator_error', 'internal'] as const;
 export type ServerErrorCode = (typeof SERVER_ERROR_CODES)[number];
 
 class ParseError extends Error {}

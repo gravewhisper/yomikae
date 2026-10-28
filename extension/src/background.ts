@@ -15,6 +15,7 @@ const SLOW_HOST_PENALTY_MS = 10 * 60_000;
 const HEALTH_BACKOFF_MS = [2_000, 4_000, 8_000, 16_000, 30_000];
 const HEALTH_TIMEOUT_MS = 5_000;
 const SERVER_DOWN_STATUSES = new Set([502, 503, 504]);
+const FINAL_ERRORS = new Set(['bad_image', 'bad_request', 'forbidden']);
 const LOOPBACK = /^(localhost|.+\.localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1?\]|\[::ffff:(7f[0-9a-f]{2}|0):[0-9a-f]+\])$/;
 
 type Entry = {
@@ -321,7 +322,7 @@ async function postToServer(server: string, path: string, form: FormData, timeou
   if (!res.ok) {
     const { code, detail } = parseServerError(await res.json().catch(() => null));
     if (SERVER_DOWN_STATUSES.has(res.status)) throw new ServerDown(detail);
-    throw new JobError(detail, code !== 'bad_image' && code !== 'bad_request');
+    throw new JobError(detail, !FINAL_ERRORS.has(code));
   }
   return res;
 }
