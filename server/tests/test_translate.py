@@ -166,56 +166,57 @@ def test_an_english_family_word_never_keeps_a_japanese_honorific():
 class Scripted:
     name = "scripted"
 
-    def __init__(self, *replies: dict[str, str]):
-        self.replies = list(replies)
+    def __init__(self, first: list[str], **later: list[str]):
+        self.first = first
+        self.later = {line: list(answers) for line, answers in later.items()}
         self.calls: list[list[str]] = []
 
     async def translate(self, lines, context):
         self.calls.append(lines)
-        reply = self.replies.pop(0)
-        return [reply[line] for line in lines]
+        if len(self.calls) == 1:
+            return list(self.first)
+        return [self.later[line].pop(0) for line in lines]
 
     async def health(self):
         return None
 
 
-def test_a_line_left_with_only_its_symbols_is_retried_alone():
+def run(translator, lines):
     import asyncio
 
     from yomikae.translate import Context, translate_lines
 
-    lines = ["凛恋さんはたから", "作", "変態♡"]
-    translator = Scripted({"凛恋さんはたから": "Riren-san is a", "作": "perv", "変態♡": "♡"}, {"変態♡": "Pervert♡"})
-    out = asyncio.run(translate_lines(translator, lines, Context()))
-    assert out == ["Riren-san is a", "perv", "Pervert♡"]
-    assert translator.calls[1] == ["変態♡"]
+    return asyncio.run(translate_lines(translator, lines, Context()))
+
+
+def test_a_line_left_with_only_its_symbols_is_retried_alone():
+    translator = Scripted(["Riren-san is a", "perv", "♡"], **{"変態♡": ["Pervert♡"]})
+    assert run(translator, ["凛恋さんはたから", "作", "変態♡"]) == ["Riren-san is a", "perv", "Pervert♡"]
+    assert translator.calls[1:] == [["変態♡"]]
 
 
 def test_a_line_still_without_words_after_its_retry_is_left_blank():
-    import asyncio
-
-    from yomikae.translate import Context, translate_lines
-
-    translator = Scripted({"変態♡": "♡"}, {"変態♡": "♡♡"})
-    assert asyncio.run(translate_lines(translator, ["変態♡"], Context())) == [""]
+    assert run(Scripted(["♡"], **{"変態♡": ["♡♡"]}), ["変態♡"]) == [""]
 
 
 def test_lines_of_only_sounds_and_dots_may_come_back_without_words():
-    import asyncio
-
-    from yomikae.translate import Context, translate_lines
-
-    lines = ["っ", "．．．．．．っ", "ー", "……"]
-    translator = Scripted({"っ": "!", "．．．．．．っ": "......!", "ー": "-", "……": "..."})
-    assert asyncio.run(translate_lines(translator, lines, Context())) == ["!", "......!", "-", "..."]
+    translator = Scripted(["!", "......!", "-", "..."])
+    assert run(translator, ["っ", "．．．．．．っ", "ー", "……"]) == ["!", "......!", "-", "..."]
     assert len(translator.calls) == 1
 
 
 def test_a_short_word_or_a_word_with_a_heart_needs_words_back():
-    import asyncio
+    translator = Scripted(["♡", "...", "!?"], **{"あ♡": ["Ah♡"], "ん": ["Mm"], "嘘": ["No way!?"]})
+    assert run(translator, ["あ♡", "ん", "嘘"]) == ["Ah♡", "Mm", "No way!?"]
 
-    from yomikae.translate import Context, translate_lines
 
-    lines = ["あ♡", "ん", "嘘"]
-    translator = Scripted({"あ♡": "♡", "ん": "...", "嘘": "!?"}, {"あ♡": "Ah♡", "ん": "Mm", "嘘": "No way!?"})
-    assert asyncio.run(translate_lines(translator, lines, Context())) == ["Ah♡", "Mm", "No way!?"]
+def test_a_word_cut_across_two_lines_asks_each_line_again_on_its_own():
+    translator = Scripted(["Riren-san is a", "per-", "verted♡"], **{"作": ["Story"], "変態♡": ["Pervert♡"]})
+    assert run(translator, ["凛恋さんはたから", "作", "変態♡"]) == ["Riren-san is a", "Story", "Pervert♡"]
+    assert translator.calls[1:] == [["作"], ["変態♡"]]
+
+
+def test_a_stutter_or_a_dash_before_a_new_sentence_is_not_a_cut_word():
+    translator = Scripted(["W-", "Well...", "Wait -", "and then?"])
+    assert run(translator, ["う", "うん", "待って", "それで？"]) == ["W-", "Well...", "Wait -", "and then?"]
+    assert len(translator.calls) == 1
