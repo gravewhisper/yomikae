@@ -299,7 +299,7 @@ On 2026-10-27 the text was tried as a way to undo the four wrong splits that rem
 On 2026-10-28 the removal of the squeezed dialogue face was checked on all 214 OpenMantra pages. The 46 development pages replayed the Gemma 4 12B translations from the first check above, with the 22 lines whose OCR had changed since then filled from the dataset's reference English by the closest Japanese text; the other 168 pages used reference English chosen the same way. Both commits ran on the CPU and the change replayed the base run's `summary.json`. The base run recorded which bubbles were set in a squeezed face.
 
 - Development pages: 16 of 298 bubbles were squeezed at base, 11 to 80% and 5 to 70%. All 16 lost 1 to 4 px (mean 2.3), from 10 to 16 px before to 7 to 14 px after, and 10 of them are now under 10 px. 14 other bubbles moved by 1 or 2 px on the same pages.
-- Other pages: 63 of 1251 bubbles were squeezed, 47 to 80% and 16 to 70%. 61 lost 1 to 5 px. 2 that were 7 px at 70% now fit at no size and are drawn at 10 px, clipped at the bubble edge. 27 other bubbles moved by 1 or 2 px on the same pages. One bubble was left out because two bubbles with the same source got different replayed translations.
+- Other pages: 63 of 1251 bubbles were squeezed, 47 to 80% and 16 to 70%. 61 lost 1 to 5 px. 2 that were 7 px at 70% now fit at no size and are drawn at 10 px, one word per line with a white halo, running past the bubble edge instead of being cut. 27 other bubbles moved by 1 or 2 px on the same pages. One bubble was left out because two bubbles with the same source got different replayed translations.
 
 ## Avoid these mistakes
 
