@@ -166,6 +166,22 @@ try {
   await page.evaluate(`window.scrollBy(0, 40)`);
   await panel.waitFor(`document.getElementById('work').textContent === '${CONTEXT}/other'`, 10000);
   check(results, true, 'the cast sheet follows the tab to another work');
+  await panel.waitFor(`[...document.querySelectorAll('.entry .en')].some(i => i.value === 'Zaito')`);
+  const otherNames = async () => (await (await fetch(`${MOCK}/v1/names?context_key=${encodeURIComponent(`${CONTEXT}/other`)}`)).json()).names;
+  const characters = `[...document.querySelectorAll('.group[data-kind="name"] .entry .en')].map(i => i.value)`;
+  for (const [from, to] of [['Zaito', 'Zaitou'], ['Zaitou', 'Arifuji']]) {
+    await panel.evaluate(`(() => { const i = [...document.querySelectorAll('.entry .en')].find(i => i.value === '${from}'); i.value = '${to}'; i.dispatchEvent(new Event('change')); })()`);
+    await panel.waitFor(`document.getElementById('status').textContent.startsWith('Saved') && [...document.querySelectorAll('.entry .en')].some(i => i.value === '${to}')`);
+    const shown = await panel.evaluate(characters);
+    const saved = (await otherNames()).filter((n) => n.ja === '在藤' || n.source === 'auto');
+    check(
+      results,
+      JSON.stringify(shown) === JSON.stringify([to, 'Kazune']) && saved.length === 1 && saved[0].source === 'user' && saved[0].en === to,
+      `renaming ${from} to ${to} in the cast sheet keeps one entry, saved under the Japanese of its line`,
+      { shown, saved },
+    );
+  }
+  await panel.screenshot(`${out}/castsheet-3-auto-renamed.png`);
   const follower = await attach(await openTab(CDP_PORT, `chrome-extension://${extId}/sidepanel.html`));
   await follower.waitFor(`document.readyState === 'complete'`);
   await page.send('Page.bringToFront');

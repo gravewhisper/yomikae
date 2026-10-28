@@ -276,3 +276,23 @@ def test_replacing_a_cached_page_keeps_the_cache_size_exact(tmp_path):
     cache.store("a" * 64, "rendered.webp", b"x" * 1000, {"bubbles": []})
     cache.store("a" * 64, "rendered.webp", b"x" * 400, {"bubbles": [], "revision": 1})
     assert cache.size == sum(f.stat().st_size for f in (tmp_path / "v1" / ("a" * 64)).iterdir())
+
+
+def test_an_old_spelling_of_a_renamed_name_still_marks_its_bubbles_stale():
+    bubbles = [{"source": "おい", "translation": "Hey, Riren-chan!"}, {"source": "行くぞ", "translation": "Let's go."}]
+    page = {"context_key": "k", "bubbles": bubbles, "names_in_force": []}
+    assert stale_bubbles(page, [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]) == [0]
+    assert stale_bubbles(page, [{"ja": "", "en": "Rirenx"}]) == []
+    kept = {**page, "names_in_force": [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]}
+    assert stale_bubbles(kept, [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]) == []
+
+
+def test_renaming_an_auto_name_redoes_the_pages_that_used_it(client):
+    key = "example.com/g/retranslate-auto"
+    data = page(642)
+    with using(client, Scripted(lambda call, lines, _: [f"Riren-chan, look {call}.{i}" for i in range(len(lines))])):
+        first = post(client, data, key, 0)
+        assert [n["en"] for n in client.get("/v1/names", params={"context_key": key}).json()["names"]] == ["Riren"]
+        client.put("/v1/names", params={"context_key": key}, json={"names": [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]})
+        redone = post(client, data, key, 0)
+    assert first["bubbles"] and redone["updated"] is True

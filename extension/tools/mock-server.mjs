@@ -18,7 +18,7 @@ const SEEDED = [
 
 function work(contextKey) {
   let w = works.get(contextKey);
-  if (!w) works.set(contextKey, (w = { stored: SEEDED.map((n) => ({ ...n })), version: 0 }));
+  if (!w) works.set(contextKey, (w = { stored: SEEDED.map((n) => ({ ...n, was: [] })), version: 0 }));
   return w;
 }
 
@@ -26,13 +26,16 @@ const spelling = (w) => w.stored.find((n) => n.ja === NAME_JA)?.en ?? 'Zaito';
 
 function castOf(contextKey) {
   const w = work(contextKey);
-  const auto = w.stored.some((n) => n.ja === NAME_JA) ? [] : [{ ja: `${NAME_JA}さん、こんにちは`, en: 'Zaito-san', reading: '', source: 'auto', kind: 'name' }];
+  const covered = w.stored.some((n) => n.ja === NAME_JA || [n.en, ...n.was].includes('Zaito'));
+  const auto = covered ? [] : [{ ja: `${NAME_JA}さん、こんにちは`, en: 'Zaito', reading: '', source: 'auto', kind: 'name', was: [], guess: NAME_JA }];
   const order = { user: 0, furigana: 1 };
-  return { context_key: contextKey, names: [...[...w.stored].sort((a, b) => order[a.source] - order[b.source]), ...auto] };
+  return { context_key: contextKey, names: [...[...w.stored].sort((a, b) => order[a.source] - order[b.source]).map((n) => ({ ...n, guess: '' })), ...auto] };
 }
 
+const stored = (n, source) => ({ ja: n.ja ?? '', en: n.en, reading: n.reading ?? '', source, kind: n.kind === 'term' ? 'term' : 'name', was: Array.isArray(n.was) ? n.was : [] });
+
 function storeName(w, n) {
-  const entry = { ja: n.ja ?? '', en: n.en, reading: n.reading ?? '', source: 'user', kind: n.kind === 'term' ? 'term' : 'name' };
+  const entry = stored(n, 'user');
   w.stored = w.stored.filter((x) => (entry.ja && x.ja ? x.ja !== entry.ja : x.en !== entry.en));
   w.stored.push(entry);
   w.version++;
@@ -215,7 +218,7 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/v1/names/entry') storeName(w, body);
     else {
       if (!Array.isArray(body?.names)) return badRequest(res, 'names must be a list');
-      w.stored = body.names.filter((n) => n.source !== 'auto').map((n) => ({ ja: n.ja ?? '', en: n.en, reading: n.reading ?? '', source: n.source ?? 'user', kind: n.kind === 'term' ? 'term' : 'name' }));
+      w.stored = body.names.filter((n) => n.source !== 'auto').map((n) => stored(n, n.source ?? 'user'));
       w.version++;
     }
     return json(res, 200, castOf(contextKey));
