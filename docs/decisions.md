@@ -272,6 +272,14 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 
 **Why.** Manifest V3 forbids remotely hosted code, so an extension cannot download adapters at run time. Every adapter has to be compiled in when you build. Reading folders outside the repo at build time lets anyone add adapters to their own copy without putting them in this repo. [adapters.md](adapters.md) explains how.
 
+## Only the extension may call the server, with no token
+
+**Decision.** The server refuses a request when its `Origin` is anything but `chrome-extension://`, when it has no `Origin` but its `Sec-Fetch-Site` is `cross-site` or `same-site`, when its `Host` is not `127.0.0.1`, `localhost` or `[::1]`, or when it comes from another machine. `YOMIKAE_EXTENSION_ID` can pin the accepted extension ids. There is no token and nothing to set up.
+
+**Why.** Any web page can send a multipart `POST` to `127.0.0.1` without a CORS preflight, and DNS rebinding makes a page same-origin with the server, so CORS alone let every site you visit translate images, file reports, rewrite a work's names through a retranslate, and, after rebinding, read names and results and clear the cache. Browsers set `Origin` and `Sec-Fetch-Site` themselves and pages cannot forge them. Measured in Chromium on 2026-10-28: the extension's `POST`s carry `Origin: chrome-extension://<id>`, its `GET`s carry no `Origin` and `Sec-Fetch-Site: none`, and a page's no-cors `fetch`, form `POST` and `<img>` loads carry a web `Origin` or `Sec-Fetch-Site: same-site`/`cross-site`. No content script talks to the server, because the background worker fetches each rendered page and hands the bytes to the tab, so refusing every web-page request breaks nothing. `extension/tools/e2e-local.mjs` checks this in a real browser.
+
+**Tried and rejected.** A per-install token. The server would have to hand it to the extension, which cannot read files, so you would copy it from the server's log into a settings page the extension does not have, and paste it again after every reinstall. The header checks need no setup and block the same requests from web pages. What they leave open is another installed extension that has access to `127.0.0.1`. Setting `YOMIKAE_EXTENSION_ID` closes that for anyone who wants it.
+
 ## Local install only
 
 **Decision.** You install the extension with **Load unpacked** from your own build. It is not on the Chrome Web Store.

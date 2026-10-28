@@ -43,6 +43,7 @@ All configuration is environment variables. There is no settings UI.
 | `YOMIKAE_CACHE_DIR` | `server/cache` | Where `v<PIPELINE_VERSION>/<page_id>/result.json` and the rendered page (`rendered.webp`, `rendered.jpg` past WebP's 16383 px limit, or `rendered.png` past JPEG's 65535 px limit) go. `pipeline.PIPELINE_VERSION` goes up whenever rendering or translation output changes, so older renders are never served. The server deletes older version folders at startup. `DELETE /v1/cache` clears the current one. |
 | `YOMIKAE_CACHE_MAX_BYTES` | `2147483648` (2 GiB) | Size cap for the current version's cache. Past it, the least recently read pages are evicted after each new page. |
 | `YOMIKAE_REPORTS_DIR` | `~/.local/share/yomikae/reports` | Where page reports from the extension's **Report** button are saved: the original page, the render, and the reader's marks. |
+| `YOMIKAE_EXTENSION_ID` | any | Accept requests with a `chrome-extension://` origin only from these extension ids, comma-separated. Requests from web pages are always refused; see [contract.md](../docs/contract.md#who-may-call-the-server). |
 
 ## Install
 

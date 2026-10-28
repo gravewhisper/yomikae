@@ -146,6 +146,7 @@ The server reads environment variables. These are the ones you are most likely t
 | `YOMIKAE_CACHE_DIR` | `server/cache` | Where translated pages are cached. |
 | `YOMIKAE_CACHE_MAX_BYTES` | `2147483648` (2 GiB) | The cache size limit. Past it, the least recently read pages are deleted first. |
 | `YOMIKAE_REPORTS_DIR` | `~/.local/share/yomikae/reports` | Where page reports are saved. |
+| `YOMIKAE_EXTENSION_ID` | any | Accept requests only from this extension id (or a comma-separated list). The id is on `chrome://extensions`. |
 
 For example, to translate with a cloud API:
 
@@ -172,6 +173,16 @@ The extension finds page images, fetches their bytes with your browser session, 
 Long vertical strips and wide spreads are read in overlapping tiles. Results are cached on disk by the SHA-256 of the image bytes.
 
 [server/README.md](server/README.md#pipeline) describes each stage in detail. [docs/contract.md](docs/contract.md) is the HTTP API and the extension's behavior.
+
+## Security
+
+The server listens on `127.0.0.1` and accepts requests only from the Yomikae extension and from tools on your own computer. Web pages you visit cannot use it, even though they run in the same browser:
+
+- A request whose `Origin` is a web page, such as a `fetch` or a form a site submits in the background, gets 403. So does an `<img>` or link load from a web page, which Chrome marks with `Sec-Fetch-Site: cross-site`.
+- A request whose `Host` is not `127.0.0.1`, `localhost` or `[::1]` gets 403, which stops DNS rebinding. A request from another machine gets 403 even if you start the server with `--host 0.0.0.0`.
+- Request bodies are capped at 64 MB, images at about 89 million pixels, and only JPEG, PNG, WebP, GIF and AVIF are decoded.
+
+Any extension can send an `Origin` of `chrome-extension://...`. To accept only your copy of Yomikae, set `YOMIKAE_EXTENSION_ID` to the id shown on `chrome://extensions`. The extension refuses to fetch images on your local network or your computer for a page on the web, because it fetches with your cookies and hands the result back to the page. [docs/contract.md](docs/contract.md#who-may-call-the-server) has the exact rules, and [SECURITY.md](SECURITY.md) says how to report a problem.
 
 ## Benchmarks
 
