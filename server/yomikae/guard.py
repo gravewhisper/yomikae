@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import logging
+from dataclasses import dataclass
 
 from starlette.datastructures import Headers
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -11,6 +12,14 @@ log = logging.getLogger("yomikae")
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 EXTENSION_SCHEME = "chrome-extension://"
 BROWSER_SITES = {"none", "same-origin"}
+MAX_BODY_BYTES = 64 * 1024**2
+
+
+@dataclass(frozen=True)
+class Refusal:
+    status: int
+    code: str
+    detail: str
 
 
 def is_loopback(address: str) -> bool:
@@ -25,7 +34,19 @@ def host_name(host: str) -> str:
     return name.lower()
 
 
-def refusal(headers: Headers, client: str | None, extension_ids: tuple[str, ...]) -> str | None:
+def refusal(headers: Headers, client: str | None, extension_ids: tuple[str, ...]) -> Refusal | None:
+    problem = caller_problem(headers, client, extension_ids)
+    if problem is not None:
+        return Refusal(403, "forbidden", problem)
+    if "chunked" in headers.get("transfer-encoding", "").lower():
+        return Refusal(411, "bad_request", "send the request body with a Content-Length")
+    length = headers.get("content-length", "0")
+    if not length.isdigit() or int(length) > MAX_BODY_BYTES:
+        return Refusal(413, "bad_request", f"the request body is larger than {MAX_BODY_BYTES // 1024**2} MB")
+    return None
+
+
+def caller_problem(headers: Headers, client: str | None, extension_ids: tuple[str, ...]) -> str | None:
     if client is None or not is_loopback(client):
         return f"requests must come from this computer, not {client}"
     host = headers.get("host", "")
@@ -53,7 +74,7 @@ class RequestGuard:
         problem = refusal(Headers(scope=scope), client[0] if client else None, self.extension_ids)
         if problem is None:
             return await self.app(scope, receive, send)
-        log.warning("refused %s %s: %s", scope["method"], scope["path"], problem)
-        body = json.dumps({"error": "forbidden", "detail": problem}).encode()
-        await send({"type": "http.response.start", "status": 403, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+        log.warning("refused %s %s: %s", scope["method"], scope["path"], problem.detail)
+        body = json.dumps({"error": problem.code, "detail": problem.detail}).encode()
+        await send({"type": "http.response.start", "status": problem.status, "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
         await send({"type": "http.response.body", "body": body})

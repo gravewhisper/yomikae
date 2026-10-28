@@ -17,6 +17,8 @@ Every request, on every path, passes these checks first. A request that fails on
 - If the request has an `Origin` header, it is `chrome-extension://<id>`. Browsers add `Origin` to every cross-origin `fetch` and every form `POST`, and pages cannot change it, so this refuses all of them, including simple multipart `POST`s that skip CORS preflight. Setting `YOMIKAE_EXTENSION_ID` to an extension id (or several, comma-separated) accepts only those ids.
 - If the request has no `Origin` but has `Sec-Fetch-Site`, it is `none` or `same-origin`. Chrome sends `Sec-Fetch-Site: cross-site` or `same-site` with every request a web page causes, including `<img>`, `<script>` and link loads, which carry no `Origin`. The extension's own `GET`s carry no `Origin` and `Sec-Fetch-Site: none`.
 
+A request body must come with a `Content-Length` of at most 64 MB. A chunked body gets 411 `bad_request` and a larger one 413 `bad_request`, both before the server reads any of it. Browsers always send `Content-Length` for a `FormData` or JSON body.
+
 A request with neither header comes from a local tool such as `curl`, the benchmark scripts or the test suite, and is accepted. No content script talks to the server: the background worker fetches every rendered page and hands its bytes to the tab, which shows them as a `blob:` URL.
 
 ### `GET /v1/health`
