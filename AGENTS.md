@@ -24,7 +24,7 @@ Server tests, from `server/`:
 CUDA_VISIBLE_DEVICES= PYTHONPATH=$PWD .venv/bin/python -m pytest -q
 ```
 
-- `CUDA_VISIBLE_DEVICES=` hides the GPU, so the tests run on the CPU and do not compete with a running server or LLM for GPU memory. The suite has 133 tests and takes about 3 minutes on an 8-core desktop CPU.
+- `CUDA_VISIBLE_DEVICES=` hides the GPU, so the tests run on the CPU and do not compete with a running server or LLM for GPU memory. The suite has 176 tests and takes about 4 and a half minutes on an 8-core desktop CPU.
 - `PYTHONPATH=$PWD` makes Python import `yomikae` from this checkout. `pip install -e .` points the venv at the checkout it was installed from, so a shared venv in another checkout imports the wrong code without it.
 - The tests build synthetic pages with `tools/make_test_page.py` and use the `fake` translator. `test_lm_studio_translates_a_page` calls a real endpoint and skips when none answers.
 
