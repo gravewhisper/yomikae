@@ -7,7 +7,9 @@ const TRANSLATOR_DOWN = process.env.MOCK_TRANSLATOR_DOWN === '1';
 const INTERNAL_PAGE = process.env.MOCK_INTERNAL_PAGE;
 const pages = new Map();
 const works = new Map();
-const stats = { posts: 0, cacheHits: 0, updated: 0, byContext: {}, requests: [], retranslates: [], namePuts: 0 };
+const stats = { posts: 0, cacheHits: 0, updated: 0, byContext: {}, requests: [], retranslates: [], namePuts: 0, refused: [] };
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const LOOPBACK_CLIENTS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const NAME_JA = '在藤';
 const SEEDED = [
   { ja: '和音', en: 'Kazune', reading: 'かずね', source: 'furigana', kind: 'name' },
@@ -154,22 +156,41 @@ ${bubbles}
 
 const badRequest = (res, detail) => json(res, 400, { error: 'bad_request', detail });
 
+function refusal(req) {
+  if (!LOOPBACK_CLIENTS.has(req.socket.remoteAddress)) return `requests must come from this computer, not ${req.socket.remoteAddress}`;
+  const host = req.headers.host ?? '';
+  const name = (host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : host.replace(/:\d+$/, '')).toLowerCase();
+  if (!LOOPBACK_HOSTS.has(name)) return `Host ${host} is not this computer`;
+  const origin = req.headers.origin;
+  if (origin !== undefined) return origin.startsWith('chrome-extension://') ? undefined : `requests from ${origin} are refused`;
+  const site = req.headers['sec-fetch-site'];
+  if (site !== undefined && site !== 'none' && site !== 'same-origin') return `a ${site} request from a web page is refused`;
+  return undefined;
+}
+
 const json = (res, status, obj) => {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(obj));
 };
 
 const server = createServer(async (req, res) => {
-  res.setHeader('access-control-allow-origin', '*');
-  res.setHeader('access-control-allow-methods', 'GET, POST, PUT, DELETE');
-  res.setHeader('access-control-allow-headers', 'content-type');
-  if (req.method === 'OPTIONS') return res.end();
   const url = new URL(req.url, 'http://x');
+  const refused = refusal(req);
+  if (refused) {
+    stats.refused.push(`${req.method} ${url.pathname}: ${refused}`);
+    return json(res, 403, { error: 'forbidden', detail: refused });
+  }
+  if (req.headers.origin) {
+    res.setHeader('access-control-allow-origin', req.headers.origin);
+    res.setHeader('access-control-allow-methods', 'GET, POST, PUT, DELETE');
+    res.setHeader('access-control-allow-headers', 'content-type');
+  }
+  if (req.method === 'OPTIONS') return res.end();
   if (req.method === 'GET' && url.pathname === '/v1/health') {
     stats.requests.push('health');
     return json(res, 200, TRANSLATOR_DOWN ? { ok: false, detail: 'mock translator down' } : { ok: true, version: '0.0.0-mock', translator: 'mock', gpu: 'none' });
   }
-  if (req.method === 'GET' && url.pathname === '/mock/stats') return json(res, 200, stats);
+  if (req.method === 'GET' && url.pathname === '/mock/stats') return json(res, 200, { ...stats, pageIds: [...pages.keys()] });
   const rendered = url.pathname.match(/^\/v1\/pages\/([0-9a-f]{64})\/rendered\.webp$/);
   if (req.method === 'GET' && rendered) {
     const page = pages.get(rendered[1]);

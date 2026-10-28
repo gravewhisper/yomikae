@@ -93,6 +93,19 @@ describe('image fetching', () => {
       assert.equal(requested()[2], 'http://127.0.0.1:7878/v1/pages');
     });
   }
+  it('fails a page the server refuses as forbidden, without Retry', async () => {
+    const { connect, requests } = await worker(['https://img.example/*']);
+    const tab = connect('https://reader.example/chapter/1');
+    const page = want('https://img.example/1.png');
+    tab.send({ type: 'want', jobs: [page] });
+    await tick();
+    requests[0]?.resolve(image());
+    await tick();
+    const detail = 'requests from chrome-extension://other are refused: only the Yomikae extension may call this server';
+    requests[1]?.resolve(new Response(JSON.stringify({ error: 'forbidden', detail }), { status: 403 }));
+    await tick();
+    assert.deepEqual(tab.received.at(-1), { type: 'failed', key: page.key, error: detail, retryable: false });
+  });
 });
 
 describe('page order', () => {

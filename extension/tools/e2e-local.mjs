@@ -69,6 +69,28 @@ try {
   const firstPosts = Object.values(order.byContext)[0]?.slice(0, 4);
   check(results, JSON.stringify(firstPosts) === '[1,2,3,4]', 'queue posts pages in reading order (nearest first)', firstPosts);
 
+  const before = await (await fetch(`http://127.0.0.1:${MOCK_PORT}/mock/stats`)).json();
+  const rendered = `/v1/pages/${before.pageIds[0]}/rendered.webp`;
+  check(results, (await fetch(`http://127.0.0.1:${MOCK_PORT}${rendered}`)).ok, 'a local tool can still read a rendered page');
+  const attack = await page.evaluate(`(async () => {
+    const load = (src) => new Promise((r) => { const i = new Image(); i.onload = () => r('loaded'); i.onerror = () => r('error'); i.src = src; });
+    const form = new FormData();
+    form.append('image', new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>'], { type: 'image/svg+xml' }), 'p.svg');
+    await fetch('http://127.0.0.1:${MOCK_PORT}/v1/pages', { method: 'POST', mode: 'no-cors', body: form }).catch(() => undefined);
+    const frame = document.createElement('iframe');
+    frame.name = 'attack';
+    document.body.append(frame);
+    const f = document.createElement('form');
+    Object.assign(f, { method: 'post', enctype: 'multipart/form-data', target: 'attack', action: 'http://127.0.0.1:${MOCK_PORT}/v1/pages' });
+    document.body.append(f);
+    f.submit();
+    await new Promise((r) => frame.addEventListener('load', r, { once: true }));
+    return { sameSite: await load('http://127.0.0.1:${MOCK_PORT}${rendered}'), crossSite: await load('http://localhost:${MOCK_PORT}${rendered}') };
+  })()`);
+  const after = await (await fetch(`http://127.0.0.1:${MOCK_PORT}/mock/stats`)).json();
+  check(results, attack.sameSite === 'error' && attack.crossSite === 'error', 'a web page cannot load a rendered page from the server', attack);
+  check(results, after.posts === before.posts && after.refused.length - before.refused.length === 4, 'a web page cannot post to the server by fetch or form', after.refused.slice(before.refused.length));
+
   await page.evaluate(`document.querySelectorAll('img.page')[3].scrollIntoView()`);
   await sleep(50);
   check(results, await page.evaluate(`document.querySelectorAll('img.page')[3].src.startsWith('blob:')`), 'page 4 is already translated the moment it scrolls into view');
