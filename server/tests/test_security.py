@@ -11,7 +11,7 @@ from PIL import Image
 from starlette.responses import PlainTextResponse
 
 from yomikae.app import app
-from yomikae.guard import RequestGuard
+from yomikae.guard import MAX_BODY_BYTES, RequestGuard
 
 EXTENSION = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
 WEB = "https://attacker.example"
@@ -119,3 +119,17 @@ def test_a_pinned_extension_id_refuses_other_extensions():
     assert guarded.post("/", headers={"Origin": "chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba"}).status_code == 403
     unpinned = TestClient(RequestGuard(inner), base_url="http://127.0.0.1:7878", client=("127.0.0.1", 1))
     assert unpinned.post("/", headers={"Origin": "chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba"}).status_code == 200
+
+
+def test_an_upload_over_the_size_limit_is_refused_before_it_is_read(client):
+    before = page_count(client)
+    r = client.post("/v1/pages", files={"image": ("p.png", b"\0" * MAX_BODY_BYTES, "image/png")})
+    assert r.status_code == 413, r.text
+    assert r.json()["error"] == "bad_request"
+    assert page_count(client) == before
+
+
+def test_a_body_without_a_length_is_refused(client):
+    r = client.put("/v1/names", params={"context_key": "x"}, content=iter([b'{"names": []}']), headers={"Content-Type": "application/json"})
+    assert r.status_code == 411, r.text
+    assert r.json()["error"] == "bad_request"
