@@ -206,6 +206,14 @@ def unusable(source: str, text: str) -> bool:
     return untranslated(source, text) or lost_words(source, text)
 
 
+CUT_END = re.compile(r"[A-Za-z]-\s*$")
+CUT_START = re.compile(r"[a-z]")
+
+
+def cut_words(out: list[str]) -> set[int]:
+    return {j for i in range(len(out) - 1) if CUT_END.search(out[i]) and CUT_START.match(out[i + 1]) for j in (i, i + 1)}
+
+
 async def aligned(translator: Translator, lines: list[str], context: Context) -> list[str]:
     try:
         return await translator.translate(lines, context)
@@ -226,11 +234,10 @@ def plain_kin(text: str) -> str:
 
 async def translate_lines(translator: Translator, lines: list[str], context: Context) -> list[str]:
     out = await aligned(translator, lines, context)
-    redo = [i for i, (source, text) in enumerate(zip(lines, out)) if text and unusable(source, text)]
-    if redo:
-        retry = await aligned(translator, [lines[i] for i in redo], subset(context, redo))
-        for i, text in zip(redo, retry):
-            out[i] = "" if unusable(lines[i], text) else text
+    redo = {i for i, (source, text) in enumerate(zip(lines, out)) if text and unusable(source, text)} | cut_words(out)
+    for i in sorted(redo):
+        text = (await aligned(translator, [lines[i]], subset(context, [i])))[0]
+        out[i] = "" if unusable(lines[i], text) else text
     return [plain_kin(text) for text in out]
 
 
