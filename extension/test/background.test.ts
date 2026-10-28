@@ -137,6 +137,27 @@ describe('image fetching', () => {
       assert.equal(requested()[2], 'http://127.0.0.1:7878/v1/pages');
     });
   }
+  it('stops reading an image larger than the server accepts and fails it without Retry', async () => {
+    const { connect, requests, requested } = await worker(['https://img.example/*']);
+    const tab = connect('https://reader.example/chapter/1');
+    const declared = want('https://img.example/declared.png');
+    const streamed = want('https://img.example/streamed.png');
+    tab.send({ type: 'want', jobs: [declared, streamed] });
+    await tick();
+    const mb = 1024 * 1024;
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({ pull: (c) => void (pulled++ < 200 ? c.enqueue(new Uint8Array(mb)) : c.close()) });
+    requests[0]?.resolve(new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png', 'content-length': String(65 * mb) } }));
+    requests[1]?.resolve(new Response(endless, { headers: { 'content-type': 'image/png' } }));
+    for (let i = 0; i < 20 && tab.received.filter((m) => m.type === 'failed').length < 2; i++) await tick();
+    for (const page of [declared, streamed]) {
+      const failed = tab.received.find((m) => m.key === page.key && m.type === 'failed');
+      assert.ok(failed?.type === 'failed' && !failed.retryable && failed.error.includes('64 MB'), JSON.stringify(failed));
+    }
+    assert.ok(pulled <= 66, `read ${pulled} MB`);
+    assert.deepEqual(requested(), [declared.url, streamed.url]);
+  });
+
   it('fails a page the server refuses as forbidden, without Retry', async () => {
     const { connect, requests } = await worker(['https://img.example/*']);
     const tab = connect('https://reader.example/chapter/1');
