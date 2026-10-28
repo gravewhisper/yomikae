@@ -122,6 +122,12 @@ function localRefusal(port: chrome.runtime.Port, w: Want): string | undefined {
   return undefined;
 }
 
+function redirectRefusal(asked: string, landed: string): string | undefined {
+  const place = placeOf(landed);
+  if (!place || place.rank <= (placeOf(asked)?.rank ?? 0)) return undefined;
+  return `Refused to fetch ${new URL(landed).hostname}: ${new URL(asked).hostname} redirected to ${place.words}.`;
+}
+
 function want(port: chrome.runtime.Port, w: Want): void {
   const refusal = localRefusal(port, w);
   if (refusal) return send(port, { type: 'failed', key: w.key, error: refusal, retryable: false });
@@ -303,6 +309,12 @@ async function fetchImage(candidates: string[]): Promise<Blob> {
       fetch(url, { signal: AbortSignal.any([all.signal, own.signal]), credentials: 'include' })
         .then(async (res) => {
           clearTimeout(hedge);
+          const refusal = redirectRefusal(url, res.url);
+          if (refusal) {
+            clearTimeout(deadline);
+            all.abort();
+            return reject(new JobError(refusal, false));
+          }
           stallGuard();
           if (res.status === 404 || res.status === 410) throw new JobError(`Image not found (${res.status}).`, false);
           if (!res.ok) throw new JobError(`Image fetch failed (${res.status}).`, true);

@@ -34,7 +34,8 @@ Each adapter turns an image URL into a list of candidate URLs, best first. The b
 - A fetch with no first byte for 8 s, or that stalls for 8 s mid-download, is cancelled.
 - A candidate larger than 64 MB, the most the server accepts, is cancelled as soon as its `Content-Length` or the bytes read so far show it, and the next candidate is tried. A page whose candidates are all too large fails without **Retry**.
 - Fetches send the browser's cookies for the image host.
-- A page on the web cannot have the extension fetch an image from this computer, such as `127.0.0.1` or `localhost`. Such a page fails without **Retry**. A page served from this computer can.
+- A page on the web cannot have the extension fetch an image from this computer, such as `127.0.0.1` or `localhost`, or from the local network. Such a page fails without **Retry**. A page served from this computer can.
+- An image that redirects closer to the user than its own URL, such as a web URL that redirects to `127.0.0.1`, fails the same way. Redirects between web hosts, as image CDNs use, are followed as before.
 - At most 2 pages are fetched or translated at once. The page nearest to the one on screen goes first.
 
 Every adapter also gives each page a key. Two image URLs with the same key are one page and one job, so a page shown at several sizes or from several mirrors is translated once.
