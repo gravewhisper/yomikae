@@ -21,7 +21,7 @@ export type NameSource = (typeof NAME_SOURCES)[number];
 export const NAME_KINDS = ['name', 'term'] as const;
 export type NameKind = (typeof NAME_KINDS)[number];
 
-export type Name = { ja: string; en: string; reading: string; source: NameSource; kind: NameKind };
+export type Name = { ja: string; en: string; reading: string; source: NameSource; kind: NameKind; was: string[]; guess: string };
 export type Cast = { contextKey: string; names: Name[] };
 
 export type Health =
@@ -106,6 +106,8 @@ function parseName(v: unknown): Name {
     reading: typeof o.reading === 'string' ? o.reading : '',
     source,
     kind: NAME_KINDS.find((x) => x === o.kind) ?? 'name',
+    was: Array.isArray(o.was) ? o.was.filter((w): w is string => typeof w === 'string') : [],
+    guess: typeof o.guess === 'string' ? o.guess : '',
   };
 }
 

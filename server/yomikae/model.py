@@ -71,3 +71,5 @@ class CastEntry:
     reading: str = ""
     source: str = "auto"
     kind: str = "name"
+    was: tuple[str, ...] = ()
+    guess: str = ""

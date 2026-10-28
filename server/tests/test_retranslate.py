@@ -138,7 +138,7 @@ def test_names_sent_with_a_retranslate_are_stored_as_user_names_first(client):
     assert r.status_code == 200, r.text
     assert translator.calls[-1][1].names == {"Arifuji": "在藤"}
     names = client.get("/v1/names", params={"context_key": key}).json()["names"]
-    assert names == [{"ja": "在藤", "en": "Arifuji", "reading": "", "source": "user", "kind": "name"}]
+    assert names == [{"ja": "在藤", "en": "Arifuji", "reading": "", "source": "user", "kind": "name", "was": [], "guess": ""}]
 
 
 def test_a_page_not_in_the_cache_is_translated_fully_first(client):

@@ -8,10 +8,11 @@ import shutil
 import tempfile
 import threading
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from pathlib import Path
 
+from .kana import HONORIFIC_KANA, romanize, sound
 from .model import CastEntry, ContextLine
 
 CONTEXT_PAGES = 2
@@ -25,10 +26,10 @@ VERSION_DIR = re.compile(r"v(\d+)")
 LEGACY_DIR = re.compile(r"[0-9a-f]{64}")
 SAVED_SOURCES = ("furigana", "user")
 KINDS = ("name", "term")
-HONORIFIC_KANA = {
-    "san": ("さん",), "kun": ("くん", "君"), "chan": ("ちゃん",), "sama": ("さま", "様"), "senpai": ("先輩", "せんぱい"),
-    "sensei": ("先生", "せんせい"), "dono": ("殿", "どの"), "nee": ("姉", "ねえ", "ねぇ"), "nii": ("兄", "にい", "にぃ"),
-}
+MAX_WAS = 8
+KANJI_RUN = re.compile(r"[㐀-鿿々]+$")
+KATAKANA_RUN = re.compile(r"[ァ-ヺー]+$")
+HIRAGANA_RUN = re.compile(r"[ぁ-ゖー]+$")
 NAME = re.compile(r"\b[A-Z][a-z]+-(?:san|kun|chan|sama|senpai|sensei|dono|tan|nee|nii|neesan|niisan|neechan|niichan)\b")
 
 
@@ -224,21 +225,29 @@ class ContextStore:
             known.setdefault(normalize(line.source), line.translation)
         return [lookup(known, normalize(s)) for s in sources]
 
-    def names(self, key: str | None) -> dict[str, str]:
-        seen: dict[str, dict[str, str]] = {}
-        kept: dict[str, str] = {}
+    def sightings(self, key: str | None) -> dict[str, list[tuple[str, str]]]:
+        seen: dict[str, dict[str, tuple[str, str]]] = {}
+        kept: dict[str, list[tuple[str, str]]] = {}
         for p in self.ordered(key):
             for line in p.lines:
                 for m in NAME.finditer(line.translation):
-                    name = m.group(0).rsplit("-", 1)[0]
+                    name, honorific = m.group(0).rsplit("-", 1)
                     if name not in kept:
-                        seen.setdefault(name, {}).setdefault(normalize(line.source), line.source)
+                        seen.setdefault(name, {}).setdefault(normalize(line.source), (line.source, honorific))
             kept = {}
             for name, lines in sorted(seen.items(), key=lambda item: -len(item[1])):
                 if not any(same_name(name, k) for k in kept):
-                    kept[name] = next(iter(lines.values()))
+                    kept[name] = list(lines.values())
         return kept
 
+    def names(self, key: str | None) -> dict[str, str]:
+        return {name: lines[0][0] for name, lines in self.sightings(key).items()}
+
+    def auto_names(self, key: str | None) -> list[CastEntry]:
+        return [
+            CastEntry(lines[0][0], name, guess=next((ja for line, honorific in lines if (ja := name_in(line, name, honorific))), ""))
+            for name, lines in self.sightings(key).items()
+        ]
 
     def names_path(self, key: str) -> Path | None:
         return self.names_dir / f"{hashlib.sha256(key.encode()).hexdigest()}.json" if self.names_dir else None
@@ -248,16 +257,30 @@ class ContextStore:
             path = self.names_path(key)
             try:
                 rows = json.loads(path.read_text())["names"] if path else []
-                self.saved[key] = [CastEntry(r["ja"], r["en"], r.get("reading", ""), r["source"], r.get("kind") if r.get("kind") in KINDS else "name") for r in rows if r.get("source") in SAVED_SOURCES]
+                self.saved[key] = [
+                    CastEntry(r["ja"], r["en"], r.get("reading", ""), r["source"], r.get("kind") if r.get("kind") in KINDS else "name", history(r["en"], r.get("was") if isinstance(r.get("was"), list) else ()))
+                    for r in rows
+                    if r.get("source") in SAVED_SOURCES
+                ]
             except (OSError, ValueError, KeyError, TypeError):
                 self.saved[key] = []
         return self.saved[key]
 
     def save_names(self, key: str, entries: list[CastEntry]) -> None:
+        before = self.saved_names(key)
+        folded: list[CastEntry] = []
+        for entry in entries:
+            entry = remember(entry, next((b for b in before if same_entry(b, entry)), None))
+            twin = next((f for f in folded if same_entry(f, entry)), None)
+            if twin:
+                folded.remove(twin)
+                entry = merge(twin, entry)
+            folded.append(entry)
+        entries = folded
         self.saved[key] = entries
         path = self.names_path(key)
         if path:
-            rows = [{"ja": e.ja, "en": e.en, "reading": e.reading, "source": e.source, "kind": e.kind} for e in entries]
+            rows = [{"ja": e.ja, "en": e.en, "reading": e.reading, "source": e.source, "kind": e.kind, "was": list(e.was)} for e in entries]
             write_atomic(path, json.dumps({"context_key": key, "names": rows}, ensure_ascii=False, indent=1).encode())
 
     def cast(self, key: str | None) -> list[CastEntry]:
@@ -266,11 +289,10 @@ class ContextStore:
         saved = self.saved_names(key)
         users = [e for e in saved if e.source == "user"]
         kept = users + [e for e in saved if e.source != "user" and not any(same_entry(e, u) for u in users)]
-        auto = [CastEntry(line, name) for name, line in self.names(key).items() if not any(covers(e, name, line) for e in kept)]
-        return kept + auto
+        return kept + [a for a in self.auto_names(key) if not any(covers(e, a) for e in kept)]
 
     def set_name(self, key: str, entry: CastEntry) -> None:
-        self.save_names(key, [e for e in self.saved_names(key) if not same_entry(e, entry)] + [entry])
+        self.save_names(key, [*self.saved_names(key), entry])
 
     def learn_names(self, key: str | None, entries: list[CastEntry]) -> None:
         if not key:
@@ -281,15 +303,53 @@ class ContextStore:
             self.save_names(key, saved + fresh)
 
 
+def spellings(entry: CastEntry) -> set[str]:
+    return {base_name(s) for s in (entry.en, *entry.was)}
+
+
+def history(current: str, *groups) -> tuple[str, ...]:
+    names = [s for group in groups for s in group if isinstance(s, str) and s and s != current]
+    return tuple(dict.fromkeys(reversed(names)))[::-1][-MAX_WAS:]
+
+
+def merge(old: CastEntry, new: CastEntry) -> CastEntry:
+    keep, other = (old, new) if old.source == "user" != new.source else (new, old)
+    return replace(keep, ja=keep.ja or other.ja, reading=keep.reading or other.reading, was=history(keep.en, other.was, (other.en,), keep.was))
+
+
+def remember(entry: CastEntry, before: CastEntry | None) -> CastEntry:
+    return replace(entry, was=history(entry.en, before.was, (before.en,), entry.was) if before else history(entry.en, entry.was))
+
+
+def name_in(line: str, name: str, honorific: str) -> str:
+    heard, kanji, katakana = [], set(), set()
+    for kana in HONORIFIC_KANA.get(honorific, ()):
+        for m in re.finditer(re.escape(kana), line):
+            before = line[: m.start()]
+            for script, unheard in ((KANJI_RUN, kanji), (KATAKANA_RUN, katakana), (HIRAGANA_RUN, set())):
+                if run := script.search(before):
+                    text = run.group(0)
+                    spoken = next((text[i:] for i in range(len(text)) if sound(romanize(text[i:])) == sound(name)), None)
+                    if spoken:
+                        heard.append(spoken)
+                    else:
+                        unheard.add(text)
+    if heard:
+        return heard[0]
+    found = kanji or katakana
+    return found.pop() if len(found) == 1 else ""
+
+
 def same_entry(a: CastEntry, b: CastEntry) -> bool:
-    return a.ja == b.ja if a.ja and b.ja else base_name(a.en) == base_name(b.en)
+    return a.ja == b.ja if a.ja and b.ja else bool(spellings(a) & spellings(b))
 
 
-def covers(entry: CastEntry, name: str, line: str) -> bool:
-    honorific = name.rsplit("-", 1)[-1].lower()
-    if entry.ja and any(entry.ja + kana in line for kana in HONORIFIC_KANA.get(honorific, ())):
+def covers(entry: CastEntry, auto: CastEntry) -> bool:
+    if entry.ja and entry.ja == auto.guess:
         return True
-    return SequenceMatcher(None, base_name(entry.en).lower(), base_name(name).lower()).ratio() >= NAME_RATIO
+    if entry.reading and sound(romanize(entry.reading)) == sound(auto.en):
+        return True
+    return any(SequenceMatcher(None, s.lower(), auto.en.lower()).ratio() >= NAME_RATIO for s in spellings(entry))
 
 
 def base_name(name: str) -> str:

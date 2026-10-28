@@ -112,7 +112,7 @@ def test_a_saved_entry_without_a_kind_reads_as_a_name_and_the_users_kind_wins(tm
     assert [(e.en, e.source, e.kind) for e in ContextStore(tmp_path).cast("g/1")] == [("Nagisa", "user", "name"), ("Rasengan", "user", "name")]
     key = "example.com/g/kinds"
     r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "螺旋丸", "en": "Rasengan", "kind": "term"})
-    assert r.json()["names"] == [{"ja": "螺旋丸", "en": "Rasengan", "reading": "", "source": "user", "kind": "term"}]
+    assert r.json()["names"] == [{"ja": "螺旋丸", "en": "Rasengan", "reading": "", "source": "user", "kind": "term", "was": [], "guess": ""}]
     r = client.put("/v1/names", params={"context_key": key}, json={"names": [{"ja": "渚", "en": "Nagisa"}]})
     assert r.json()["names"][0]["kind"] == "name"
     assert client.put("/v1/names/entry", params={"context_key": key}, json={"en": "A", "kind": "place"}).status_code == 400
@@ -123,7 +123,7 @@ def test_names_api_reads_and_replaces_one_works_list(client):
     assert client.get("/v1/names", params={"context_key": key}).json() == {"context_key": key, "names": []}
     r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "凛恋", "en": "Rinren", "reading": "りんれん"})
     assert r.status_code == 200, r.text
-    assert r.json()["names"] == [{"ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name"}]
+    assert r.json()["names"] == [{"ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name", "was": [], "guess": ""}]
     r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "凛恋", "en": "Rin"})
     assert [n["en"] for n in r.json()["names"]] == ["Rin"]
     body = {"names": [{"ja": "我愛羅", "en": "Gaara", "reading": "があら", "source": "furigana"}, {"ja": "", "en": "Yuki-chan", "source": "auto"}, {"ja": "渚", "en": "Nagisa"}]}

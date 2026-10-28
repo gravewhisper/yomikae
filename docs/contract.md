@@ -99,7 +99,7 @@ Multipart form:
 
 Each cached page records the `user` and `furigana` names of its work that were in force when it was translated, after the names that page itself taught were learned.
 
-When `POST /v1/pages` hits a cached page whose work's names have changed since, the server compares the two lists. A name changed when its spelling differs, when it was added, or when it was removed; names are matched by `ja`, or by `en` when `ja` is empty. A bubble is stale when its English holds a changed name's old spelling, or when its Japanese holds the `ja` of a changed name and its English does not already hold the new spelling. Spellings match as whole words, ignoring case. Stale bubbles are retranslated as in `POST /v1/pages/{page_id}/retranslate`, with no hint, and the page is rendered again before the response, which then carries `"cached": false` and `"updated": true`. A page with no stale bubble is served from the cache as before, with `"cached": true` and no `updated` field. While the translator is unavailable, a page with stale bubbles is served from the cache as it is, with `"cached": true`, so a work can still be reread offline; it is redone the next time it is posted with the translator up. Nothing runs for pages that are not posted again.
+When `POST /v1/pages` hits a cached page whose work's names have changed since, the server compares the two lists. A name changed when its spelling differs, when it was added, or when it was removed; names are matched by `ja`, or by `en` when `ja` is empty. A changed name's old spellings are its spelling in the recorded list and every spelling in its current `was`, so a page that used an `auto` spelling the reader then replaced is found too. A bubble is stale when its English holds an old spelling of a changed name, or when its Japanese holds the `ja` of a changed name and its English does not already hold the new spelling. Spellings match as whole words, ignoring case. Stale bubbles are retranslated as in `POST /v1/pages/{page_id}/retranslate`, with no hint, and the page is rendered again before the response, which then carries `"cached": false` and `"updated": true`. A page with no stale bubble is served from the cache as before, with `"cached": true` and no `updated` field. While the translator is unavailable, a page with stale bubbles is served from the cache as it is, with `"cached": true`, so a work can still be reread offline; it is redone the next time it is posted with the translator up. Nothing runs for pages that are not posted again.
 
 A page cached before the server recorded names in force has no record and is always served as cached until it is rendered again.
 
@@ -122,21 +122,27 @@ Clears the current pipeline version's cache and drops those pages from the trans
 Each work, as grouped by `context_key`, has a name list that the translator follows so a character's name, or a technique's, is spelled the same on every page. A `Name` is:
 
 ```json
-{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name" }
+{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name", "was": ["Riren"], "guess": "" }
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `ja` | The name in Japanese. For an `auto` name it is a line the name was translated from, because the server cannot tell which characters spell the name. Can be empty for a `user` name. |
+| `ja` | The name in Japanese. For an `auto` name it is a line the name was translated from, and `guess` holds the characters the server takes to spell the name. Can be empty for a `user` name. |
 | `en` | The English spelling the translator must use. Never empty. |
 | `reading` | The name's reading in hiragana, or `""`. |
 | `source` | `auto`, `furigana` or `user`. |
 | `kind` | `name` for a person or character, `term` for a technique, place, item, group and so on. A missing `kind` reads as `name`. |
+| `was` | Earlier spellings of a `furigana` or `user` name, oldest first, at most 8. The server keeps them; a client may send them back or leave them out. Always `[]` for an `auto` name. A missing `was` reads as `[]`. |
+| `guess` | For an `auto` name, the Japanese that the server takes to spell it, or `""` when it cannot tell. Always `""` for other names, and ignored when sent. |
 
 - `auto` names come from earlier translations of the work: an English name joined to an honorific, such as `Yuki-chan`, in its most used spelling. They are rebuilt from the cache, are never stored, and leave with their pages.
 - `furigana` names come from the small kana printed beside a kanji name, right of vertical text or above horizontal text. When the translation of a line spells that reading in English, the kanji, the reading and that spelling are kept. A name of one kanji is kept only when an honorific follows it in the Japanese, on this page or an earlier one, and that line's English spells the reading with the same honorific.
 - `auto` names are always `name`. A `furigana` name gets its `kind` from the line it was learned from: `term` when the Japanese ends in a technique or place suffix such as 術, 眼 or 流, or when the English puts "the", "a" or a possessive word before it or quotes it; `name` when an honorific follows it or the English addresses it or uses it with 's; `name` when neither side wins. The translator gets `name` entries in the `names` map and `term` entries in a `terms` map.
-- `user` names are what the reader typed, including their `kind`. A `user` name always wins: it is never overwritten, a `furigana` name with the same `ja` is hidden, and an `auto` name is hidden when its spelling is close to the `user` name's or its line holds the `user` name's `ja` followed by the same honorific.
+- An `auto` name's `guess` is read from the lines it came from: the run of kanji, katakana or hiragana right before the honorific kana that gave its English honorific, for example 凛恋 in 凛恋ちゃん for `Riren-chan`. A kana run counts when its romanization sounds like the English name, and then only the part that does. Otherwise one kanji run wins, or failing that one katakana run, and two different runs before the same honorific on the same line give `""`.
+- `user` names are what the reader typed, including their `kind`. A `user` name always wins: it is never overwritten, and a `furigana` name with the same `ja` is hidden.
+- Two stored names are the same character when both have a `ja` and it is the same, or, when either `ja` is empty, when they share a spelling among their `en` and `was`. The stored list never holds the same character twice: a name stored over another one of the same character replaces it, keeps the other's `ja` and `reading` when its own are empty, and adds the other's `en` and `was` to its `was`. Between a `user` and a `furigana` name the `user` one wins; otherwise the later one does. A `furigana` name is not learned while a stored name is the same character.
+- An `auto` name is hidden while a stored name is the same character: when the stored name's `ja` is the `auto` name's `guess`, when its `reading` romanizes to the `auto` spelling, or when its `en` or any of its `was` is close to the `auto` spelling (at least 0.8 similar). So an `auto` spelling the reader replaced never comes back.
+- Only `en` reaches the translator; `was` never does.
 - `furigana` and `user` names are stored per work in `server/cache/names/<sha256 of context_key>.json`, outside the versioned page cache, so they survive restarts, `DELETE /v1/cache`, eviction, and a new pipeline version.
 - New names apply to pages translated after the change. A cached page whose bubbles use a changed name is redone the next time it is posted, as [Old pages after a name change](#old-pages-after-a-name-change) describes. Other cached pages keep their translation. A line seen earlier in the work is reused on a new page only when its English spells every `user` and `furigana` name whose `ja` it holds; otherwise it is translated again, so a fixed name does not come back through the line memory.
 
@@ -145,18 +151,18 @@ Each work, as grouped by `context_key`, has a name list that the translator foll
 Response `200 application/json`, the work's names, `user` first, then `furigana`, then `auto`:
 
 ```json
-{ "context_key": "example.com/g/12345", "names": [{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name" }] }
+{ "context_key": "example.com/g/12345", "names": [{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name", "was": ["Riren"], "guess": "" }] }
 ```
 
 #### `PUT /v1/names/entry?context_key=<key>`
 
-Body: one `Name` as JSON. `source` is ignored and the name is stored as `user`. It replaces the stored name with the same `ja`, or with the same `en` when either `ja` is empty. Response: as `GET /v1/names`.
+Body: one `Name` as JSON. `source` is ignored and the name is stored as `user`. It replaces the stored name of the same character, as described above, and the replaced spelling joins `was`. Response: as `GET /v1/names`.
 
 #### `PUT /v1/names?context_key=<key>`
 
-Body: `{ "names": [Name, ...] }`, at most 500. Replaces the work's stored names. Entries with source `auto` are skipped, since those are rebuilt; an entry without a `source` is stored as `user`. To delete a name, leave it out: read the list with `GET /v1/names`, drop the entry and send the rest back. There is no `DELETE` route for one name. Response: as `GET /v1/names`.
+Body: `{ "names": [Name, ...] }`, at most 500. Replaces the work's stored names. Entries with source `auto` are skipped, since those are rebuilt; an entry without a `source` is stored as `user`. Entries of the same character are merged as described above. Each entry keeps the `was` of the stored name of the same character it replaces, and that name's `en` when it changed, so a client that never sends `was` still records renames of names with a `ja`. A rename of a name without `ja` is recorded only when the client sends the old spelling in `was`. To delete a name, leave it out: read the list with `GET /v1/names`, drop the entry and send the rest back. There is no `DELETE` route for one name. Response: as `GET /v1/names`.
 
-A missing `context_key`, a body that is not JSON, an empty `en`, a field that is too long (`ja` 200 characters, `en` and `reading` 100), an unknown `source`, or a `kind` other than `name` or `term` return `400 bad_request`.
+A missing `context_key`, a body that is not JSON, an empty `en`, a field that is too long (`ja` 200 characters, `en` and `reading` 100), an unknown `source`, a `kind` other than `name` or `term`, or a `was` that is not a list of at most 20 strings of at most 100 characters return `400 bad_request`.
 
 ### `POST /v1/reports`
 
@@ -181,7 +187,7 @@ The server writes one directory per report under `~/.local/share/yomikae/reports
 | File | Present | Contents |
 | --- | --- | --- |
 | `original.<ext>` | always | The bytes from `image`. The extension comes from the image format (`jpg`, `png`, `webp`, `gif`, `avif`, `bmp`, the lowercase Pillow name of another format, `svg`, or `bin`). |
-| `result.json` | when the page is in the cache for the current pipeline version | The cached `TranslatedPage` with bubbles, plus `context_key`, `page_index`, `font_sizes`, `skipped`, `names_in_force` (the `ja` and `en` of the names in force when it was translated), `revision` (how many times it was retranslated) and `fixed` (the indexes of its retranslated bubbles). |
+| `result.json` | when the page is in the cache for the current pipeline version | The cached `TranslatedPage` with bubbles, plus `context_key`, `page_index`, `font_sizes`, `skipped`, `names_in_force` (the `ja` and `en` of the names in force when it was translated, and their `was` when not empty), `revision` (how many times it was retranslated) and `fixed` (the indexes of its retranslated bubbles). |
 | `rendered.<ext>` | with `result.json` | The rendered page from the cache, under the same name as in its `rendered_url`. |
 | `marked.png` | when areas were marked and the original decodes | The original page with each area outlined in magenta and labelled `bubble <i>` or `area <n>`. |
 | `report.json` | always | `page_url`, `image_url`, `context_key`, `page_index`, `page_id`, `pipeline_version`, `note`, `job_state`, `job_error`, `areas`, `areas_units`, `created_at`, and the names of the other files: `original`, `result` (`"result.json"` or `null`), `rendered` (`"rendered.webp"`, `"rendered.jpg"`, `"rendered.png"`, or `null`), `marked` (`"marked.png"` or `null`). `areas` is `[{"box": [x0, y0, x1, y1], "bubble_index": int | null}]` in original image pixels, converted with the decoded image's real size. A snapped area takes the exact box of that bubble in `result.json`, and `bubble_index` is kept only when `result.json` has that bubble. `areas_units` is `"pixels"`, or `"fraction"` when the original could not be decoded. |
@@ -302,8 +308,8 @@ The panel follows the window's active tab. It asks the tab's content script for 
 
 The panel lists the work's names from `GET /v1/names`, characters and terms apart. Each entry shows its Japanese and reading, its English spelling in an editable box, and where it came from: **yours** (`user`), **furigana**, or **auto**. For an `auto` entry the Japanese shown is the line it came from. The reader can respell an entry (Enter or leaving the box saves, Esc undoes), flip it between character and term, delete it, and add one with Japanese, English, an optional reading and its kind. Every change reads the names again, applies the change, and saves the stored list with `PUT /v1/names`, without `auto` entries:
 
-- A respelt or flipped `user` or `furigana` entry keeps its Japanese and reading and becomes `user`.
-- A respelt or flipped `auto` entry adds a `user` entry with that spelling, its kind and no Japanese, since the server cannot tell which characters of the line spell the name.
+- A respelt or flipped `user` or `furigana` entry keeps its Japanese and reading and becomes `user`. A respelt entry adds its old spelling to `was`.
+- A respelt or flipped `auto` entry changes the stored entry whose Japanese is the `auto` entry's `guess`, if there is one, in the same way. Otherwise it adds a `user` entry with the `guess` as its Japanese (empty when the server found none), the new spelling and kind, and the `auto` spelling in `was`. Either way the `auto` entry is then hidden, so the character shows once.
 - A deleted entry is left out. `auto` entries cannot be deleted, because the server rebuilds them.
 - An added entry replaces a stored one with the same Japanese, or with the same English when the Japanese is empty.
 
