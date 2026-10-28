@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
@@ -11,7 +12,10 @@ import pytest
 from conftest import png_bytes
 from fastapi.testclient import TestClient
 from PIL import Image
+from starlette.applications import Starlette
 from starlette.responses import PlainTextResponse
+from starlette.routing import WebSocketRoute
+from starlette.websockets import WebSocketDisconnect
 
 from yomikae.app import app
 from yomikae.guard import MAX_BODY_BYTES, RequestGuard
@@ -123,6 +127,36 @@ def test_a_pinned_extension_id_refuses_other_extensions():
     assert guarded.post("/", headers={"Origin": "chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba"}).status_code == 403
     unpinned = TestClient(RequestGuard(inner), base_url="http://127.0.0.1:7878", client=("127.0.0.1", 1))
     assert unpinned.post("/", headers={"Origin": "chrome-extension://ponmlkjihgfedcbaponmlkjihgfedcba"}).status_code == 200
+
+
+def websocket_app(started: list[bool]) -> Starlette:
+    async def echo(ws):
+        await ws.accept()
+        await ws.send_text("hello")
+        await ws.close()
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        started.append(True)
+        yield
+
+    return Starlette(routes=[WebSocketRoute("/ws", echo)], lifespan=lifespan)
+
+
+@pytest.mark.parametrize("headers", [{"Origin": WEB}, {"Sec-Fetch-Site": "cross-site"}, {"Host": "attacker.example"}])
+def test_a_web_page_cannot_open_a_websocket(headers):
+    guarded = TestClient(RequestGuard(websocket_app([])), base_url="http://127.0.0.1:7878", client=("127.0.0.1", 1))
+    with pytest.raises(WebSocketDisconnect) as refused, guarded.websocket_connect("/ws", headers={"Host": "127.0.0.1:7878", **headers}):
+        pass
+    assert refused.value.code == 1008
+
+
+def test_a_local_websocket_and_the_lifespan_pass_the_guard():
+    started: list[bool] = []
+    with TestClient(RequestGuard(websocket_app(started)), base_url="http://127.0.0.1:7878", client=("127.0.0.1", 1)) as guarded:
+        assert started == [True]
+        with guarded.websocket_connect("/ws", headers={"Origin": EXTENSION, "Host": "127.0.0.1:7878"}) as ws:
+            assert ws.receive_text() == "hello"
 
 
 def test_an_upload_over_the_size_limit_is_refused_before_it_is_read(client):
