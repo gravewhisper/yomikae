@@ -161,3 +161,61 @@ def test_an_english_family_word_never_keeps_a_japanese_honorific():
 
     out = asyncio.run(translate_lines(Hybrid(), ["兄さま…", "ありがとう、お姉ちゃん！", "お兄さま、ゆきちゃんとママ。"], Context()))
     assert out == ["Brother...", "Thanks, big sister!", "Onii-sama, Yuki-chan and Mom."]
+
+
+class Scripted:
+    name = "scripted"
+
+    def __init__(self, *replies: dict[str, str]):
+        self.replies = list(replies)
+        self.calls: list[list[str]] = []
+
+    async def translate(self, lines, context):
+        self.calls.append(lines)
+        reply = self.replies.pop(0)
+        return [reply[line] for line in lines]
+
+    async def health(self):
+        return None
+
+
+def test_a_line_left_with_only_its_symbols_is_retried_alone():
+    import asyncio
+
+    from yomikae.translate import Context, translate_lines
+
+    lines = ["凛恋さんはたから", "作", "変態♡"]
+    translator = Scripted({"凛恋さんはたから": "Riren-san is a", "作": "perv", "変態♡": "♡"}, {"変態♡": "Pervert♡"})
+    out = asyncio.run(translate_lines(translator, lines, Context()))
+    assert out == ["Riren-san is a", "perv", "Pervert♡"]
+    assert translator.calls[1] == ["変態♡"]
+
+
+def test_a_line_still_without_words_after_its_retry_is_left_blank():
+    import asyncio
+
+    from yomikae.translate import Context, translate_lines
+
+    translator = Scripted({"変態♡": "♡"}, {"変態♡": "♡♡"})
+    assert asyncio.run(translate_lines(translator, ["変態♡"], Context())) == [""]
+
+
+def test_lines_of_only_sounds_and_dots_may_come_back_without_words():
+    import asyncio
+
+    from yomikae.translate import Context, translate_lines
+
+    lines = ["っ", "．．．．．．っ", "ー", "……"]
+    translator = Scripted({"っ": "!", "．．．．．．っ": "......!", "ー": "-", "……": "..."})
+    assert asyncio.run(translate_lines(translator, lines, Context())) == ["!", "......!", "-", "..."]
+    assert len(translator.calls) == 1
+
+
+def test_a_short_word_or_a_word_with_a_heart_needs_words_back():
+    import asyncio
+
+    from yomikae.translate import Context, translate_lines
+
+    lines = ["あ♡", "ん", "嘘"]
+    translator = Scripted({"あ♡": "♡", "ん": "...", "嘘": "!?"}, {"あ♡": "Ah♡", "ん": "Mm", "嘘": "No way!?"})
+    assert asyncio.run(translate_lines(translator, lines, Context())) == ["Ah♡", "Mm", "No way!?"]
