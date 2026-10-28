@@ -10,8 +10,9 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
+from .config import INPUT_FORMATS
+
 MARK_COLOR = (255, 0, 200)
-PIL_EXTENSIONS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "GIF": "gif", "AVIF": "avif", "BMP": "bmp"}
 
 
 class BadReport(Exception):
@@ -20,7 +21,7 @@ class BadReport(Exception):
 
 def image_size(data: bytes) -> tuple[int, int] | None:
     try:
-        with Image.open(io.BytesIO(data)) as im:
+        with Image.open(io.BytesIO(data), formats=tuple(INPUT_FORMATS)) as im:
             return im.size
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         return None
@@ -78,12 +79,12 @@ def render_marked(original: Image.Image, areas: list[dict]) -> bytes:
 
 def image_extension(data: bytes) -> str:
     try:
-        with Image.open(io.BytesIO(data)) as im:
+        with Image.open(io.BytesIO(data), formats=tuple(INPUT_FORMATS)) as im:
             fmt = im.format or ""
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         fmt = ""
     if fmt:
-        return PIL_EXTENSIONS.get(fmt, fmt.lower())
+        return INPUT_FORMATS.get(fmt, fmt.lower())
     return "svg" if b"<svg" in data[:2048].lower() else "bin"
 
 

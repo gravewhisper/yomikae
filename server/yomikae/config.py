@@ -19,6 +19,7 @@ LAMA_PATH = MODELS_DIR / "lama_large_512px.ckpt"
 BUBBLE_MODEL_PATH = MODELS_DIR / os.environ.get("YOMIKAE_BUBBLE_MODEL", "manga109-bubble-seg.onnx")
 CACHE_MAX_BYTES = 2 * 1024**3
 DEVICES = ("cpu", "cuda")
+INPUT_FORMATS = {"JPEG": "jpg", "PNG": "png", "WEBP": "webp", "GIF": "gif", "AVIF": "avif"}
 
 
 @dataclass(frozen=True)

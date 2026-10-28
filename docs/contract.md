@@ -33,7 +33,7 @@ Multipart form:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `image` | file | Original page bytes (webp, jpeg, png). An image of more than 89,478,485 pixels (Pillow's default limit), such as a decompression bomb, gets 400 `bad_image`. |
+| `image` | file | Original page bytes: JPEG, PNG, WebP, GIF or AVIF. Other formats get 400 `bad_image`, so a crafted TIFF, EPS or other rare format never reaches Pillow's decoder for it. An image of more than 89,478,485 pixels (Pillow's default limit), such as a decompression bomb, gets 400 `bad_image`. |
 | `context_key` | string, optional | Groups pages of one work (for example `example.com/g/12345`). The translator sees earlier pages' dialogue with the same key, so names and tone stay consistent. |
 | `page_index` | int, optional | Order within the context. Used to pick which earlier pages are context. The extension sends it only when the site adapter knows the page number, so the default adapter omits it. A page without one is placed after the work's latest page, and a page posted again keeps its place. Two pages with the same `page_index` are both kept as context. |
 

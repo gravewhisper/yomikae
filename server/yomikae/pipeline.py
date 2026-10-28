@@ -18,7 +18,7 @@ from PIL import Image, UnidentifiedImageError
 
 from . import balloon, detect, inpaint, ocr, ruby, typeset
 from .cache import ContextStore, PageCache
-from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, Settings
+from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, INPUT_FORMATS, Settings
 from .model import Box, Bubble, CastEntry, ContextLine
 from .ruby import furigana_names
 from .translate import Context, PageImage, Translator, TranslatorUnavailable, make_translator, mend_stutters, subset, translate_lines
@@ -53,7 +53,7 @@ class BadImage(Exception):
 
 def decode_image(data: bytes) -> np.ndarray:
     try:
-        with Image.open(io.BytesIO(data)) as im:
+        with Image.open(io.BytesIO(data), formats=tuple(INPUT_FORMATS)) as im:
             if im.width * im.height > MAX_PIXELS:
                 raise BadImage(f"image is {im.width}x{im.height} pixels, more than the limit of {MAX_PIXELS}")
             im.load()
