@@ -44,7 +44,12 @@ for (let i = 0; ; i++) {
   await sleep(300);
 }
 
-const chromium = await launchChromium({ profile: `${out}/profile-report`, port: CDP_PORT, extension: resolve('dist'), args: process.env.HEADED ? [] : ['--headless=new'] });
+const chromium = await launchChromium({
+  profile: `${out}/profile-report`,
+  port: CDP_PORT,
+  extension: resolve('dist'),
+  args: [...(process.env.HEADED ? [] : ['--headless=new']), '--host-resolver-rules=MAP rebind.test 127.0.0.1'],
+});
 await sleep(800);
 
 const imgRect = (page, i) => page.evaluate(`(() => { const r = document.querySelectorAll('img.page')[${i}].getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; })()`);
@@ -174,6 +179,32 @@ try {
   check(results, failed.meta.result === null && failed.meta.job_state === 'failed' && !!failed.meta.job_error, 'failed report has result null and the failure reason', { job_error: failed.meta.job_error });
   check(results, JSON.stringify(failed.meta.areas) === '[]' && failed.meta.marked === null, 'submitting with nothing picked reports the whole page');
   check(results, (await readFile(`${failed.dir}/original.svg`)).equals(svg), 'failed report original matches the page bytes');
+
+  const attack = await page.evaluate(`(async () => {
+    const load = (src) => new Promise((r) => { const i = new Image(); i.onload = () => r('loaded'); i.onerror = () => r('error'); i.src = src; });
+    const frame = document.createElement('iframe');
+    frame.name = 'attack';
+    document.body.append(frame);
+    const f = document.createElement('form');
+    Object.assign(f, { method: 'post', enctype: 'multipart/form-data', target: 'attack', action: '${SERVER}/v1/reports' });
+    for (const [name, value] of [['page_url', 'https://attacker.example/'], ['image_url', 'https://attacker.example/x.png']]) f.append(Object.assign(document.createElement('input'), { name, value }));
+    const file = Object.assign(document.createElement('input'), { type: 'file', name: 'image' });
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array([137, 80, 78, 71])], 'x.png', { type: 'image/png' }));
+    file.files = dt.files;
+    f.append(file);
+    document.body.append(f);
+    f.submit();
+    await new Promise((r) => frame.addEventListener('load', r, { once: true }));
+    return { rendered: await load('${SERVER}${cached.rendered_url}'), localhost: await load('http://localhost:${SERVER_PORT}${cached.rendered_url}') };
+  })()`);
+  check(results, attack.rendered === 'error' && attack.localhost === 'error', 'a web page cannot load a rendered page from the real server', attack);
+  check(results, (await fetch(`${SERVER}${cached.rendered_url}`)).ok, 'a local tool still reads the same rendered page');
+  const rebound = await attach(await openTab(CDP_PORT, `http://rebind.test:${SERVER_PORT}/v1/health`));
+  await rebound.waitFor(`document.readyState === 'complete'`);
+  const rebind = await rebound.evaluate(`(async () => ({ page: document.body.innerText, names: await fetch('/v1/names?context_key=x').then((r) => r.status) }))()`);
+  check(results, rebind.page.includes('forbidden') && rebind.names === 403, 'a rebound host name gets nothing from the real server', rebind);
+  await page.send('Page.bringToFront');
 
   const sw2 = await extensionWorker(CDP_PORT, 'Yomikae');
   await sw2.session.evaluate(`chrome.storage.local.set({ serverUrl: 'http://127.0.0.1:9' })`);
