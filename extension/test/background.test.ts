@@ -66,6 +66,43 @@ describe('image fetching', () => {
     assert.ok(reported?.type === 'reported' && !reported.outcome.ok);
   });
 
+  it('refuses images on the local network for a page on the web', async () => {
+    const { connect, requested } = await worker();
+    const tab = connect('https://reader.example/chapter/1');
+    const lan = [
+      'http://10.0.0.5/a.png',
+      'http://172.20.1.1/a.png',
+      'http://192.168.1.1/cgi-bin/cam.jpg',
+      'http://169.254.169.254/a.png',
+      'http://100.100.1.2/a.png',
+      'http://[fd00::1]/a.png',
+      'http://[fe80::1]/a.png',
+      'http://[::ffff:192.168.1.1]/a.png',
+      'http://3232235777/a.png',
+      'http://nas/a.png',
+      'http://printer.local/a.png',
+      'http://router.lan/a.png',
+      'http://box.home.arpa/a.png',
+    ];
+    tab.send({ type: 'want', jobs: lan.map(want) });
+    await tick();
+    assert.deepEqual(requested(), []);
+    for (const url of lan) {
+      const failed = tab.received.find((m) => m.key === url && m.type === 'failed');
+      assert.ok(failed?.type === 'failed' && !failed.retryable && failed.error.includes('local network'), url);
+    }
+  });
+
+  it('fetches local network images for a page on the local network, but not images on this computer', async () => {
+    const { connect, requested } = await worker();
+    const tab = connect('http://192.168.1.10:25600/book/1');
+    tab.send({ type: 'want', jobs: [want('http://192.168.1.10:25600/page/1.jpg'), want('http://172.32.0.1/a.png'), want('http://127.0.0.1:7000/a.png')] });
+    await tick();
+    assert.deepEqual(requested(), ['http://192.168.1.10:25600/page/1.jpg', 'http://172.32.0.1/a.png']);
+    const failed = tab.received.find((m) => m.key === 'http://127.0.0.1:7000/a.png' && m.type === 'failed');
+    assert.ok(failed?.type === 'failed' && failed.error.includes('this computer'));
+  });
+
   it('still fetches images on the web, and images on this computer for a page on this computer', async () => {
     const { connect, requested } = await worker();
     connect('https://reader.example/chapter/1').send({ type: 'want', jobs: [want('https://img.example/1.png')] });
