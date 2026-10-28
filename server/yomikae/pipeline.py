@@ -95,7 +95,7 @@ def match_bubbles(old: list[dict], new: list[Bubble]) -> list[int | None]:
 
 
 def names_in_force(cast: list[CastEntry]) -> list[dict]:
-    return [{"ja": e.ja, "en": e.en} for e in cast if e.source != "auto"]
+    return [{"ja": e.ja, "en": e.en, **({"was": list(e.was)} if e.was else {})} for e in cast if e.source != "auto"]
 
 
 def spells(text: str, name: str) -> bool:
@@ -108,17 +108,18 @@ def stale_bubbles(result: dict, current: list[dict]) -> list[int]:
         return []
     before = {n["ja"] or n["en"].lower(): n for n in recorded}
     now = {n["ja"] or n["en"].lower(): n for n in current}
-    changed = [
-        (n["ja"], before[k]["en"] if k in before else None, now[k]["en"] if k in now else None)
-        for k, n in {**before, **now}.items()
-        if (before.get(k) or {}).get("en") != (now.get(k) or {}).get("en")
-    ]
+    changed = []
+    for k, n in {**before, **now}.items():
+        old, new = before.get(k, {}).get("en"), now.get(k, {}).get("en")
+        if old != new:
+            olds = [s for s in (old, *now.get(k, {}).get("was", ())) if s and s.lower() != (new or "").lower()]
+            changed.append((n["ja"], olds, new))
     return [
         i
         for i, b in enumerate(result["bubbles"])
         if any(
-            (old and spells(b["translation"], old)) or (ja and new and ja in b["source"] and not spells(b["translation"], new))
-            for ja, old, new in changed
+            any(spells(b["translation"], old) for old in olds) or (ja and new and ja in b["source"] and not spells(b["translation"], new))
+            for ja, olds, new in changed
         )
     ]
 

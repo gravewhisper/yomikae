@@ -13,31 +13,30 @@ export const flipped = (kind: NameKind): NameKind => (kind === 'name' ? 'term' :
 
 const same = (a: Name, b: Name) => a.source === b.source && a.ja === b.ja && a.en === b.en;
 
-const fromAuto = (en: string, kind: NameKind): Name => ({ ja: '', en, reading: '', source: 'user', kind });
+const owner = (stored: Name[], entry: Name) => (entry.source === 'auto' ? stored.find((n) => entry.guess && n.ja === entry.guess) : stored.find((n) => same(n, entry)));
 
-function replace(stored: Name[], entry: Name, next: Name): Name[] {
-  if (entry.source === 'auto') return [...stored, next];
-  return stored.map((n) => (same(n, entry) ? next : n));
+function update(stored: Name[], entry: Name, change: (n: Name) => Name): Name[] {
+  const target = owner(stored, entry);
+  if (target) return stored.map((n) => (n === target ? { ...change(n), source: 'user' } : n));
+  if (entry.source !== 'auto') return stored;
+  return [...stored, change({ ja: entry.guess, en: entry.en, reading: '', source: 'user', kind: entry.kind, was: [], guess: '' })];
 }
 
 export function applyEdit(names: Name[], edit: CastEdit): Name[] {
   const stored = names.filter((n) => n.source !== 'auto');
   switch (edit.type) {
     case 'spell': {
-      const { entry, en } = edit;
-      return replace(stored, entry, entry.source === 'auto' ? fromAuto(en, entry.kind) : { ...entry, en, source: 'user' });
+      const { en } = edit;
+      return update(stored, edit.entry, (n) => ({ ...n, en, was: [...n.was, n.en] }));
     }
-    case 'flip': {
-      const { entry } = edit;
-      const kind = flipped(entry.kind);
-      return replace(stored, entry, entry.source === 'auto' ? fromAuto(entry.en, kind) : { ...entry, kind, source: 'user' });
-    }
+    case 'flip':
+      return update(stored, edit.entry, (n) => ({ ...n, kind: flipped(n.kind) }));
     case 'delete':
       return stored.filter((n) => !same(n, edit.entry));
     case 'add': {
       const { ja, en, reading, kind } = edit;
       const kept = stored.filter((n) => (ja ? n.ja !== ja : n.ja || n.en !== en));
-      return [...kept, { ja, en, reading, source: 'user', kind }];
+      return [...kept, { ja, en, reading, source: 'user', kind, was: [], guess: '' }];
     }
   }
 }

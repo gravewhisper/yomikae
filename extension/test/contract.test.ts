@@ -23,13 +23,21 @@ describe('pages and names', () => {
     assert.equal(parseTranslatedPage(page).updated, false);
   });
 
-  it('reads a work’s names, with a missing kind as a name', () => {
-    const cast = parseCast({ context_key: 'example.com/g/1', names: [{ ja: '在藤', en: 'Arifuji', reading: 'ありふじ', source: 'user' }, { ja: '月光流', en: 'Gekko Style', reading: '', source: 'furigana', kind: 'term' }] });
+  it('reads a work’s names, with a missing kind as a name and missing old spellings and guess as empty', () => {
+    const cast = parseCast({
+      context_key: 'example.com/g/1',
+      names: [
+        { ja: '在藤', en: 'Arifuji', reading: 'ありふじ', source: 'user', was: ['Zaito', 3] },
+        { ja: '月光流', en: 'Gekko Style', reading: '', source: 'furigana', kind: 'term' },
+        { ja: '凛恋ちゃん', en: 'Riren', reading: '', source: 'auto', kind: 'name', was: [], guess: '凛恋' },
+      ],
+    });
     assert.deepEqual(cast, {
       contextKey: 'example.com/g/1',
       names: [
-        { ja: '在藤', en: 'Arifuji', reading: 'ありふじ', source: 'user', kind: 'name' },
-        { ja: '月光流', en: 'Gekko Style', reading: '', source: 'furigana', kind: 'term' },
+        { ja: '在藤', en: 'Arifuji', reading: 'ありふじ', source: 'user', kind: 'name', was: ['Zaito'], guess: '' },
+        { ja: '月光流', en: 'Gekko Style', reading: '', source: 'furigana', kind: 'term', was: [], guess: '' },
+        { ja: '凛恋ちゃん', en: 'Riren', reading: '', source: 'auto', kind: 'name', was: [], guess: '凛恋' },
       ],
     });
     assert.throws(() => parseCast({ context_key: 'k', names: [{ ja: '', en: 'X', source: 'guess' }] }));

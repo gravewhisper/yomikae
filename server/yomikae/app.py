@@ -6,6 +6,7 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -30,6 +31,7 @@ PAGE_ID_CHARS = set("0123456789abcdef")
 INTERNAL_FIELDS = ("context_key", "page_index", "font_sizes", "skipped", "names_in_force", "revision", "fixed")
 MAX_NAMES = 500
 MAX_RETRANSLATE_NAMES = 20
+MAX_WAS_SENT = 20
 MAX_HINT = 300
 MAX_PAGE_INDEX = 1_000_000
 NAME_FIELDS = {"ja": 200, "en": 100, "reading": 100}
@@ -152,7 +154,7 @@ async def clear_cache(request: Request):
 
 
 def cast_body(engine: Engine, key: str) -> dict:
-    rows = [{"ja": e.ja, "en": e.en, "reading": e.reading, "source": e.source, "kind": e.kind} for e in engine.context.cast(key)]
+    rows = [{"ja": e.ja, "en": e.en, "reading": e.reading, "source": e.source, "kind": e.kind, "was": list(e.was), "guess": e.guess} for e in engine.context.cast(key)]
     return {"context_key": key, "names": rows}
 
 
@@ -173,7 +175,10 @@ def parse_entry(row) -> CastEntry:
     kind = row.get("kind") or "name"
     if kind not in KINDS:
         raise BadReport(f"kind must be one of {', '.join(KINDS)}")
-    return CastEntry(values["ja"], values["en"], values["reading"], source, kind)
+    was = row.get("was") or []
+    if not isinstance(was, list) or len(was) > MAX_WAS_SENT or not all(isinstance(w, str) and len(w) <= NAME_FIELDS["en"] for w in was):
+        raise BadReport(f"was must be a list of at most {MAX_WAS_SENT} strings of at most {NAME_FIELDS['en']} characters")
+    return CastEntry(values["ja"], values["en"], values["reading"], source, kind, tuple(w.strip() for w in was if w.strip()))
 
 
 async def json_body(request: Request):
@@ -210,7 +215,7 @@ async def put_name(request: Request, context_key: str = ""):
         raise BadReport("context_key is required")
     entry = parse_entry(await json_body(request))
     engine: Engine = request.app.state.engine
-    engine.context.set_name(context_key, CastEntry(entry.ja, entry.en, entry.reading, "user", entry.kind))
+    engine.context.set_name(context_key, replace(entry, source="user"))
     return cast_body(engine, context_key)
 
 
@@ -238,7 +243,7 @@ def parse_retranslate(raw: str) -> dict:
         raise BadReport(f"names must be a list of at most {MAX_RETRANSLATE_NAMES} entries")
     if names and key is None:
         raise BadReport("names need a context_key")
-    entries = [CastEntry(e.ja, e.en, e.reading, "user", e.kind) for e in map(parse_entry, names)]
+    entries = [replace(e, source="user") for e in map(parse_entry, names)]
     return {"context_key": key, "page_index": index, "bubbles": sorted(set(bubbles)), "hint": hint.strip(), "names": entries}
 
 
