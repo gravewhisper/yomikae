@@ -197,6 +197,15 @@ def untranslated(source: str, text: str) -> bool:
     return len(JAPANESE.findall(text)) > sum(ch.isascii() and ch.isalpha() for ch in text)
 
 
+def lost_words(source: str, text: str) -> bool:
+    has_words = any(ch not in "っッｯ" for ch in JAPANESE.findall(source))
+    return has_words and not any(unicodedata.category(ch)[0] == "L" for ch in unicodedata.normalize("NFKC", text))
+
+
+def unusable(source: str, text: str) -> bool:
+    return untranslated(source, text) or lost_words(source, text)
+
+
 async def aligned(translator: Translator, lines: list[str], context: Context) -> list[str]:
     try:
         return await translator.translate(lines, context)
@@ -217,11 +226,11 @@ def plain_kin(text: str) -> str:
 
 async def translate_lines(translator: Translator, lines: list[str], context: Context) -> list[str]:
     out = await aligned(translator, lines, context)
-    echoes = [i for i, (source, text) in enumerate(zip(lines, out)) if text and untranslated(source, text)]
-    if echoes:
-        retry = await aligned(translator, [lines[i] for i in echoes], subset(context, echoes))
-        for i, text in zip(echoes, retry):
-            out[i] = "" if untranslated(lines[i], text) else text
+    redo = [i for i, (source, text) in enumerate(zip(lines, out)) if text and unusable(source, text)]
+    if redo:
+        retry = await aligned(translator, [lines[i] for i in redo], subset(context, redo))
+        for i, text in zip(redo, retry):
+            out[i] = "" if unusable(lines[i], text) else text
     return [plain_kin(text) for text in out]
 
 
