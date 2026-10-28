@@ -286,6 +286,8 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 
 **Why.** Pillow 12.3 has 44 advisories fixed in 13.0, among them heap overflows in the JPEG, FlashPix and TIFF decoders and a Ghostscript argument injection through EPS. The extension posts whatever image a site serves, so a hostile site reaches the decoder through the user's own extension, and the request checks cannot stop that. Limiting the plugins keeps rare formats away from their decoders on any Pillow version. Measured on 2026-10-28: the full server suite passes on Pillow 13.0.0, and six synthetic pages rendered through the fake translator came out byte-identical on 12.3.0 and 13.0.0, so the upgrade changes no output. An existing venv keeps its Pillow until you reinstall or run `uv pip install -U pillow`.
 
+**Pixel limit.** The server refuses an upload of more than 40,000,000 pixels before decoding it, rather than Pillow's default of 89,478,485. A decoded page takes 3 bytes a pixel, and the pipeline holds several copies of it, so at Pillow's limit one copy is 268 MB and one request could take a gigabyte or more. The largest page among the 618 benchmark pages used in development is 3040x2400, 7.3 million pixels, and no adapter in the repo serves long strips. 40 million keeps an 800x50000 webtoon strip, the tallest the limit was meant to allow, with room for pages five times the largest seen.
+
 ## Local install only
 
 **Decision.** You install the extension with **Load unpacked** from your own build. It is not on the Chrome Web Store.

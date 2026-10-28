@@ -29,7 +29,7 @@ STAGES = ("detect", "balloons", "ocr", "translate", "inpaint", "typeset")
 WEBP_QUALITY = 90
 JPEG_QUALITY = 90
 MATCH_IOU = 0.5
-MAX_PIXELS = Image.MAX_IMAGE_PIXELS
+MAX_PIXELS = 40_000_000
 
 
 @dataclass(frozen=True)
