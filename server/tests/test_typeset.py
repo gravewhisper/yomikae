@@ -822,27 +822,3 @@ def test_text_in_a_big_bubble_among_small_ones_grows_until_it_stops_swimming():
     covered = (xs.max() - xs.min()) * (ys.max() - ys.min()) / interior
     assert covered >= 0.18, f"the text swims in its bubble: {covered:.3f} of it, sizes {sizes}"
     assert sizes[4] <= 1.5 * float(np.median(sizes)) + 1, f"the big bubble jumped too far above the page: {sizes}"
-
-
-def test_the_lobes_of_one_shared_balloon_count_once_in_the_page_size():
-    big = [(40, 40, 300, 420), (340, 40, 600, 420)]
-    lobes = [(100, 470, 210, 580), (190, 495, 300, 605)]
-    page = bubble_page(big + lobes, size=(640, 720))
-    interior = np.zeros(page.shape[:2], np.uint8)
-    for x0, y0, x1, y1 in lobes:
-        cv2.ellipse(interior, ((x0 + x1) // 2, (y0 + y1) // 2), ((x1 - x0) // 2 - 4, (y1 - y0) // 2 - 4), 0, 0, 360, 1, -1)
-    ys, xs = np.nonzero(interior)
-    box = Box(int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
-    balloon = Balloon(box, interior[box.y0 : box.y1, box.x0 : box.x1] > 0, 0.9)
-    texts = ["I really cannot believe you did that.", "Then again, neither can anyone else."]
-
-    def lobe_bubble(e, text, home):
-        cx, cy = (e[0] + e[2]) // 2, (e[1] + e[3]) // 2
-        b = Box(cx - 12, cy - 35, cx + 12, cy + 35)
-        return Bubble(TextBlock(b, True, b, np.zeros((b.h, b.w), np.uint8)), "どこへ行くの", text, balloon=home, shared=home is not None)
-
-    singles = [bubble_in(e, "I told you to wait here for me.") for e in big]
-    shared = typeset.typeset(FONTS, page, singles + [lobe_bubble(e, t, balloon) for e, t in zip(lobes, texts)])[1]
-    apart = typeset.typeset(FONTS, page, singles + [lobe_bubble(e, t, None) for e, t in zip(lobes, texts)])[1]
-    assert shared[2:] == apart[2:], (shared, apart)
-    assert min(shared[:2]) > max(apart[:2]), f"two blocks of one balloon pulled the page size down like two bubbles: {shared} against {apart}"

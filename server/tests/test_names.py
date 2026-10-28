@@ -280,13 +280,3 @@ def test_renaming_flipping_deleting_and_adding_never_shows_one_character_twice(c
     assert [(n["ja"], n["en"], n["was"]) for n in r.json()["names"] if n["source"] == "user"] == [("凛恋", "Lily", ["Rirenx", "Riren"])]
     assert put([]) == [("auto", "凛恋", "Riren", "name", []), yuki]
     assert client.put("/v1/names", params={"context_key": key}, json={"names": [{"en": "A", "was": "B"}]}).status_code == 400
-
-
-def test_a_line_of_only_punctuation_keeps_its_symbols_and_never_reaches_the_translator():
-    store = ContextStore()
-    store.add("g/1", "p1", 1, [ContextLine("天文部の夏合宿", "with our Astronomy Club.")])
-    sent = []
-    translator = Recorder(lambda lines: sent.append(list(lines)) or ["with our Astronomy Club."] * len(lines))
-    out = asyncio.run(translate_page(translator, store, ["こんにちは", "？", "．．．", "！？", "ー‼"], "g/1", 2))
-    assert out[1:] == ["?", "...", "!?", "-!!"]
-    assert sent == [["こんにちは"]]

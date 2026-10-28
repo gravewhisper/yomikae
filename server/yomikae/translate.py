@@ -211,13 +211,6 @@ async def aligned(translator: Translator, lines: list[str], context: Context) ->
 KIN_HONORIFIC = re.compile(r"\b(brother|sister|bro|sis|mother|father|mom|mum|dad|grandpa|grandma|granny|grandmother|grandfather|uncle|aunt|auntie)-(?:sama|chan|san|kun|dono|tan)\b", re.I)
 
 
-def symbols(text: str) -> str | None:
-    plain = unicodedata.normalize("NFKC", text).strip()
-    if any(unicodedata.category(ch)[0] in "LN" and ch not in "ー〜～" for ch in plain):
-        return None
-    return plain.replace("ー", "-").replace("〜", "~").replace("～", "~")
-
-
 def plain_kin(text: str) -> str:
     return KIN_HONORIFIC.sub(r"\1", text)
 

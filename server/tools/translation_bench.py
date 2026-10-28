@@ -505,7 +505,7 @@ def score(out: Path, args) -> None:
         "## Rule checks",
         "",
         f"- Honorifics on names: {hon['lines']} source lines attach さん, ちゃん, くん, 様, 先輩, 先生 or 殿 to a name. The output keeps the romanized form on {hon['hyp_keeps']} ({pct(hon['hyp_keeps'], hon['lines'])}); the professional reference keeps it on {hon['ref_keeps']} ({pct(hon['ref_keeps'], hon['lines'])}). Every counted line is in `honorifics.json`.",
-        f"- Blank or failed lines: {s['blank']} of {s['lines']}, of which {s['blank_punctuation']} have a source of only punctuation such as ？ or …, which `translate_page` keeps as its symbols and never sends, so this counts lines from older runs. Pages where the translator was unreachable: {len(failed)}." + "".join(f"\n  - {f}" for f in failed),
+        f"- Blank or failed lines: {s['blank']} of {s['lines']}, of which {s['blank_punctuation']} have a source of only punctuation such as ？ or …, which the echo check in `translate_lines` blanks. Pages where the translator was unreachable: {len(failed)}." + "".join(f"\n  - {f}" for f in failed),
         f"- Lines answered from series memory without a model call: {s['recalled']}.",
         "",
         "## Timing",
