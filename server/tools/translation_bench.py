@@ -546,7 +546,7 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--limit", type=int, default=0, help="pages per series, for a smoke run")
     ap.add_argument("--pages", help="only these pages: 'openers' for the first 3 non-filler pages of each series, or page indexes like 4,9 or SERIES:4; skipped pages never enter context")
     ap.add_argument("--chapter-starts", type=lambda v: [int(x) for x in v.split(",")], default=[], help="page indexes where chapters start, so --pages openers takes 3 from each chapter of a one-book annotation")
-    ap.add_argument("--jobs", type=int, default=3, help="series translated at once; pages within a series stay in reading order")
+    ap.add_argument("--jobs", type=int, default=1, help="series translated at once; pages within a series stay in reading order")
     ap.add_argument("--reuse", action="store_true", help="copy a finished run in --out-root with the same commit, translator, settings and dataset instead of translating")
     ap.add_argument("--score", action="store_true", help="only rescore an existing run")
     ap.add_argument("--comet-model", default=COMET_MODEL)

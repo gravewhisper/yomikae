@@ -76,12 +76,30 @@ COMET runs in its own venv on the CPU, so it does not compete with the LLM for G
 
 ### Run it faster
 
-- `--jobs N` translates N series at once (default 3). Pages within a series still go one at a time in reading order, each with the context of the pages before it, so every page sees what a serial run shows it. LM Studio serves 4 requests at once by default, so 3 leaves one for a server you are reading with. The page files and scorecard have the same shape as a serial run. Per-page times are longer when requests share the GPU, and the scorecard says how many were in flight, so compare translation speed only at `--jobs 1`.
+- `--jobs N` translates N series at once (default 1). Each worker takes a whole series, longest first, and translates its pages one at a time in reading order, each with the context of the pages before it, so every page sees what a serial run shows it. The page files and scorecard have the same shape as a serial run, and the scorecard says how many series ran at once. Per-page times are longer when requests share the GPU, so compare translation speed only at `--jobs 1`. With LM Studio's settings in development it saved no time, as [Speed of the bench](#speed-of-the-bench) shows.
 - `--reuse` skips translating when a finished run in `--out-root` has the same fingerprint, a hash of the commit, the translator and its endpoint, every setting that changes a prompt, the page selection, and the bytes of the annotation. It copies that run's pages, names and COMET scores into the new label, and the scorecard names the run it came from. A run from a checkout with uncommitted changes in `server/` gets no fingerprint and is never reused.
 - COMET scores each distinct line once. A line whose source, output and reference match a line in another run in `--out-root`, scored with the same COMET model, takes that score, and the scorecard says how many did. Scores taken this way differ from fresh ones by at most 3e-6. `--comet-fresh` scores every line again.
 - `--pages openers` translates only the first 3 non-filler pages of each series, as `filler()` judges them. For a book of several chapters in one annotation, `--chapter-starts 7,60,84` takes 3 from each chapter. `--pages 4,9` picks pages by index in every series and `--pages SERIES:4` in one. Pages left out never enter the context store, so a later page sees less context than in a full run: compare a subset run only with runs of the same pages.
 
 A run that stops partway can continue. Run the same command with the same label, and pages already translated without an error are skipped.
+
+
+### Speed of the bench
+
+Measured on 2026-10-28 on all 214 OpenMantra pages with the Gemma 4 12B build used in development, in LM Studio with 4 parallel slots, on a 16 GB GPU that also held a running Yomikae server.
+
+| Run | Series at once | Translation | COMET |
+| --- | ---: | ---: | ---: |
+| Two serial runs before this change | 1 | 321 s, 344 s | 63 s each, every line |
+| Calls from all 5 series interleaved, 1 in flight | 1 | 341 s | 33 s, 922 of 1586 lines reused |
+| Calls from all 5 series interleaved, 3 in flight | 3 | 323 s, 313 s | 57 s fresh; 26 s with 1131 reused |
+| One worker per series, 3 workers | 3 | 311 s | 23 s, 1268 reused |
+
+- Running series at once did not make translation faster. Every concurrent run fell inside the spread of the serial ones. With 3 requests in flight, LM Studio's log showed each one generating 22 to 24 tokens per second against 82 for a request alone, so the total stayed about where a single request was, and prompt reading fell from about 2200 to about 1000 tokens per second per request. The log also showed LM Studio saving and evicting 1.4 GiB prompt cache entries as requests from different series moved between slots. A plain request with no reply schema did reach twice the throughput at 3 in flight, and real translate calls with no earlier pages 1.55 times, so the limit appears with the bench's full prompts and the server's settings, not in the bench. That is why `--jobs` defaults to 1. It may help on a server that batches requests better.
+- Concurrency did not move the scores beyond noise. COMET was 0.7507, 0.7483 and 0.7499 at 3 series at once and 0.7471 at 1, against 0.7469 and 0.7484 for the two serial runs. Each pair of runs gave the same English on 58 to 62% of lines, the same as two serial runs (59%).
+- COMET takes about 63 s on the CPU when it scores every line: 2 s to import, 8 s to load the model and 47 s to score 1586 lines on 8 threads. 16 threads were slower. Taking the scores of identical lines from earlier runs in the folder cut it to 22 to 33 s. Rescoring an earlier serial run that way gave the same system COMET, 0.7484, with no line more than 3e-6 away from its fresh score.
+- COMET stays on the CPU. The COMET venv has a CPU build of PyTorch, and with the LLM (9.8 GB) and the Yomikae server (2.8 GB) loaded, the 16 GB GPU had 2.6 GB free, under what the model needs. So GPU scores were not compared with CPU scores.
+- `--reuse` skips both stages when the same commit and settings already ran, and `--pages openers` translates 15 of the 214 pages.
 
 ## Check on a second book
 
