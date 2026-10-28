@@ -41,3 +41,24 @@ def test_a_latin_logo_above_japanese_lines_is_left_out_of_the_block(reader):
     assert "attention" not in read[0].source.lower()
     assert read[0].block.box.y0 >= logo_bottom, f"block starts at y={read[0].block.box.y0}, inside the logo that ends at y={logo_bottom}"
     assert not (read[0].block.mask[: logo_bottom - mask_box.y0] > 0).any(), "the logo is still in the block's text mask"
+
+
+def block_of(ink: np.ndarray) -> TextBlock:
+    box = ink_box(ink)
+    mask_box = box.expand(12, *SIZE)
+    seg = np.where(ink[mask_box.y0 : mask_box.y1, mask_box.x0 : mask_box.x1], 255, 0).astype(np.uint8)
+    return TextBlock(box, False, mask_box, seg)
+
+
+def test_a_credit_badge_outside_any_balloon_is_not_read_as_dialogue(reader):
+    page = Image.new("L", SIZE, 255)
+    draw = ImageDraw.Draw(page)
+    draw.ellipse((60, 40, 140, 120), fill=0)
+    draw.text((78, 56), "作", font=JAPANESE, fill=255)
+    draw.text((300, 300), "変態だね", font=JAPANESE, fill=0)
+    badge, line = np.zeros(SIZE[::-1], bool), np.zeros(SIZE[::-1], bool)
+    badge[40:121, 60:141] = True
+    gray = np.asarray(page)
+    line[290:360, 290:500] = gray[290:360, 290:500] < 128
+    bubbles, unsure = ocr.read(reader, np.asarray(page.convert("RGB")), [block_of(badge), block_of(line)])
+    assert [b.source for b in bubbles + unsure] == ["変態だね"]
