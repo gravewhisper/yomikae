@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import struct
+import zlib
 
 import numpy as np
 import pytest
@@ -133,3 +135,27 @@ def test_a_body_without_a_length_is_refused(client):
     r = client.put("/v1/names", params={"context_key": "x"}, content=iter([b'{"names": []}']), headers={"Content-Type": "application/json"})
     assert r.status_code == 411, r.text
     assert r.json()["error"] == "bad_request"
+
+
+def png_claiming(width: int, height: int) -> bytes:
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(b"\0" * 64)) + chunk(b"IEND", b"")
+
+
+@pytest.mark.parametrize("size", [(40000, 40000), (10000, 10000)])
+def test_an_image_with_too_many_pixels_is_a_bad_image(client, size):
+    r = client.post("/v1/pages", files={"image": ("p.png", png_claiming(*size), "image/png")})
+    assert r.status_code == 400, r.text
+    assert r.json()["error"] == "bad_image"
+    assert "pixels" in r.json()["detail"]
+
+
+def test_a_decompression_bomb_is_still_reported(client):
+    fields = {"page_url": "https://a.example/1", "image_url": "https://a.example/1.png", "areas": json.dumps([{"box": [0.1, 0.1, 0.5, 0.5]}])}
+    r = client.post("/v1/reports", files={"image": ("p.png", png_claiming(40000, 40000), "image/png")}, data=fields)
+    assert r.status_code == 200, r.text
+    meta = json.loads((client.app.state.engine.settings.reports_dir / r.json()["report_id"] / "report.json").read_text())
+    assert meta["areas_units"] == "fraction" and meta["marked"] is None
