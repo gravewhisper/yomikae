@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from yomikae.cache import ContextStore
 from yomikae.model import CastEntry, ContextLine
@@ -177,3 +178,14 @@ def test_furigana_above_horizontal_text_is_read_and_two_plain_lines_are_not_ruby
     assert bubble.ruby == (("桜野", "さくらの"),), (bubble.source, bubble.ruby)
     assert read_block(ruby_page(["明日は桜野さん", "と会うよ"], {}, False), False, box)[0].ruby == ()
     assert read_block(ruby_page(["かな", "とても小さな字"], {}, False, 30), False)[0].ruby == ()
+
+
+def test_following_pages_reach_the_prompt_only_when_given():
+    store = ContextStore()
+    translator = Recorder(lambda lines: ["Hi."] * len(lines))
+    asyncio.run(translate_page(translator, store, ["こんにちは"], "g/1", 1))
+    asyncio.run(translate_page(translator, store, ["こんにちは"], "g/1", 2, upcoming=[["レーネ、行くぞ"]]))
+    plain, ahead = (build_messages(["こんにちは"], c) for c in translator.contexts)
+    assert "next_pages" not in plain[0]["content"] and "next_pages" not in plain[1]["content"]
+    assert '"next_pages"' in ahead[0]["content"]
+    assert json.loads(ahead[1]["content"])["next_pages"] == [["レーネ、行くぞ"]]

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import random
 import re
@@ -26,6 +27,9 @@ KATAKANA = re.compile(r"[\u30a1-\u30fa\u30fc]")
 KANJI = re.compile(r"[\u4e00-\u9fff\u3005]")
 SUFFIX = re.compile("|".join(SUFFIXES))
 WORDY = re.compile(r"\w")
+JAPANESE_TEXT = re.compile(r"[\u3040-\u309f\u30a0-\u30fa\u3400-\u9fff\uff66-\uff9f]")
+TITLE_GLYPH = 0.065
+LOOKAHEAD_REACH = 3
 ROMAJI_SUFFIX = re.compile(r"-\s?(" + "|".join(sorted(set(SUFFIXES.values()))) + r")\b", re.I)
 
 
@@ -42,6 +46,49 @@ def load_pages(annotation: Path, series: list[str]) -> tuple[list[dict], int]:
             image = annotation.parent / page["image_paths"]["ja"]
             pages.append({"series": book["book_title"], "page_index": page["page_index"], "lines": lines, "boxes": boxes, "image": image})
     return pages, dropped
+
+
+def filler(blocks: list[tuple[tuple[int, int, int, int], str, bool | None]], height: int) -> bool:
+    found = [(box, len(JAPANESE_TEXT.findall(text)), inside) for box, text, inside in blocks if JAPANESE_TEXT.search(text)]
+    if not found:
+        return True
+    wide = [(x1 - x0) > 1.3 * (y1 - y0) and n >= 3 for (x0, y0, x1, y1), n, _ in found]
+    glyph = [math.sqrt((x1 - x0) * (y1 - y0) / n) / height for (x0, y0, x1, y1), n, _ in found]
+    if all(inside is False for _, _, inside in found) and (len(found) <= 4 or any(wide)):
+        return True
+    if len(found) <= 3 and any(g >= TITLE_GLYPH and (w or inside is False) for g, w, (_, _, inside) in zip(glyph, wide, found)):
+        return True
+    return len(found) <= 2 and sum(n for _, n, _ in found) <= 12
+
+
+def outline(annotation: Path, stage_dir: Path | None) -> dict[str, list[dict]]:
+    from PIL import Image
+
+    books = json.loads(annotation.read_text())
+    pages: dict[str, list[dict]] = {}
+    if stage_dir:
+        series = [b["book_title"] for b in books]
+        if len(series) != 1:
+            sys.exit("--stage-dir needs an annotation with one book")
+        for f in sorted(stage_dir.glob("p*.json")):
+            stage = json.loads(f.read_text())
+            with Image.open(stage["image"]) as im:
+                height = im.height
+            blocks = [(tuple(b["box"]), b["text"], b["balloon"] is not None) for b in stage["blocks"]]
+            pages.setdefault(series[0], []).append({"page_index": int(f.stem[1:]), "lines": [b[1] for b in blocks if JAPANESE_TEXT.search(b[1])], "filler": filler(blocks, height)})
+        return pages
+    for book in books:
+        for page in sorted(book["pages"], key=lambda p: p["page_index"]):
+            with Image.open(annotation.parent / page["image_paths"]["ja"]) as im:
+                height = im.height
+            blocks = [((t["x"], t["y"], t["x"] + t["w"], t["y"] + t["h"]), t["text_ja"].replace("\n", ""), None) for t in page["text"]]
+            pages.setdefault(book["book_title"], []).append({"page_index": page["page_index"], "lines": [b[1] for b in blocks if JAPANESE_TEXT.search(b[1])], "filler": filler(blocks, height)})
+    return pages
+
+
+def upcoming(pages: list[dict], page_index: int, count: int) -> list[dict]:
+    after = [p for p in pages if page_index < p["page_index"] <= page_index + LOOKAHEAD_REACH + count - 1 and not p["filler"]]
+    return after[:count]
 
 
 def page_path(out: Path, series: str, page_index: int) -> Path:
@@ -85,6 +132,8 @@ async def run(args) -> None:
         "reasoning_effort": settings.openai_reasoning_effort,
         "image": args.image,
         "image_side": args.image_side,
+        "lookahead": args.lookahead,
+        "stage_dir": str(args.stage_dir) if args.stage_dir else None,
         "dataset": str(args.annotation),
         "dataset_sha": git_sha(args.annotation.parent),
         "blank_source_lines_dropped": dropped,
@@ -93,6 +142,7 @@ async def run(args) -> None:
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     print(f"yomikae from {source_dir} at {meta['sha']}, {translator.name} at {settings.openai_base_url}, {len(pages)} pages", flush=True)
 
+    ahead = outline(args.annotation, args.stage_dir) if args.lookahead else {}
     stores: dict[str, ContextStore] = {}
     todo = [p for p in pages if not done(page_path(out, p["series"], p["page_index"]))]
     started, finished = time.perf_counter(), 0
@@ -111,11 +161,12 @@ async def run(args) -> None:
         if args.image != "off" and sources:
             with Image.open(page["image"]) as im:
                 page_img = page_image(im, [Box(*b) for b in page["boxes"]], args.image == "tagged", args.image_side)
+        nexts = upcoming(ahead.get(series, []), index, args.lookahead) if args.lookahead else []
         tokens_before = translator.prompt_tokens
         t = time.perf_counter()
         try:
             ruby = [tuple(pair) for line in page["lines"] for pair in line.get("ruby", [])]
-            hyps = await translate_page(translator, store, sources, series, index, page_img, ruby) if sources else []
+            hyps = await translate_page(translator, store, sources, series, index, page_img, ruby, upcoming=[p["lines"] for p in nexts]) if sources else []
         except (TranslatorUnavailable, TranslatorFailed) as e:
             hyps, error = [""] * len(sources), str(e)
         ms = round((time.perf_counter() - t) * 1000)
@@ -127,6 +178,7 @@ async def run(args) -> None:
             "ms": ms,
             "prompt_tokens": translator.prompt_tokens - tokens_before,
             "error": error,
+            "upcoming": [p["page_index"] for p in nexts],
             "lines": [{"line_index": i, **line, "hyp": hyp, "recalled": known is not None} for i, (line, hyp, known) in enumerate(zip(page["lines"], hyps, recalled))],
         }
         path.write_text(json.dumps(record, ensure_ascii=False, indent=1))
@@ -357,6 +409,8 @@ def main() -> None:
     ap.add_argument("--reasoning-effort", default="none", help="empty string to leave it unset")
     ap.add_argument("--image", choices=("off", "page", "tagged"), default="off", help="send each page's image, plain or with line ids tagged at their boxes")
     ap.add_argument("--image-side", type=int, default=1024, help="long side in px of the image sent")
+    ap.add_argument("--lookahead", type=int, default=0, help="also send the Japanese of this many following pages, skipping filler pages, as context only")
+    ap.add_argument("--stage-dir", type=Path, help="per-page OCR output (p000.json with blocks) to take following pages and filler checks from, instead of the annotation")
     ap.add_argument("--series", action="append", default=[], help="only this book_title, repeatable")
     ap.add_argument("--limit", type=int, default=0, help="pages per series, for a smoke run")
     ap.add_argument("--score", action="store_true", help="only rescore an existing run")
