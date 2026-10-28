@@ -181,12 +181,18 @@ def png_claiming(width: int, height: int) -> bytes:
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(b"\0" * 64)) + chunk(b"IEND", b"")
 
 
-@pytest.mark.parametrize("size", [(40000, 40000), (10000, 10000)])
+@pytest.mark.parametrize("size", [(40000, 40000), (10000, 10000), (6400, 6400), (800, 50001)])
 def test_an_image_with_too_many_pixels_is_a_bad_image(client, size):
     r = client.post("/v1/pages", files={"image": ("p.png", png_claiming(*size), "image/png")})
     assert r.status_code == 400, r.text
     assert r.json()["error"] == "bad_image"
     assert "pixels" in r.json()["detail"]
+
+
+def test_a_tall_webtoon_strip_at_the_pixel_limit_still_decodes():
+    buf = io.BytesIO()
+    Image.new("RGB", (800, 50000), (250, 250, 250)).save(buf, format="PNG")
+    assert decode_image(buf.getvalue()).shape == (50000, 800, 3)
 
 
 def test_a_decompression_bomb_is_still_reported(client):
