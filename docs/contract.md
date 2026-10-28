@@ -35,7 +35,7 @@ Multipart form:
 | --- | --- | --- |
 | `image` | file | Original page bytes: JPEG, PNG, WebP, GIF or AVIF. Other formats get 400 `bad_image`, so a crafted TIFF, EPS or other rare format never reaches Pillow's decoder for it. An image of more than 89,478,485 pixels (Pillow's default limit), such as a decompression bomb, gets 400 `bad_image`. |
 | `context_key` | string, optional | Groups pages of one work (for example `example.com/g/12345`). The translator sees earlier pages' dialogue with the same key, so names and tone stay consistent. |
-| `page_index` | int, optional | Order within the context. Used to pick which earlier pages are context. The extension sends it only when the site adapter knows the page number, so the default adapter omits it. A page without one is placed after the work's latest page, and a page posted again keeps its place. Two pages with the same `page_index` are both kept as context. |
+| `page_index` | int, optional | Order within the context. Used to pick which earlier pages are context. The extension sends it only when the site adapter knows the page number, so the default adapter omits it. A page without one is placed after the work's latest page, and a page posted again keeps its place. Two pages with the same `page_index` are both kept as context. At most 1,000,000 either way, or the request gets 400. |
 
 Response `200 application/json`, a `TranslatedPage`:
 
@@ -172,7 +172,7 @@ Multipart form:
 | `note` | string, optional | What the reader says is wrong. |
 | `job_state` | string, optional | The extension's state for the page (`queued`, `fetching`, `translating`, `waiting`, `ready`, `failed`, `blocked`, or `untracked` for a page with no job). |
 | `job_error` | string, optional | The error the extension showed, for a failed page. |
-| `areas` | JSON string, optional | The parts of the page the reader marked: `[{"box": [x0, y0, x1, y1], "bubble_index": 2 \| null}]`. Boxes are fractions (0 to 1) of the displayed image, so they do not depend on how large the site drew it. `bubble_index` is set when the reader clicked a detected bubble. Malformed JSON returns `400 bad_request`. |
+| `areas` | JSON string, optional | The parts of the page the reader marked: `[{"box": [x0, y0, x1, y1], "bubble_index": 2 \| null}]`. Boxes are fractions (0 to 1) of the displayed image, so they do not depend on how large the site drew it. `bubble_index` is set when the reader clicked a detected bubble. Malformed JSON, more than 100 areas, or a coordinate that is not a finite number returns `400 bad_request`. |
 
 The server writes one directory per report under `~/.local/share/yomikae/reports/` (override with `YOMIKAE_REPORTS_DIR`), outside the repo so reports survive worktrees and clones. The directory name is the report id, `<UTC timestamp>-<first 12 hex of page_id>`, for example `20261025T005706.775Z-c1c01c3266d7`. It is written to a temporary dot-directory and renamed into place, so a reader never sees a partial report.
 

@@ -31,6 +31,7 @@ INTERNAL_FIELDS = ("context_key", "page_index", "font_sizes", "skipped", "names_
 MAX_NAMES = 500
 MAX_RETRANSLATE_NAMES = 20
 MAX_HINT = 300
+MAX_PAGE_INDEX = 1_000_000
 NAME_FIELDS = {"ja": 200, "en": 100, "reading": 100}
 
 
@@ -114,7 +115,7 @@ async def post_page(
     request: Request,
     image: Annotated[UploadFile, File()],
     context_key: Annotated[str | None, Form()] = None,
-    page_index: Annotated[int | None, Form()] = None,
+    page_index: Annotated[int | None, Form(ge=-MAX_PAGE_INDEX, le=MAX_PAGE_INDEX)] = None,
 ):
     data = await image.read()
     if not data:
@@ -227,8 +228,8 @@ def parse_retranslate(raw: str) -> dict:
     names = body.get("names") or []
     if key is not None and not isinstance(key, str):
         raise BadReport("context_key must be a string")
-    if index is not None and (not isinstance(index, int) or isinstance(index, bool)):
-        raise BadReport("page_index must be an integer")
+    if index is not None and (not isinstance(index, int) or isinstance(index, bool) or abs(index) > MAX_PAGE_INDEX):
+        raise BadReport(f"page_index must be an integer of at most {MAX_PAGE_INDEX}")
     if not isinstance(bubbles, list) or not bubbles or not all(isinstance(i, int) and not isinstance(i, bool) for i in bubbles):
         raise BadReport("bubbles must be a list of at least one bubble index")
     if not isinstance(hint, str) or len(hint) > MAX_HINT:
@@ -298,7 +299,7 @@ async def post_report(
     page_url: Annotated[str, Form()],
     image_url: Annotated[str, Form()],
     context_key: Annotated[str | None, Form()] = None,
-    page_index: Annotated[int | None, Form()] = None,
+    page_index: Annotated[int | None, Form(ge=-MAX_PAGE_INDEX, le=MAX_PAGE_INDEX)] = None,
     note: Annotated[str, Form()] = "",
     job_state: Annotated[str | None, Form()] = None,
     job_error: Annotated[str | None, Form()] = None,

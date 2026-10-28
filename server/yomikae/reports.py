@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -13,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 from .config import INPUT_FORMATS
 
 MARK_COLOR = (255, 0, 200)
+MAX_AREAS = 100
 
 
 class BadReport(Exception):
@@ -30,16 +32,18 @@ def image_size(data: bytes) -> tuple[int, int] | None:
 def parse_areas(raw: str) -> list[dict]:
     try:
         areas = json.loads(raw)
+        if len(areas) > MAX_AREAS:
+            raise ValueError(len(areas))
         parsed = []
         for a in areas:
             box = [float(v) for v in a["box"]]
             index = a.get("bubble_index")
-            if len(box) != 4 or not (index is None or isinstance(index, int)):
+            if len(box) != 4 or not all(map(math.isfinite, box)) or not (index is None or isinstance(index, int)):
                 raise ValueError(a)
             parsed.append({"box": box, "bubble_index": index})
         return parsed
     except (ValueError, TypeError, KeyError) as e:
-        raise BadReport(f"areas: expected [{{box: [x0, y0, x1, y1] as fractions, bubble_index}}], got {raw[:200]!r}") from e
+        raise BadReport(f"areas: expected at most {MAX_AREAS} of {{box: [x0, y0, x1, y1] as fractions, bubble_index}}, got {raw[:200]!r}") from e
 
 
 def resolve_areas(areas: list[dict], size: tuple[int, int] | None, bubbles: list[dict]) -> list[dict]:
