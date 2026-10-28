@@ -624,9 +624,6 @@ def test_a_long_word_too_wide_for_a_skinny_balloon_is_hyphenated_before_it_is_sh
     assert min(sizes[2:]) >= 0.55 * min(sizes[:2]), sizes
 
 
-UNSQUEEZED = typeset.Lettering(typeset.Style(FONTS.dialogue.face, True), FONTS.shout)
-
-
 def hand_drawn_box(page: np.ndarray, interior: np.ndarray, x0: int, y0: int, w: int, h: int) -> None:
     corners = np.array([(x0 + 3, y0), (x0 + w - 2, y0 + 2), (x0 + w + 2, y0 + h - 1), (x0 - 2, y0 + h + 1)], np.int32)
     cv2.fillPoly(page, [corners], (255, 255, 255))
@@ -655,55 +652,19 @@ def four_koma(width: int, loud: list[str]) -> tuple[np.ndarray, np.ndarray, list
 LOUD_LINES = ["It's delicious! It's really good!!", "Kuraha-san, you're awesome!!", "Hey, call an ambulance!!"]
 
 
-def test_a_line_too_wide_for_a_narrow_box_is_squeezed_before_it_is_shrunk():
+def test_a_line_too_wide_for_a_narrow_box_is_drawn_at_full_letter_width():
     page, interior, bubbles = four_koma(70, LOUD_LINES)
     rendered, sizes = typeset.typeset(FONTS, page, bubbles)
-    _, plain = typeset.typeset(UNSQUEEZED, page, bubbles)
-    loud = len(LOUD_LINES)
     assert outside(rendered, page, interior) == 0
-    cramped = int(np.argmin(plain[:loud]))
-    assert sizes[cramped] >= plain[cramped] + 3, (sizes, plain)
-    assert min(sizes[:loud]) >= 0.7 * min(sizes[loud:]), sizes
-
-
-def test_bubbles_that_fit_at_the_page_size_are_never_squeezed():
-    pages = [four_koma(w, LOUD_LINES)[::2] for w in (90, 130)]
-    pages.append(dialogue_and_one_more("Shut up!!", "うるさいってば！！", burst=False)[:2])
-    for page, bubbles in pages:
-        assert (typeset.typeset(FONTS, page, bubbles)[0] == typeset.typeset(UNSQUEEZED, page, bubbles)[0]).all()
-
-
-def test_the_tight_squeeze_is_tried_only_when_the_first_squeeze_cannot_reach_the_floor():
-    dialogue = FONTS.dialogue
-    first_only = typeset.Style(dialogue.face, True, dialogue.narrow[:1])
-    plain = typeset.Style(dialogue.face, True)
-    text = dialogue.display("Whoa! A handmade omelet by Elko-chan!? I'm so happy!!")
-    cap, floor = 22, 16
-    roomy = ellipse_region(100, 170)
-    assert typeset.fit(text, roomy, plain, cap, floor).size < floor
-    full, first = typeset.fit(text, roomy, dialogue, cap, floor), typeset.fit(text, roomy, first_only, cap, floor)
-    assert (full.size, full.lines) == (first.size, first.lines)
-    assert full.size >= floor
-    skinny = ellipse_region(90, 170)
-    assert typeset.fit(text, skinny, first_only, cap, floor).size < floor
-    assert typeset.fit(text, skinny, dialogue, cap, floor).size >= floor
-
-
-def test_squeezed_lettering_is_narrower_but_as_tall_and_keeps_its_halo():
-    def drawn(face: typeset.Fonts) -> tuple[np.ndarray, np.ndarray]:
-        page = Image.new("RGB", (400, 120), (128, 128, 128))
-        face.draw(page, (40, 80), "WAIT HERE!", 40, (0, 0, 0), 4, (255, 255, 255))
-        rgb = np.asarray(page).astype(int).sum(2)
-        return rgb < 100, rgb > 700
-
-    plain, squeezed = FONTS.dialogue.face, FONTS.dialogue.narrow[0].face
-    (ink_a, halo_a), (ink_b, halo_b) = drawn(plain), drawn(squeezed)
-    span = lambda m, axis: np.ptp(np.flatnonzero(m.any(axis)))  # noqa: E731
-    assert abs(span(ink_b, 0) - typeset.SQUEEZES[0] * span(ink_a, 0)) <= 4
-    assert abs(span(ink_b, 1) - span(ink_a, 1)) <= 1
-    assert abs(np.flatnonzero(ink_b.any(0))[0] - np.flatnonzero(ink_a.any(0))[0]) <= 2
-    for ink, halo in ((ink_a, halo_a), (ink_b, halo_b)):
-        assert span(halo, 0) - span(ink, 0) >= 6 and span(halo, 1) - span(ink, 1) >= 6
+    dark = rendered.astype(int).sum(2) < 200
+    for i, line in enumerate(LOUD_LINES):
+        x0, y0, h = 40 + 160 * i, 40, 260 + 40 * i
+        ink = dark[y0 + 6 : y0 + h - 6, x0 + 6 : x0 + 64].sum()
+        text = FONTS.dialogue.display(line)
+        flat = Image.new("RGB", (40 * len(text), 3 * sizes[i]), (255, 255, 255))
+        FONTS.dialogue.face.draw(flat, (10, 2 * sizes[i]), text, sizes[i], (0, 0, 0))
+        expected = (np.asarray(flat).astype(int).sum(2) < 200).sum()
+        assert 0.9 <= ink / expected <= 1.15, (line, sizes[i], ink, expected)
 
 
 LONG_LINE = "Where exactly do you think you are going at this hour of the night?"
