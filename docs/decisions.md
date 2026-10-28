@@ -10,7 +10,7 @@ This page records why Yomikae works the way it does, and what was tried and drop
 2. The dialogue face squeezed to 80% of its width, whole words first, then hyphenated.
 3. The same at 70% of its width.
 
-If none reaches the floor, the bubble takes the largest of those fits, which can be as small as 10 px. Text that cannot fit at 10 px shrinks inside its bubble, down to 6 px, instead of running across its neighbours.
+Steps 2 and 3 were removed on 2026-10-28; see [Letters are never squeezed](#letters-are-never-squeezed). If none reaches the floor, the bubble takes the largest of those fits, which can be as small as 10 px. Text that cannot fit at 10 px shrinks inside its bubble, down to 6 px, instead of running across its neighbours.
 
 **Why.** A clean outline with smaller lettering reads better than bigger text squeezed edge to edge or running onto the art. The owner chose this after comparing contact sheets side by side. The squeeze widths were measured too. At 75% the letters visibly distort, and 65% turns round letters into tall ovals. The cost is smaller lettering in narrow bubbles, such as those of 4-koma strips. To read one, hold **Alt** to see the original.
 
@@ -323,3 +323,13 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 **Decision.** Two changes from 2026-10-28 were reverted the same day at the owner's request: counting the blocks of one balloon once in the page size and glyph medians, and returning punctuation-only lines as their own symbols without asking the model. PIPELINE_VERSION went to 32 so pages rendered with them are rendered again.
 
 **What they measured.** On 67 pages (46 OpenMantra dev pages, 3 reported OpenMantra pages, 18 pages of the second book) with detection, OCR, inpainting and reference English held fixed, the lobe change kept 406 of 471 bubble sizes, grew 46 (1 to 13 px) and shrank 19 (1 to 7 px), most of the losses on one shout-heavy page. In saved translation-bench runs, 71 of 778 punctuation-only lines had been given words by the model; rendered pages never send such lines, because OCR drops them.
+
+## Letters are never squeezed
+
+**Decision.** Lettering is always drawn at the face's normal width. When text will not fit a narrow bubble in whole words at 75% of the page target, it is hyphenated, then set smaller, then shrunk, as before, but the dialogue face is no longer squeezed to 80% or 70% of its width. PIPELINE_VERSION went to 33.
+
+**Why.** On 2026-10-28 the owner reported text in narrow bubbles looking too skinny, and chose normal-width letters, a bit smaller, over squeezed ones.
+
+**Measured.** On all 214 OpenMantra pages, with detection, OCR, inpainting and translations held fixed and only typesetting differing, 79 of 1549 bubbles were squeezed at main, 58 to 80% and 21 to 70%. 77 of them now get normal-width letters 1 to 5 px smaller (mean 2.4 px, median size 12 px before and 9 px after). 40 of those 77 now sit under 10 px, down to 7 px; none did before. The other 2 were already at 7 px squeezed to 70%. At normal width nothing fits them even at the smallest size, so they fall back to one line at 10 px cut off at the bubble edge. 41 other bubbles moved by 1 or 2 px (23 up, 18 down), all on pages that also had a squeezed bubble, because the page's same-size grouping shifted. In tencho_isoro, the work with the smallest panels, 13 bubbles were squeezed and each lost 1 to 3 px. [benchmarks.md](benchmarks.md#a-development-set-check) has the setup.
+
+**Tried and rejected.** Squeezing to 80% and then 70% width, described in [Lettering stays inside the bubble](#lettering-stays-inside-the-bubble).

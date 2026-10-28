@@ -192,9 +192,9 @@ ones. It has two parts: the overall shape of the block, and where each break fal
     white stroke on the part outside;
     (c) only then shrink.
   - For narrow bubbles, also try a condensed variant of the font.
-- **Ours:** Partial, on purpose. Below the floor (0.75 × the page target) a bubble tries, in order, hyphenation,
-  then the dialogue face squeezed to 80% and then 70% (whole words, then hyphenated), and only then shrinks, down
-  to MIN_SIZE = 10. Everything stays inside the bubble. Step (b), the stroked spill past the edge, is
+- **Ours:** Partial, on purpose. Below the floor (0.75 × the page target) a bubble tries hyphenation, then smaller
+  sizes down to MIN_SIZE = 10, and only then shrinks further. Letters are never squeezed or condensed: the owner
+  prefers normal-width letters, a bit smaller. Everything stays inside the bubble. Step (b), the stroked spill past the edge, is
   deliberately not used: the owner prefers a clean outline with smaller lettering over bigger text that runs past
   the bubble or onto the art. The art fallback widens tall vertical blocks (`target_w = h × 0.5`).
 
