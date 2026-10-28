@@ -103,15 +103,18 @@ function sendCached(port: chrome.runtime.Port, key: string): boolean {
 
 function placeOf(url: string): (typeof PLACES)[number] | undefined {
   try {
-    const host = new URL(url).hostname.replace(/\.$/, '');
-    return PLACES.find((p) => p.host.test(host));
+    const { protocol, hostname } = new URL(url);
+    if (protocol !== 'http:' && protocol !== 'https:') return undefined;
+    return PLACES.find((p) => p.host.test(hostname.replace(/\.$/, '')));
   } catch {
     return undefined;
   }
 }
 
 function localRefusal(port: chrome.runtime.Port, w: Want): string | undefined {
-  const tabRank = placeOf(port.sender?.tab?.url ?? '')?.rank ?? 0;
+  const tab = port.sender?.tab?.url ?? '';
+  if (tab.startsWith(chrome.runtime.getURL(''))) return undefined;
+  const tabRank = placeOf(tab)?.rank ?? 0;
   for (const url of w.candidates) {
     const place = placeOf(url);
     if (place && place.rank > tabRank) return `Refused to fetch ${new URL(url).hostname}: a web page cannot load images from ${place.words}.`;
