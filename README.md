@@ -180,9 +180,12 @@ The server listens on `127.0.0.1` and accepts requests only from the Yomikae ext
 
 - A request whose `Origin` is a web page, such as a `fetch` or a form a site submits in the background, gets 403. So does an `<img>` or link load from a web page, which Chrome marks with `Sec-Fetch-Site: cross-site`.
 - A request whose `Host` is not `127.0.0.1`, `localhost` or `[::1]` gets 403, which stops DNS rebinding. A request from another machine gets 403 even if you start the server with `--host 0.0.0.0`.
-- Request bodies are capped at 64 MB, images at about 89 million pixels, and only JPEG, PNG, WebP, GIF and AVIF are decoded.
+- Request bodies are capped at 64 MB, images at 40 million pixels, and only JPEG, PNG, WebP, GIF and AVIF are decoded.
+- The API page at `/docs` can send `GET`s, but its other requests are refused like a web page's. Use `curl` for those.
 
-Any extension can send an `Origin` of `chrome-extension://...`. To accept only your copy of Yomikae, set `YOMIKAE_EXTENSION_ID` to the id shown on `chrome://extensions`. The extension refuses to fetch images on your local network or your computer for a page on the web, because it fetches with your cookies and hands the result back to the page. [docs/contract.md](docs/contract.md#who-may-call-the-server) has the exact rules, and [SECURITY.md](SECURITY.md) says how to report a problem.
+Any extension can send an `Origin` of `chrome-extension://...`. To make the server refuse other extensions' `POST`s and `PUT`s, set `YOMIKAE_EXTENSION_ID` to the id shown on `chrome://extensions`. `GET`s carry no `Origin`, so another extension with access to `127.0.0.1` can still read the health check, a work's names and rendered pages.
+
+The extension refuses to fetch images on your local network or your computer for a page on the web, because it fetches with your cookies and hands the result back to the page. It refuses an image that redirects there too. It judges this from the host name, so a web name that resolves to a local address, such as `cam.attacker.example` pointing at `192.168.1.1`, is still fetched. Turning the extension on only for sites you trust limits this. [docs/contract.md](docs/contract.md#who-may-call-the-server) has the exact rules, and [SECURITY.md](SECURITY.md) says how to report a problem.
 
 ## Benchmarks
 
