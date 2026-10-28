@@ -156,6 +156,41 @@ Each tool's output boxes were matched to the reference lines by overlap (30% of 
 
 End-to-end COMET also scores detection, OCR and grouping, and each side ran once. Lettering and cleaning were judged in a blind side-by-side read of 30 random pages from the stock run, with the two tools shuffled as A and B on each page and the key kept apart. The project owner picked Yomikae on all 30. manga-image-translator's lettering often ran past the bubble outline or off the page, mixed text sizes on one page, and sat over Japanese it had not erased; Yomikae kept its lettering inside each bubble. The read covers presentation, not wording: on lines both tools translated, the translations scored within about 0.02 COMET.
 
+## Compare against Koharu and BallonsTranslator
+
+On 2026-10-28 Yomikae, Koharu (github.com/koharu-rs/koharu at commit 0b8206b, after release 0.83.5) and BallonsTranslator (github.com/dmMaze/BallonsTranslator at commit eeaddaa, after v1.5.20) ran all 214 OpenMantra pages end to end with the same LLM, the Gemma 4 12B build used in development in LM Studio. Reasoning was off for all three. Vision models ran on the CPU for all three, and the runs went one at a time. Yomikae ran at 82239b9 the same way as in the manga-image-translator comparison above. The matcher, COMET, chrF, names and OCR scoring were the same too.
+
+Yomikae does not beat Koharu on these pages. It is level on the lines both translated, behind on coverage, and ahead on names and OCR. Both are ahead of BallonsTranslator.
+
+Each tool used its own defaults:
+
+- Koharu: its RF-DETR layout detector, PaddleOCR-VL 1.6 for OCR, LaMa inpainting and its OpenAI-compatible provider. That provider attaches the page image, sends no temperature, and keeps no earlier-page context or glossary.
+  - The released app has no headless mode. The repo's development binary takes only a local model and one image per process, so a small driver binary built against Koharu's own pipeline crate loaded each work as one project and ran the app's full pipeline.
+- BallonsTranslator: its headless mode with the ctd detector, mit48px OCR, lama_large_512px inpainting and its LLM translator's LM Studio profile.
+  - That profile sends temperature 0.1, keeps no earlier-page context, and is capped at 20 requests per minute.
+
+| | Yomikae | Koharu | BallonsTranslator |
+| --- | ---: | ---: | ---: |
+| Reference lines translated, of 1586 | 1546 | 1583 | 1530 |
+| Pages that failed, of 214 | 0 | 0 | 0 |
+| COMET, blank lines scored as 0 | 0.7279 | 0.7505 | 0.7102 |
+| COMET, translated lines only | 0.7467 | 0.7519 | 0.7361 |
+| chrF | 38.13 | 38.33 | 37.39 |
+| Names spelled as the reference, of 113 | 86 | 70 | 65 |
+| OCR character error rate | 1.0% | 1.3% | 5.6% |
+| Seconds per page, whole run on the CPU | 3.9 | 22.9 | 2.9 |
+
+- Koharu covers the most lines. Most of Yomikae's 40 missing lines are not words: 33 are bubbles holding only "?" or "……", and Yomikae puts no output on them. On the 1552 reference lines with Japanese words, blank=0 COMET is Koharu 0.7473, Yomikae 0.7434 and BallonsTranslator 0.7235.
+- On lines both translated, Yomikae and Koharu tie. The gap is -0.0013 (95% CI -0.0062 to 0.0032). Yomikae is 0.0120 above BallonsTranslator (CI 0.0074 to 0.0173), and Koharu is 0.0124 above it (CI 0.0074 to 0.0170).
+- Yomikae spells names best, because the cast sheet carries them from page to page. Koharu and BallonsTranslator keep no cross-page context. One recurring surname, 在藤 (Arifuji in the reference), is read as "Zaito" by Koharu all 13 times, and as "Zaito" or "Zaifuji" by BallonsTranslator.
+- Koharu letters text the others leave alone. Its 44 unmatched output boxes are sound effects and page numbers.
+- BallonsTranslator's 48px OCR misses or garbles short lines. That is most of its drop on boureisougi, where it missed 21 worded lines.
+- Speed is whole-run wall time divided by pages, because Koharu and BallonsTranslator overlap stages across pages.
+  - BallonsTranslator's rate is set by its 20-requests-per-minute cap, not by compute.
+  - Koharu's rate is set by PaddleOCR-VL on the CPU, at a median of 22.9 s per page. On a GPU it would run very differently.
+
+Each side ran once. Yomikae's own as-is COMET moved by 0.0015 between this run and the run in the comparison above. Koharu's translations change between runs, because it sends no temperature. Lettering and cleaning wait for a blind three-way read of 30 random pages, with the tools shuffled as A, B and C on each page.
+
 ## Following pages as context
 
 On 2026-10-28 `translation_bench.py --lookahead N` sent the Japanese of the next N story pages with each page, marked as context that is never translated. The question was whether it fixes a chapter's first pages, where a short line that stands alone (a word, a name, an exclamation) can be read two ways until the next pages settle it. Runs used the Gemma 4 12B build used in development, on OpenMantra and on volumes 1 and 68 of the second book, with OCR text for the following pages. Variant a is today's setup, c1 adds the next story page and c2 the next two. A second run of a on each set (a2), and of c1 and c2 on OpenMantra, gives the noise.
