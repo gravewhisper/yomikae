@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import struct
 import zlib
@@ -14,6 +15,7 @@ from starlette.responses import PlainTextResponse
 
 from yomikae.app import app
 from yomikae.guard import MAX_BODY_BYTES, RequestGuard
+from yomikae.pipeline import decode_image
 
 EXTENSION = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
 WEB = "https://attacker.example"
@@ -159,3 +161,19 @@ def test_a_decompression_bomb_is_still_reported(client):
     assert r.status_code == 200, r.text
     meta = json.loads((client.app.state.engine.settings.reports_dir / r.json()["report_id"] / "report.json").read_text())
     assert meta["areas_units"] == "fraction" and meta["marked"] is None
+
+
+@pytest.mark.parametrize("fmt", ["TIFF", "BMP", "PCX", "ICO"])
+def test_only_web_image_formats_reach_the_decoders(client, fmt):
+    buf = io.BytesIO()
+    Image.fromarray(np.full((40, 30, 3), 90, np.uint8)).save(buf, format=fmt)
+    r = client.post("/v1/pages", files={"image": ("p", buf.getvalue(), "application/octet-stream")})
+    assert r.status_code == 400, r.text
+    assert r.json()["error"] == "bad_image"
+
+
+@pytest.mark.parametrize("fmt", ["JPEG", "PNG", "WEBP", "GIF", "AVIF"])
+def test_web_image_formats_still_decode(fmt):
+    buf = io.BytesIO()
+    Image.fromarray(np.full((40, 30, 3), 90, np.uint8)).save(buf, format=fmt)
+    assert decode_image(buf.getvalue()).shape == (40, 30, 3)
