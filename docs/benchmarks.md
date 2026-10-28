@@ -70,9 +70,16 @@ Other options:
 - `--image page` sends each page's image from the annotation's `image_paths.ja` along with its lines, scaled so the long side is `--image-side` px (default 1024). `--image tagged` also draws each line's id as a small numbered tag at its text box. Each page's record keeps the prompt tokens its calls used, and the scorecard gives the median.
 - A text entry in the annotation may carry `"ruby": [["漢字", "かんじ"], ...]`, the furigana printed beside it. The bench passes those readings to `translate_page` as the server passes the readings it finds on a page, so a change to how readings are used can be measured on gold text. OpenMantra has no such field; it has to be filled from the page images.
 - When the run learns furigana names, it writes them to `names.json` in the run folder, one list per series, with each entry's `kind`. A run resumed after a stop only lists what it learned after the restart.
-- Running a finished label again translates only the pages that failed, which helps when LM Studio drops a few requests. Delete that run's `comet.json` first, or the scores come from the old lines.
+- Running a finished label again translates only the pages that failed, which helps when LM Studio drops a few requests. `comet.json` keeps the source, output and reference of every line it scored, so lines that changed are scored again.
 
 COMET runs in its own venv on the CPU, so it does not compete with the LLM for GPU memory. `--comet-device auto` scores on the GPU instead when the COMET venv has a CUDA build of PyTorch and the GPU has 4 GiB free, and falls back to the CPU otherwise, saying why.
+
+### Run it faster
+
+- `--jobs N` translates N series at once (default 3). Pages within a series still go one at a time in reading order, each with the context of the pages before it, so every page sees what a serial run shows it. LM Studio serves 4 requests at once by default, so 3 leaves one for a server you are reading with. The page files and scorecard have the same shape as a serial run. Per-page times are longer when requests share the GPU, and the scorecard says how many were in flight, so compare translation speed only at `--jobs 1`.
+- `--reuse` skips translating when a finished run in `--out-root` has the same fingerprint, a hash of the commit, the translator and its endpoint, every setting that changes a prompt, the page selection, and the bytes of the annotation. It copies that run's pages, names and COMET scores into the new label, and the scorecard names the run it came from. A run from a checkout with uncommitted changes in `server/` gets no fingerprint and is never reused.
+- COMET scores each distinct line once. A line whose source, output and reference match a line in another run in `--out-root`, scored with the same COMET model, takes that score, and the scorecard says how many did. Scores taken this way differ from fresh ones by at most 3e-6. `--comet-fresh` scores every line again.
+- `--pages openers` translates only the first 3 non-filler pages of each series, as `filler()` judges them. For a book of several chapters in one annotation, `--chapter-starts 7,60,84` takes 3 from each chapter. `--pages 4,9` picks pages by index in every series and `--pages SERIES:4` in one. Pages left out never enter the context store, so a later page sees less context than in a full run: compare a subset run only with runs of the same pages.
 
 A run that stops partway can continue. Run the same command with the same label, and pages already translated without an error are skipped.
 

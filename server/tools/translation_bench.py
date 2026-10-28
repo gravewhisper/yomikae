@@ -230,7 +230,7 @@ async def run(args) -> None:
     works = {series: [p for p in pages if p["series"] == series] for series in dict.fromkeys(p["series"] for p in pages)}
     stores = {series: ContextStore() for series in works}
     todo = [p for p in pages if not done(page_path(out / "context" if p.get("context_only") else out, p["series"], p["page_index"]))]
-    gate = asyncio.Semaphore(args.jobs)
+    queue = sorted(works, key=lambda series: -len(works[series]))
     started, finished = time.perf_counter(), 0
 
     async def translate_work(series: str, work: list[dict]) -> None:
@@ -253,14 +253,13 @@ async def run(args) -> None:
                     page_img = page_image(im, [Box(*b) for b in page["boxes"]], args.image == "tagged", args.image_side)
             nexts = upcoming(ahead.get(series, []), index, args.lookahead) if args.lookahead else []
             tokens_before = translator.prompt_tokens
-            async with gate:
-                t = time.perf_counter()
-                try:
-                    ruby = [tuple(pair) for line in page["lines"] for pair in line.get("ruby", [])]
-                    hyps = await translate_page(translator, store, sources, series, index, page_img, ruby, upcoming=[p["lines"] for p in nexts]) if sources else []
-                except (TranslatorUnavailable, TranslatorFailed) as e:
-                    hyps, error = [""] * len(sources), str(e)
-                ms = round((time.perf_counter() - t) * 1000)
+            t = time.perf_counter()
+            try:
+                ruby = [tuple(pair) for line in page["lines"] for pair in line.get("ruby", [])]
+                hyps = await translate_page(translator, store, sources, series, index, page_img, ruby, upcoming=[p["lines"] for p in nexts]) if sources else []
+            except (TranslatorUnavailable, TranslatorFailed) as e:
+                hyps, error = [""] * len(sources), str(e)
+            ms = round((time.perf_counter() - t) * 1000)
             if error is None:
                 store.add(series, str(index), index, [ContextLine(ja, hyp) for ja, hyp in zip(sources, hyps)], filler=fill.get((series, index), False))
             record = {
@@ -277,7 +276,12 @@ async def run(args) -> None:
             per_page = (time.perf_counter() - started) / finished
             print(f"{series} p{index}: {len(sources)} lines in {ms} ms{' ERROR ' + error if error else ''}, {len(todo) - finished} pages left, about {per_page * (len(todo) - finished) / 60:.1f} min", flush=True)
 
-    await asyncio.gather(*(translate_work(series, work) for series, work in works.items()))
+    async def worker() -> None:
+        while queue:
+            series = queue.pop(0)
+            await translate_work(series, works[series])
+
+    await asyncio.gather(*(worker() for _ in range(args.jobs)))
     learned = {series: [asdict(e) for e in store.saved_names(series)] for series, store in stores.items() if store.saved_names(series)}
     if learned:
         (out / "names.json").write_text(json.dumps(learned, ensure_ascii=False, indent=1))
