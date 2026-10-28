@@ -133,6 +133,8 @@ async def run(args) -> None:
         "image": args.image,
         "image_side": args.image_side,
         "lookahead": args.lookahead,
+        "context_skip_filler": args.context_skip_filler,
+        "context_stage": args.context_stage,
         "stage_dir": str(args.stage_dir) if args.stage_dir else None,
         "dataset": str(args.annotation),
         "dataset_sha": git_sha(args.annotation.parent),
@@ -142,17 +144,25 @@ async def run(args) -> None:
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     print(f"yomikae from {source_dir} at {meta['sha']}, {translator.name} at {settings.openai_base_url}, {len(pages)} pages", flush=True)
 
-    ahead = outline(args.annotation, args.stage_dir) if args.lookahead else {}
+    ahead = outline(args.annotation, args.stage_dir) if args.lookahead or args.context_skip_filler or args.context_stage else {}
+    fill = {(series, p["page_index"]): p["filler"] for series, ps in ahead.items() for p in ps} if args.context_skip_filler else {}
+    if args.context_stage:
+        if not args.stage_dir:
+            sys.exit("--context-stage needs --stage-dir")
+        known = {(p["series"], p["page_index"]) for p in pages}
+        extra = [{"series": series, "page_index": p["page_index"], "lines": [{"ja": line, "ref": ""} for line in p["lines"]], "boxes": [], "image": None, "context_only": True} for series, ps in ahead.items() for p in ps if (series, p["page_index"]) not in known]
+        pages = sorted(pages + extra, key=lambda p: (p["series"], p["page_index"]))
+        (out / "context" / "pages").mkdir(parents=True, exist_ok=True)
     stores: dict[str, ContextStore] = {}
-    todo = [p for p in pages if not done(page_path(out, p["series"], p["page_index"]))]
+    todo = [p for p in pages if not done(page_path(out / "context" if p.get("context_only") else out, p["series"], p["page_index"]))]
     started, finished = time.perf_counter(), 0
     for page in pages:
         series, index = page["series"], page["page_index"]
         store = stores.setdefault(series, ContextStore())
-        path = page_path(out, series, index)
+        path = page_path(out / "context" if page.get("context_only") else out, series, index)
         if done(path):
             saved = json.loads(path.read_text())
-            store.add(series, str(index), index, [ContextLine(line["ja"], line["hyp"]) for line in saved["lines"]])
+            store.add(series, str(index), index, [ContextLine(line["ja"], line["hyp"]) for line in saved["lines"]], filler=fill.get((series, index), False))
             continue
         sources = [line["ja"] for line in page["lines"]]
         recalled = store.recall(series, sources)
@@ -171,7 +181,7 @@ async def run(args) -> None:
             hyps, error = [""] * len(sources), str(e)
         ms = round((time.perf_counter() - t) * 1000)
         if error is None:
-            store.add(series, str(index), index, [ContextLine(ja, hyp) for ja, hyp in zip(sources, hyps)])
+            store.add(series, str(index), index, [ContextLine(ja, hyp) for ja, hyp in zip(sources, hyps)], filler=fill.get((series, index), False))
         record = {
             "series": series,
             "page_index": index,
@@ -411,6 +421,8 @@ def main() -> None:
     ap.add_argument("--image-side", type=int, default=1024, help="long side in px of the image sent")
     ap.add_argument("--lookahead", type=int, default=0, help="also send the Japanese of this many following pages, skipping filler pages, as context only")
     ap.add_argument("--stage-dir", type=Path, help="per-page OCR output (p000.json with blocks) to take following pages and filler checks from, instead of the annotation")
+    ap.add_argument("--context-skip-filler", action="store_true", help="leave filler pages out of the earlier pages sent as context")
+    ap.add_argument("--context-stage", action="store_true", help="also translate --stage-dir pages missing from the annotation, unscored, so they enter context as on a real read")
     ap.add_argument("--series", action="append", default=[], help="only this book_title, repeatable")
     ap.add_argument("--limit", type=int, default=0, help="pages per series, for a smoke run")
     ap.add_argument("--score", action="store_true", help="only rescore an existing run")
