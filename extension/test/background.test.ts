@@ -150,6 +150,25 @@ describe('image fetching', () => {
     await tick();
     assert.deepEqual(tab.received.at(-1), { type: 'failed', key: page.key, error: detail, retryable: false });
   });
+
+  it('fails without Retry when the server refuses the rendered page as forbidden', async () => {
+    const { connect, requests, requested } = await worker(['https://img.example/*']);
+    const tab = connect('https://reader.example/chapter/1');
+    const page = want('https://img.example/1.png');
+    tab.send({ type: 'want', jobs: [page] });
+    await tick();
+    requests[0]?.resolve(image());
+    await tick();
+    const translated = { page_id: 'p', width: 1, height: 1, rendered_url: '/v1/pages/p/rendered.webp', bubbles: [], timings_ms: {}, cached: false };
+    requests[1]?.resolve(new Response(JSON.stringify(translated)));
+    await tick();
+    assert.equal(requested()[2], 'http://127.0.0.1:7878/v1/pages/p/rendered.webp');
+    const detail = 'a cross-site request from a web page is refused: only the Yomikae extension may call this server';
+    requests[2]?.resolve(new Response(JSON.stringify({ error: 'forbidden', detail }), { status: 403 }));
+    await tick();
+    const failed = tab.received.at(-1);
+    assert.ok(failed?.type === 'failed' && !failed.retryable && failed.error.includes(detail), JSON.stringify(failed));
+  });
 });
 
 describe('page order', () => {
