@@ -9,7 +9,8 @@ export type Want = {
   url: string;
   candidates: string[];
   contextKey: string;
-  pageIndex: number;
+  pageIndex?: number;
+  position: number;
   priority: number;
 };
 

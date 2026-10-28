@@ -9,7 +9,7 @@ CAPTION = "Today I'll finish one alone... or not."
 def work_with(*pages: list[ContextLine]) -> ContextStore:
     store = ContextStore()
     for idx, lines in pages:
-        store.add("g/1", idx, lines)
+        store.add("g/1", str(idx), idx, lines)
     return store
 
 
@@ -71,7 +71,7 @@ def test_a_misread_name_copied_from_the_glossary_gives_way_to_the_real_one():
     outs = []
     for idx, lines in enumerate(pages):
         outs.append(asyncio.run(translate_page(SometimesCopies(), store, lines, "g/1", idx)))
-        store.add("g/1", idx, [ContextLine(a, b) for a, b in zip(lines, outs[-1])])
+        store.add("g/1", str(idx), idx, [ContextLine(a, b) for a, b in zip(lines, outs[-1])])
     assert outs[1][0].startswith("Nagina-nee") and outs[3] == ["Nagisa-nee, ほら"], outs
     assert store.names("g/1") == {"Nagisa": "ナギサ姉、早く"}
 
@@ -127,6 +127,14 @@ def test_a_sound_cut_off_before_the_next_bubble_becomes_its_stutter():
     lines = list(replies)
     out = asyncio.run(translate_page(Literal(), ContextStore(), lines, "g/1", 0))
     assert out == ["D-", "Don't mess with me!", "Wh-", "...What do you mean?", "I-", "...I see."]
+
+
+def test_a_kana_sound_before_a_line_that_starts_with_kanji_becomes_its_stutter():
+    from yomikae.translate import mend_stutters
+
+    lines = ["み", "見えない…", "か…", "考えるな", "あ", "会いたい"]
+    out = ["Mi", "I can't see...", "Ka...", "Don't think.", "Ah.", "I miss you."]
+    assert mend_stutters(lines, out) == ["I-", "I can't see...", "D-", "Don't think.", "Ah.", "I miss you."]
 
 
 def test_interjections_and_drawn_out_sounds_are_not_stutters():

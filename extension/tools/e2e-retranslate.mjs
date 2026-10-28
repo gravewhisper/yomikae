@@ -115,7 +115,7 @@ try {
   const sent = (await stats()).retranslates[0]?.request;
   check(
     results,
-    JSON.stringify(sent) === JSON.stringify({ context_key: CONTEXT, page_index: 1, bubbles: [1], hint: 'Lene is a girl', names: [{ ja: '在藤', en: 'Arifuji', kind: 'name' }] }),
+    JSON.stringify(sent) === JSON.stringify({ context_key: CONTEXT, bubbles: [1], hint: 'Lene is a girl', names: [{ ja: '在藤', en: 'Arifuji', kind: 'name' }] }),
     'the box sends the picked bubble, the hint and the name fix',
     sent,
   );

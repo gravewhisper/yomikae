@@ -239,7 +239,7 @@ def test_a_stale_page_is_served_from_the_cache_while_the_translator_is_down(clie
 
 def test_a_remembered_line_that_misspells_a_listed_name_is_translated_again():
     store = ContextStore()
-    store.add("g/1", 0, [ContextLine("在藤さん、待って", "Wait, Zaito-san!"), ContextLine("行くぞ", "Let's go!")])
+    store.add("g/1", "p0", 0, [ContextLine("在藤さん、待って", "Wait, Zaito-san!"), ContextLine("行くぞ", "Let's go!")])
     translator = Scripted(lambda call, lines, _: ["Wait, Arifuji-san!"] * len(lines))
     lines = ["在藤さん、待って", "行くぞ"]
     assert asyncio.run(translate_page(translator, store, lines, "g/1", 1)) == ["Wait, Zaito-san!", "Let's go!"]

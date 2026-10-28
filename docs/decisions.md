@@ -142,11 +142,15 @@ An honorific is added only where the Japanese has one. Gemma used to add one to 
 
 ## A cut-off sound before the same sound is a stutter
 
-**Decision.** A bubble that holds only one kana, with or without っ, dots or a dash, followed by a bubble that starts with the same kana, is lettered as a stutter of the next bubble's first English word, for example "D-" before "Don't mess with me!". The rule skips a bubble ending in ！ or ？, a next bubble that repeats the sound, as a laugh like はは does, and a bare あ, い, う, え or お. It runs after translation in `translate_page`, so the model sees the same lines as before.
+**Decision.** A bubble that holds only one kana, with or without っ, dots or a dash, followed by a bubble that starts with the same kana, is lettered as a stutter of the next bubble's first English word, for example "D-" before "Don't mess with me!". The rule skips a bubble ending in ！ or ？, a next bubble that repeats the sound, as a laugh like はは does, and a bare あ, い, う, え or お. When the next bubble starts with kanji, its reading is used instead, taken from fugashi with the unidic-lite dictionary, so み before 見え… counts as a stutter. It runs after translation in `translate_page`, so the model sees the same lines as before.
 
 **Why.** Gemma read the first bubble as a word of its own: ふっ before ふざけんなっ came out as "Heh.". On OpenMantra, 5 bubble pairs fit the rule, and it changed 4 lines of the 2026-10-26 main run: 2 real stutters fixed, 1 already right and now written the same way as the rest, and 1 that follows a mistranslated next bubble. Naruto volumes 1 and 68 have no such pairs. Blank lines stayed at 32. COMET fell from 0.7472 to 0.7468 because it scores a one-letter fragment low even where the reference has one, as "Wh..." to "Wh-" shows, so the lines were judged by reading them.
 
+Reading the kanji added 2 OpenMantra pairs, whose cut-off sounds now come out as "Wh-" and "N-". The run with it, `w6-stut-om`, scored COMET 0.7480 with 31 blank lines.
+
 **Tried and rejected.** Counting a bare vowel. あ before ありがとう became "Th-", where the reference reads "oh...".
+
+A prompt line telling the model that a lone cut-off sound before a line starting with that sound is usually a stutter, to be written as "D-". On 2026-10-28, OpenMantra scored COMET 0.7488 with it (`w6-stutline3-om`) against 0.7480 without (`w6-stut-om`), within noise, with 32 blank lines against 31. Of the 133 short kana fragments before another line, 28 read differently. The real stutters were already fixed by the rule, so the prompt only added hyphen fragments where the reference has none: あ before ありがとう became "A-" again, a cut-off ラん became "Ra-", and a pained ててっ became "T-Tee!". It also split a called-out name in two, "Ni-" and "-sama...". The rule alone stays.
 
 ## A bare うち is the speaker
 

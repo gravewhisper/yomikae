@@ -13,11 +13,11 @@ def test_parses_structured_and_fenced_output():
     fenced = 'Sure!\n```json\n{"lines": [{"id": 0, "text": "Hi"}]}\n```'
     assert parse_translations(fenced.replace('"lines"', '"translations"'), 1) == ["Hi"]
     assert parse_translations('["x", "y"]', 2) == ["x", "y"]
+    assert parse_translations('{"translations": [{"id": 0, "text": ""}]}', 1) == [""]
 
 
 def test_rejects_misaligned_output():
     assert parse_translations('{"translations": [{"id": 0, "text": "a"}]}', 2) is None
-    assert parse_translations('{"translations": [{"id": 0, "text": ""}]}', 1) is None
     assert parse_translations("I can't help with that.", 1) is None
 
 

@@ -440,6 +440,46 @@ def test_another_400_from_the_translator_is_not_resent(client):
     assert "'messages' field is required" in r.json()["detail"], r.text
 
 
+def test_a_connection_closed_mid_reply_means_the_translator_is_unavailable(client):
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.RemoteProtocolError("peer closed connection without sending complete message body")
+
+    translator = OpenAICompatible(replace(Settings.from_env(), translator="openai"))
+    translator.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    r = post_page_with(client, translator, 225)
+    assert r.status_code == 503 and r.json()["error"] == "translator_unavailable", r.text
+    assert "RemoteProtocolError" in r.json()["detail"]
+
+
+def test_a_model_the_translator_does_not_know_fails_the_page_instead_of_waiting(client):
+    translator, calls = lm_studio([(404, "model 'nope' not found")])
+    r = post_page_with(client, translator, 226)
+    assert len(calls) == 1
+    assert r.status_code == 500 and r.json()["error"] == "translator_error", r.text
+    assert translator.model in r.json()["detail"] and "model 'nope' not found" in r.json()["detail"], r.text
+
+
+def test_an_empty_translation_is_kept_without_retrying_in_halves():
+    import asyncio
+    import json
+
+    from yomikae.translate import Context, translate_lines
+
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        lines = json.loads(json.loads(request.content)["messages"][-1]["content"])["lines"]
+        calls.append(len(lines))
+        items = [english(line["text"]) if line["text"] != "…" else "" for line in lines]
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps({"translations": items}, ensure_ascii=False)}}]})
+
+    translator = OpenAICompatible(replace(Settings.from_env(), translator="openai"))
+    translator.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    out = asyncio.run(translate_lines(translator, ["おはよう", "…", "行くぞ", "待って"], Context()))
+    assert out == [english("おはよう"), "", english("行くぞ"), english("待って")]
+    assert calls == [4]
+
+
 def english(source):
     return f"EN {source.encode().hex()}"
 

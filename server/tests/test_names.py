@@ -26,7 +26,7 @@ class Recorder:
 
 def test_auto_names_reach_the_prompt_exactly_as_before():
     store = ContextStore()
-    store.add("g/1", 1, [ContextLine("渚姉、待って", "Nagisa-nee, wait!")])
+    store.add("g/1", "p1", 1, [ContextLine("渚姉、待って", "Nagisa-nee, wait!")])
     assert [(e.en, e.ja, e.source) for e in store.cast("g/1")] == [("Nagisa", "渚姉、待って", "auto")]
     translator = Recorder(lambda lines: ["Hi."] * len(lines))
     asyncio.run(translate_page(translator, store, ["こんにちは"], "g/1", 2))
@@ -37,7 +37,7 @@ def test_auto_names_reach_the_prompt_exactly_as_before():
 
 def test_a_user_name_hides_the_auto_spelling_it_corrects_and_is_never_overwritten(tmp_path):
     store = ContextStore(tmp_path)
-    store.add("g/1", 1, [ContextLine("凛恋さん、おはよう", "Morning, Riren-san."), ContextLine("ユキちゃん", "Yuki-chan!")])
+    store.add("g/1", "p1", 1, [ContextLine("凛恋さん、おはよう", "Morning, Riren-san."), ContextLine("ユキちゃん", "Yuki-chan!")])
     store.set_name("g/1", CastEntry("凛恋", "Rinren", "りんれん", "user"))
     store.learn_names("g/1", [CastEntry("凛恋", "Rinko", "りんこ", "furigana")])
     cast = store.cast("g/1")
@@ -49,7 +49,7 @@ def test_a_user_name_hides_the_auto_spelling_it_corrects_and_is_never_overwritte
 
 def test_a_furigana_name_is_learned_once_and_replaces_a_wrong_auto_spelling():
     store = ContextStore()
-    store.add("g/1", 1, [ContextLine("我愛羅くん！", "Gara-kun!")])
+    store.add("g/1", "p1", 1, [ContextLine("我愛羅くん！", "Gara-kun!")])
     translator = Recorder(lambda lines: ["Gaara-kun, wait!"] * len(lines))
     asyncio.run(translate_page(translator, store, ["我愛羅くん待って"], "g/1", 2, ruby=[("我愛羅", "があら"), ("待", "ま")]))
     assert translator.contexts[0].readings == {"我愛羅": "があら", "待": "ま"}

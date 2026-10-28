@@ -7,9 +7,11 @@ import json
 import re
 import unicodedata
 from collections.abc import Callable, Sequence
+from functools import cache
 from dataclasses import dataclass, field, replace
 from typing import Protocol
 
+import fugashi
 import httpx
 from PIL import Image, ImageDraw, ImageFont
 
@@ -108,7 +110,7 @@ RESPONSE_SCHEMA = {
 }
 
 FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
-JSON_LEAK = re.compile(r'[{}]|"\s*,\s*"|^[\s\[\]",:]*$')
+JSON_LEAK = re.compile(r'[{}]|"\s*,\s*"|^[\s\[\]",:]+$')
 
 
 def parse_translations(content: str, n: int) -> list[str] | None:
@@ -223,15 +225,27 @@ async def translate_lines(translator: Translator, lines: list[str], context: Con
 CUT_SOUND = re.compile(r"([\u3041-\u3096\u30a1-\u30f6])[っッ]?[\s.…‥・―─\-、]*")
 FIRST_SOUND = re.compile(r"[\s.…‥・ー―─\-~、「『（(]*([\u3041-\u3096\u30a1-\u30f6])[っッ]?(.?)")
 FIRST_WORD = re.compile(r"[^A-Za-z]*([A-Za-z])(h?)")
+KANJI_START = re.compile(r"[\s.…‥・ー―─\-~、「『（(]*[\u3400-\u9fff]")
 
 
 def hiragana(ch: str) -> str:
     return chr(ord(ch) - 0x60) if "\u30a1" <= ch <= "\u30f6" else ch
 
 
+@cache
+def tagger() -> fugashi.Tagger:
+    return fugashi.Tagger()
+
+
+def spoken(text: str) -> str:
+    if not KANJI_START.match(text):
+        return text
+    return "".join(kana if (kana := getattr(w.feature, "kana", None)) and kana != "*" else w.surface for w in tagger()(text))
+
+
 def stutter_of(cut: str, following: str) -> bool:
     m = CUT_SOUND.fullmatch(unicodedata.normalize("NFKC", cut).strip())
-    n = FIRST_SOUND.match(unicodedata.normalize("NFKC", following))
+    n = FIRST_SOUND.match(spoken(unicodedata.normalize("NFKC", following)))
     if not m or not n or (m.group(0) == m.group(1) and hiragana(m.group(1)) in "あいうえお"):
         return False
     sound = hiragana(m.group(1))
@@ -279,12 +293,14 @@ class OpenAICompatible:
         for delay in (*self.retry_delays, None):
             try:
                 r = await self.client.post(f"{self.base}/chat/completions", json=body)
-            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+            except httpx.TransportError as e:
                 raise TranslatorUnavailable(f"{self.base} unreachable: {e!r}") from e
             if delay is None or not transient(r):
                 break
             await asyncio.sleep(delay)
-        if r.status_code >= 500 or r.status_code in (401, 403, 404):
+        if r.status_code == 404:
+            raise TranslatorFailed(f"translator at {self.base} has no model {self.model!r} (404); set YOMIKAE_OPENAI_MODEL to a model it lists: {r.text[:200]}")
+        if r.status_code >= 500 or r.status_code in (401, 403):
             raise TranslatorUnavailable(f"{self.base} returned {r.status_code}: {r.text[:200]}")
         if r.status_code >= 400:
             tries = f" after {len(self.retry_delays) + 1} tries" if transient(r) else ""

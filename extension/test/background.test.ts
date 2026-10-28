@@ -44,7 +44,7 @@ async function worker(granted: string[] = []) {
 
 const states = (received: ToContent[]) => received.map((m) => (m.type === 'progress' ? m.state : m.type));
 const image = () => new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } });
-const want = (url: string): Want => ({ key: url, url, candidates: [url], contextKey: 'c', pageIndex: 1, priority: 0 });
+const want = (url: string): Want => ({ key: url, url, candidates: [url], contextKey: 'c', pageIndex: 1, position: 1, priority: 0 });
 
 describe('image fetching', () => {
   it('refuses images on this computer for a page on the web', async () => {
@@ -93,6 +93,24 @@ describe('image fetching', () => {
       assert.equal(requested()[2], 'http://127.0.0.1:7878/v1/pages');
     });
   }
+});
+
+describe('page order', () => {
+  it('sends page_index only when the site adapter knows it', async () => {
+    const { connect, requests } = await worker(['https://img.example/*']);
+    const tab = connect('https://reader.example/chapter/1');
+    const { pageIndex: _, ...unknown } = want('https://img.example/2.png');
+    tab.send({ type: 'want', jobs: [want('https://img.example/1.png'), { ...unknown, position: 2, priority: 1 }] });
+    await tick();
+    requests[0]?.resolve(image());
+    await tick();
+    requests[1]?.resolve(image());
+    await tick();
+    const [known, missing] = [requests[2], requests[3]].map((r) => r?.init?.body as FormData);
+    assert.equal(known?.get('page_index'), '1');
+    assert.equal(missing?.get('context_key'), 'c');
+    assert.equal(missing?.has('page_index'), false);
+  });
 });
 
 const pageJson = (renderedUrl: string, cached = false) =>

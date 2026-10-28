@@ -126,7 +126,7 @@ pnpm build
 
 The popup also shows whether the server is running. When it is not, the popup prints the start command to run from the root of your clone.
 
-The extension talks to `http://127.0.0.1:7878`. It has no settings page.
+The extension talks to `http://127.0.0.1:7878`. It has no settings page. The browser tests point it at a mock server through a `serverUrl` key in `chrome.storage.local`, a test hook that nothing in the extension writes.
 
 ## Configuration
 
