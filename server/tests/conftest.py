@@ -33,7 +33,7 @@ def client(tmp_path_factory):
     mp.setenv("YOMIKAE_REPORTS_DIR", str(tmp_path_factory.mktemp("reports")))
     from yomikae.app import app
 
-    with TestClient(app) as c:
+    with TestClient(app, base_url="http://127.0.0.1:7878", client=("127.0.0.1", 50000)) as c:
         yield c
     mp.undo()
 
