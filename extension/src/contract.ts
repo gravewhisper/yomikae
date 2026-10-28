@@ -147,6 +147,7 @@ export function parseServerError(v: unknown): { code: ServerErrorCode | 'unknown
 }
 
 export const DEFAULT_SERVER_URL = 'http://127.0.0.1:7878';
+export const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 
 export async function getServerUrl(): Promise<string> {
   const { serverUrl } = await chrome.storage.local.get('serverUrl');

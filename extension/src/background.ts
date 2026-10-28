@@ -1,5 +1,5 @@
 import { imageReferers } from './adapters';
-import { getServerUrl, parseHealth, parseReportReceipt, parseServerError, parseTranslatedPage, type TranslatedPage } from './contract';
+import { getServerUrl, MAX_IMAGE_BYTES, parseHealth, parseReportReceipt, parseServerError, parseTranslatedPage, type TranslatedPage } from './contract';
 import { noAccessText, PORT_NAME, type Broadcast, type ReportRequest, type RetranslateRequest, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
 import { addImageHost, enableSite, reconcileSites, siteForUrl, sitesForGrants } from './sites';
 
@@ -268,6 +268,11 @@ async function blockedHost(url: string): Promise<NoAccess | undefined> {
   return allowed ? undefined : new NoAccess(hostname);
 }
 
+function tooBig(download: AbortController): JobError {
+  download.abort();
+  return new JobError(`Image is larger than ${MAX_IMAGE_BYTES / 1024 / 1024} MB, the most the local server accepts.`, false);
+}
+
 async function fetchImage(candidates: string[]): Promise<Blob> {
   await referersReady;
   const urls = orderByHostHealth(candidates);
@@ -301,9 +306,13 @@ async function fetchImage(candidates: string[]): Promise<Blob> {
           stallGuard();
           if (res.status === 404 || res.status === 410) throw new JobError(`Image not found (${res.status}).`, false);
           if (!res.ok) throw new JobError(`Image fetch failed (${res.status}).`, true);
+          if (Number(res.headers.get('content-length')) > MAX_IMAGE_BYTES) throw tooBig(own);
           const chunks: Uint8Array<ArrayBuffer>[] = [];
           const reader = res.body?.getReader();
+          let size = 0;
           for (let r = await reader?.read(); r && !r.done; r = await reader?.read()) {
+            size += r.value.byteLength;
+            if (size > MAX_IMAGE_BYTES) throw tooBig(own);
             chunks.push(r.value);
             stallGuard();
           }

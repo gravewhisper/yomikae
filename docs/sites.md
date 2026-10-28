@@ -32,6 +32,7 @@ Each adapter turns an image URL into a list of candidate URLs, best first. The b
 - A candidate that answers 404 or 410 moves on to the next one. A page fails without **Retry** only when every candidate is missing.
 - A candidate with no response after 2 s starts the next candidate in parallel, and its host counts as slow for 10 minutes.
 - A fetch with no first byte for 8 s, or that stalls for 8 s mid-download, is cancelled.
+- A candidate larger than 64 MB, the most the server accepts, is cancelled as soon as its `Content-Length` or the bytes read so far show it, and the next candidate is tried. A page whose candidates are all too large fails without **Retry**.
 - Fetches send the browser's cookies for the image host.
 - A page on the web cannot have the extension fetch an image from this computer, such as `127.0.0.1` or `localhost`. Such a page fails without **Retry**. A page served from this computer can.
 - At most 2 pages are fetched or translated at once. The page nearest to the one on screen goes first.
