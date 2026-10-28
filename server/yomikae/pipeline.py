@@ -21,7 +21,7 @@ from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, INPUT_FORMATS, Settings
 from .model import Box, Bubble, CastEntry, ContextLine
 from .ruby import furigana_names
-from .translate import Context, PageImage, Translator, TranslatorUnavailable, make_translator, mend_stutters, subset, translate_lines
+from .translate import Context, PageImage, Translator, TranslatorUnavailable, make_translator, mend_stutters, subset, symbols, translate_lines
 
 T = TypeVar("T")
 PIPELINE_VERSION = 31
@@ -348,6 +348,7 @@ async def translate_page(
         recalled = [None if known and any(e.ja in line and not spells(known, e.en) for e in listed) else known for line, known in zip(lines, store.recall(context_key, lines))]
     else:
         recalled = pinned
+    recalled = [kept if (kept := symbols(line)) is not None else known for line, known in zip(lines, recalled)]
     todo = [line for line, known in zip(lines, recalled) if known is None]
     names: dict[str, str] = {}
     terms: dict[str, str] = {}
