@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from yomikae.cache import ContextStore
 from yomikae.model import CastEntry, ContextLine
@@ -177,3 +178,24 @@ def test_furigana_above_horizontal_text_is_read_and_two_plain_lines_are_not_ruby
     assert bubble.ruby == (("桜野", "さくらの"),), (bubble.source, bubble.ruby)
     assert read_block(ruby_page(["明日は桜野さん", "と会うよ"], {}, False), False, box)[0].ruby == ()
     assert read_block(ruby_page(["かな", "とても小さな字"], {}, False, 30), False)[0].ruby == ()
+
+
+def test_following_pages_reach_the_prompt_only_when_given():
+    store = ContextStore()
+    translator = Recorder(lambda lines: ["Hi."] * len(lines))
+    asyncio.run(translate_page(translator, store, ["こんにちは"], "g/1", 1))
+    asyncio.run(translate_page(translator, store, ["こんにちは"], "g/1", 2, upcoming=[["レーネ、行くぞ"]]))
+    plain, ahead = (build_messages(["こんにちは"], c) for c in translator.contexts)
+    assert "next_pages" not in plain[0]["content"] and "next_pages" not in plain[1]["content"]
+    assert '"next_pages"' in ahead[0]["content"]
+    assert json.loads(ahead[1]["content"])["next_pages"] == [["レーネ、行くぞ"]]
+
+
+def test_filler_pages_are_skipped_as_earlier_context_and_older_story_pages_fill_in():
+    store = ContextStore()
+    store.add("g/1", "p1", 1, [ContextLine("おはよう", "Morning.")])
+    store.add("g/1", "p2", 2, [ContextLine("第二話", "Chapter 2")], filler=True)
+    store.add("g/1", "p3", 3, [ContextLine("行くぞ", "Let's go.")])
+    store.add("g/1", "p4", 4, [ContextLine("作者", "Author")], filler=True)
+    assert store.before("g/1", 5) == [[ContextLine("おはよう", "Morning.")], [ContextLine("行くぞ", "Let's go.")]]
+    assert store.recall("g/1", ["第二話"]) == ["Chapter 2"]

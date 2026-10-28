@@ -168,6 +168,7 @@ class ContextPage:
     position: float
     lines: list[ContextLine]
     fixed: list[ContextLine]
+    filler: bool = False
 
 
 class ContextStore:
@@ -198,12 +199,12 @@ class ContextStore:
         if not key or key not in self.pages:
             return []
         pos = self.position(key, page_index)
-        earlier = [p for p in self.ordered(key) if pos - CONTEXT_REACH <= p.position < pos][-CONTEXT_PAGES:]
+        earlier = [p for p in self.ordered(key) if pos - CONTEXT_REACH <= p.position < pos and not p.filler][-CONTEXT_PAGES:]
         return [p.lines for p in earlier if p.lines]
 
-    def add(self, key: str, page_id: str, page_index: int | None, lines: list[ContextLine], fixed: list[ContextLine] = ()) -> None:
+    def add(self, key: str, page_id: str, page_index: int | None, lines: list[ContextLine], fixed: list[ContextLine] = (), filler: bool = False) -> None:
         pos = self.position(key, page_index, page_id)
-        self.pages.setdefault(key, {})[page_id] = ContextPage(pos, [line for line in lines if line.translation], [line for line in fixed if line.translation])
+        self.pages.setdefault(key, {})[page_id] = ContextPage(pos, [line for line in lines if line.translation], [line for line in fixed if line.translation], filler)
 
     def forget(self, result: dict) -> None:
         key = result.get("context_key")

@@ -131,6 +131,65 @@ Each tool's output boxes were matched to the reference lines by overlap (30% of 
 
 End-to-end COMET also scores detection, OCR and grouping, and each side ran once. Lettering and cleaning were judged in a blind side-by-side read of 30 random pages from the stock run, with the two tools shuffled as A and B on each page and the key kept apart. The project owner picked Yomikae on all 30. manga-image-translator's lettering often ran past the bubble outline or off the page, mixed text sizes on one page, and sat over Japanese it had not erased; Yomikae kept its lettering inside each bubble. The read covers presentation, not wording: on lines both tools translated, the translations scored within about 0.02 COMET.
 
+## Following pages as context
+
+On 2026-10-28 `translation_bench.py --lookahead N` sent the Japanese of the next N story pages with each page, marked as context that is never translated. The question was whether it fixes a chapter's first pages, where a short line that stands alone (a word, a name, an exclamation) can be read two ways until the next pages settle it. Runs used the Gemma 4 12B build used in development, on OpenMantra and on volumes 1 and 68 of the second book, with OCR text for the following pages. Variant a is today's setup, c1 adds the next story page and c2 the next two. A second run of a on each set (a2), and of c1 and c2 on OpenMantra, gives the noise.
+
+Following pages skip filler. A page is filler when it has no Japanese, when no line sits in a balloon and it has at most 4 lines or any horizontal line, when it has at most 3 lines and one is title-sized (glyphs at least 0.065 of the page height) and horizontal or outside a balloon, or when it has at most 2 lines and at most 12 kana and kanji. This catches cover, title, credit and table-of-contents pages, and it also skips short speech pages in mid-work, such as a page with one shout, which carry little context. It misses a chapter title page with legend narration and a cast and synopsis page with one block in a balloon, and it counts one page with a single laugh as filler.
+
+"Openers" are the first 3 non-filler annotated pages of each work and chapter: 15 pages on OpenMantra and 51 on the second book. Deltas are paired per line, with a 95% bootstrap interval that resamples pages, since all lines of a page come from one call.
+
+| | OpenMantra | Volume 1 | Volume 68 |
+| --- | ---: | ---: | ---: |
+| COMET a | 0.7469 | 0.6679 | 0.7817 |
+| c1 - a, all lines | +0.0005 (-0.0024 to +0.0033) | +0.0007 (-0.0030 to +0.0044) | -0.0011 (-0.0045 to +0.0024) |
+| c2 - a, all lines | -0.0002 (-0.0035 to +0.0032) | +0.0005 (-0.0027 to +0.0037) | -0.0023 (-0.0062 to +0.0016) |
+| a2 - a, all lines | +0.0015 (-0.0013 to +0.0044) | +0.0026 (-0.0007 to +0.0058) | +0.0000 (-0.0030 to +0.0029) |
+| c1 - a, openers | +0.0119 (+0.0015 to +0.0223) | -0.0096 (-0.0218 to +0.0002) | -0.0035 (-0.0089 to +0.0022) |
+| c2 - a, openers | +0.0116 (-0.0033 to +0.0260) | -0.0076 (-0.0169 to +0.0002) | -0.0084 (-0.0155 to -0.0018) |
+| a2 - a, openers | +0.0054 (-0.0032 to +0.0145) | +0.0063 (-0.0040 to +0.0169) | -0.0012 (-0.0061 to +0.0040) |
+| chrF a / c1 / c2 | 38.21 / 38.23 / 38.22 | 26.26 / 26.22 / 26.12 | 41.51 / 41.38 / 41.16 |
+| Blank lines a / c1 / c2 | 32 / 31 / 32 | 0 / 0 / 0 | 0 / 0 / 0 |
+| Median prompt tokens a / c1 / c2 | 945 / 1074 / 1123 | 869 / 1034 / 1113 | 908 / 1086 / 1148 |
+
+- Pooled over the 66 opener pages, c1 - a was +0.0007 (-0.0053 to +0.0065) and c2 - a was -0.0006, against +0.0033 for a2 - a. The second OpenMantra pair repeated the c1 gain on its openers, +0.0116 against a2, but not the c2 gain, -0.0037.
+- Time per line rose 7 to 22%. The live server shared LM Studio during the runs, so treat that as a rough figure; the prompt grew by 14 to 28% at the median.
+- Leaks: no Japanese leaked into the English beyond the one line that does so in a too. A line was flagged when its English matched a line of its following pages (reference or baseline English) better than its own reference by 20 chrF points. c1 had 27 such lines and c2 54, against 25 and 55 when the same check ran on a, which never saw those pages.
+
+COMET compresses this kind of error, so every short line (at most 8 kana and kanji) where a and c1, c2 or a2 differ was judged blind: 700 items, each with its page, the page before, the two pages after and the reference. Three judge agents saw the two English lines in random order as X and Y and gave one of: X right, Y right, both fine, both wrong. The a and a2 pairs went in mixed with the rest as a control, since two runs of the same code word 40 to 55% of lines differently.
+
+| | Fixed | Broke | Both fine | Both wrong |
+| --- | ---: | ---: | ---: | ---: |
+| c1, openers | 5 | 2 | 25 | 1 |
+| c1, all | 31 | 26 | 221 | 35 |
+| c2, openers | 3 | 7 | 23 | 2 |
+| c2, all | 35 | 37 | 222 | 34 |
+| a2 against a, openers | 2 | 2 | 19 | 2 |
+| a2 against a, all | 25 | 22 | 193 | 34 |
+
+For the control, "fixed" means a2 was right and a wrong. c1 fixes and breaks lines at the same rate as a second run of the same code. The changes either way are pronouns, gender, name readings and dropped words, not lines that the following pages settle. On OpenMantra, c1 kept balloon_dream's "the higher they fly, the more the sun melts them" where a wrote "If I'm going to melt into the sun...", and c2 wrote Lene as "Reine" on the first page of tojime_no_siora. The judges flagged no line that translated ahead into the following pages.
+
+A probe with hand-written two- and three-page works, each run 3 times per setting, shows what lookahead can do when the next page really settles a word:
+
+| First page ends with | Lookahead 0 | 1 | 2 |
+| --- | ---: | ---: | ---: |
+| はし… before a page about a fallen bridge: "bridge" | 0 of 3 | 3 of 3 | 3 of 3 |
+| あめ！ before a page handing over a strawberry sweet: "candy" | 0 of 3 ("Rain!") | 3 of 3 | 3 of 3 |
+| 先生！ before a hospital page: "doctor" | 0 of 3 | 0 of 3 | 0 of 3 |
+| み… 見え… before a page of what the speaker sees, 5 works: "I can see" | 0 of 15 | 3 of 15 | 5 of 15 |
+
+先生 stays "Sensei!", as the honorifics entry in [decisions.md](decisions.md#honorifics-are-kept) asks. For み… 見え…, the model mostly reads the cut-off 見え… as 見えない, "Can't see...", or as a question, "Can you see...?". It never wrote "visible" in 45 runs, so a reported "Vi-visible" did not reproduce. The probe is `lookahead/probe.py` in the experiment's scratch folder and is not part of the repo.
+
+**Earlier pages that skip filler.** The same day, `--context-skip-filler` left filler pages out of the 2 earlier pages sent as context, so a work's first story page reaches back past the cover and title pages to story pages within the 5-page reach (variant s), and s1 added lookahead 1. On the second book the bench normally translates only the annotated pages, so covers, credits and the table of contents never reached the context. `--context-stage` also translates the OCR text of every page missing from the annotation, unscored, as a real read would (variant af).
+
+| Openers, paired against the baseline | OpenMantra | Volume 1 | Volume 68 |
+| --- | ---: | ---: | ---: |
+| s, against a or af | +0.0027 (-0.0077 to +0.0126) | -0.0033 (-0.0098 to +0.0019) | +0.0055 (+0.0011 to +0.0101) |
+| s1, against a or af | +0.0133 (+0.0039 to +0.0213) | -0.0118 (-0.0244 to -0.0003) | +0.0013 (-0.0032 to +0.0051) |
+| a, against af | | -0.0001 (-0.0063 to +0.0062) | +0.0045 (-0.0014 to +0.0106) |
+
+With af, the openers of the second book did get credit pages, chapter title pages, author notes and the cast page as earlier context, and s replaced most of them with story pages. On OpenMantra only two openers had a filler page before them, a title page with the author's name and a one-word title page; their lines read about as differently between a and s as between a and a2. On every run the work's name list after its first three story pages held no title, author, publisher or chapter-title string. It only takes names joined to an honorific, and none of those pages have one. All overall deltas for s and s1 were within ±0.003.
+
 ## Know the noise
 
 Both tools measure an LLM, and its output varies between runs of the same code.

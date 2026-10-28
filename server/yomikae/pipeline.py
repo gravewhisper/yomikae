@@ -6,7 +6,7 @@ import io
 import re
 import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -335,6 +335,7 @@ async def translate_page(
     ruby: list[tuple[str, str]] = (),
     pinned: list[str | None] | None = None,
     hint: str = "",
+    upcoming: Sequence[Sequence[str]] = (),
 ) -> list[str]:
     if pinned is None:
         listed = [e for e in store.cast(context_key) if e.source != "auto" and e.ja]
@@ -356,6 +357,7 @@ async def translate_page(
         readings,
         terms,
         hint,
+        [list(page) for page in upcoming],
     )
     context = subset(context, [i for i, known in enumerate(recalled) if known is None])
     fresh = iter(await translate_lines(translator, todo, context) if todo else [])
