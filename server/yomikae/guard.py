@@ -68,10 +68,22 @@ class RequestGuard:
         self.extension_ids = extension_ids
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        kind = scope["type"]
+        if kind == "lifespan":
             return await self.app(scope, receive, send)
         client = scope.get("client")
-        problem = refusal(Headers(scope=scope), client[0] if client else None, self.extension_ids)
+        headers = Headers(scope=scope)
+        address = client[0] if client else None
+        if kind == "websocket":
+            detail = caller_problem(headers, address, self.extension_ids)
+            if detail is None:
+                return await self.app(scope, receive, send)
+            log.warning("refused websocket %s: %s", scope["path"], detail)
+            return await send({"type": "websocket.close", "code": 1008})
+        if kind != "http":
+            log.warning("refused a %s connection", kind)
+            return None
+        problem = refusal(headers, address, self.extension_ids)
         if problem is None:
             return await self.app(scope, receive, send)
         log.warning("refused %s %s: %s", scope["method"], scope["path"], problem.detail)
