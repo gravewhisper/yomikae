@@ -29,6 +29,7 @@ STAGES = ("detect", "balloons", "ocr", "translate", "inpaint", "typeset")
 WEBP_QUALITY = 90
 JPEG_QUALITY = 90
 MATCH_IOU = 0.5
+MAX_PIXELS = Image.MAX_IMAGE_PIXELS
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,8 @@ class BadImage(Exception):
 def decode_image(data: bytes) -> np.ndarray:
     try:
         with Image.open(io.BytesIO(data)) as im:
+            if im.width * im.height > MAX_PIXELS:
+                raise BadImage(f"image is {im.width}x{im.height} pixels, more than the limit of {MAX_PIXELS}")
             im.load()
             if im.mode in ("RGBA", "LA", "P"):
                 im = im.convert("RGBA")
@@ -61,6 +64,8 @@ def decode_image(data: bytes) -> np.ndarray:
             return np.asarray(im.convert("RGB"))
     except (UnidentifiedImageError, OSError, ValueError) as e:
         raise BadImage(str(e) or "could not decode image") from e
+    except Image.DecompressionBombError as e:
+        raise BadImage(f"image has more pixels than the limit of {MAX_PIXELS}: {e}") from e
 
 
 def encode(image: np.ndarray) -> tuple[str, bytes]:

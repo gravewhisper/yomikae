@@ -22,7 +22,7 @@ def image_size(data: bytes) -> tuple[int, int] | None:
     try:
         with Image.open(io.BytesIO(data)) as im:
             return im.size
-    except (UnidentifiedImageError, OSError, ValueError):
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         return None
 
 
@@ -80,7 +80,7 @@ def image_extension(data: bytes) -> str:
     try:
         with Image.open(io.BytesIO(data)) as im:
             fmt = im.format or ""
-    except (UnidentifiedImageError, OSError, ValueError):
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         fmt = ""
     if fmt:
         return PIL_EXTENSIONS.get(fmt, fmt.lower())
