@@ -26,6 +26,7 @@ OUTLINE = 2
 INK = 128
 MIN_INK = 20
 STRICT_CONFIDENCE = 0.9
+CREDIT_MARKS = frozenset({"作", "画", "絵", "文", "著", "作画", "原作", "漫画", "原案", "脚本", "構成", "作・画", "企画", "監修", "協力"})
 
 
 def load_ocr(device: str = "cpu"):
@@ -182,6 +183,8 @@ def read(ocr, image: np.ndarray, blocks: list[TextBlock], balloons: list[Balloon
         text = text.strip()
         enclosed = home is not None
         if not is_japanese_text(text) or (looks_like_sfx(text) and not enclosed and not in_bubble(gray, block) and not shares_bubble(gray, block, [b for b in blocks if b is not raw])):
+            continue
+        if not enclosed and unicodedata.normalize("NFKC", text) in CREDIT_MARKS:
             continue
         if raw.recovered and not enclosed and (confidence < STRICT_CONFIDENCE or looks_like_sfx(text)):
             continue
