@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from copy import copy
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
@@ -46,7 +45,6 @@ NOTCHES = 2
 OUTLINE_RING = 3
 OUTLINE_INK = 0.3
 HYPHEN_FLOOR = 0.75
-SQUEEZES = (0.8, 0.7)
 SOURCE_SCALE = 0.8
 SOURCE_CAP = 64
 CAPS_PITCH = 1.45
@@ -96,17 +94,11 @@ class Layout:
 
 class Fonts:
 
-    def __init__(self, path: Path, fallbacks: tuple[Path, ...] = (), squeeze: float = 1.0):
+    def __init__(self, path: Path, fallbacks: tuple[Path, ...] = ()):
         from fontTools.ttLib import TTFont
 
         self.paths = (path, *fallbacks)
         self.cmaps = [set(TTFont(str(p)).getBestCmap()) for p in self.paths]
-        self.squeeze = squeeze
-
-    def squeezed(self, factor: float) -> Fonts:
-        out = copy(self)
-        out.squeeze = factor
-        return out
 
     @lru_cache(maxsize=256)
     def get(self, size: int, index: int = 0) -> ImageFont.FreeTypeFont:
@@ -132,7 +124,7 @@ class Fonts:
         return out
 
     def length(self, text: str, size: int) -> float:
-        return self.squeeze * sum(self.get(size, i).getlength(run) for run, i in self.runs(text))
+        return sum(self.get(size, i).getlength(run) for run, i in self.runs(text))
 
     @lru_cache(maxsize=65536)
     def measure(self, text: str, size: int) -> float:
@@ -151,20 +143,7 @@ class Fonts:
             x += font.getlength(run)
 
     def draw(self, page: Image.Image, xy: tuple[int, int], text: str, size: int, fill: tuple, stroke: int = 0, halo: tuple = (255, 255, 255)) -> None:
-        if self.squeeze == 1:
-            self.write(ImageDraw.Draw(page), xy, text, size, fill=fill, stroke_width=stroke, stroke_fill=halo)
-            return
-        x, baseline = xy
-        margin = size + stroke
-        width = round(self.length(text, size) / self.squeeze) + 2 * margin
-        layer = Image.new("L", (width, 3 * margin), 0)
-        self.write(ImageDraw.Draw(layer), (margin, 2 * margin), text, size, fill=255)
-        layer = layer.resize((max(1, round(width * self.squeeze)), layer.height), Image.Resampling.LANCZOS)
-        origin = (round(x - margin * self.squeeze), baseline - 2 * margin)
-        if stroke:
-            disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * stroke + 1, 2 * stroke + 1))
-            page.paste(halo, origin, Image.fromarray(cv2.dilate(np.asarray(layer), disk)))
-        page.paste(fill, origin, layer)
+        self.write(ImageDraw.Draw(page), xy, text, size, fill=fill, stroke_width=stroke, stroke_fill=halo)
 
 
 @dataclass(frozen=True)
@@ -172,7 +151,6 @@ class Style:
 
     face: Fonts
     upper: bool
-    narrow: tuple[Style, ...] = ()
 
     def display(self, text: str) -> str:
         return self.face.clean(text.upper() if self.upper else text)
@@ -196,9 +174,7 @@ class Lettering:
 def load_lettering(case: str, fonts: tuple[Path, Path] | None = None) -> Lettering:
     dialogue, shout = fonts or lettering_fonts(case)
     upper = case == "upper"
-    face = Fonts(dialogue, FALLBACK_FONT_PATHS)
-    narrow = tuple(Style(face.squeezed(factor), upper) for factor in SQUEEZES)
-    return Lettering(Style(face, upper, narrow), Style(Fonts(shout, FALLBACK_FONT_PATHS), upper))
+    return Lettering(Style(Fonts(dialogue, FALLBACK_FONT_PATHS), upper), Style(Fonts(shout, FALLBACK_FONT_PATHS), upper))
 
 
 def spikes(mask: np.ndarray) -> int:
@@ -587,20 +563,16 @@ def try_layout(
     return Layout(size=size, lines=placed, style=style, faults=lined.faults + off, off=off)
 
 
-def looks(style: Style) -> list[tuple[Style, bool]]:
-    return [(look, hyphenate) for look in (style, *style.narrow) for hyphenate in (False, True)]
-
-
 def fit(text: str, region: Region, style: Style, cap: int, floor: int = MIN_SIZE, names: frozenset[str] = frozenset()) -> Layout | None:
     floor = min(max(MIN_SIZE, floor), max(MIN_SIZE, cap))
     readable = range(max(MIN_SIZE, cap), floor - 1, -1)
-    ways = looks(style)
+    ways = (False, True)
     for options, sizes in [*(((way,), readable) for way in ways), (ways, range(floor - 1, MIN_SIZE - 1, -1))]:
         best: Layout | None = None
         for size in sizes:
             if best and (best.faults == 0 or size < best.size * (1 - RELINE_SLACK)):
                 break
-            layout = next(filter(None, (try_layout(text, region, look, size, hyphenate, names) for look, hyphenate in options)), None)
+            layout = next(filter(None, (try_layout(text, region, style, size, hyphenate, names) for hyphenate in options)), None)
             if layout and (best is None or layout.faults < best.faults):
                 best = layout
         if best:
@@ -666,7 +638,7 @@ def fit_bubble(
 
 def shrink(text: str, region: Region, style: Style, names: frozenset[str]) -> Layout | None:
     for size in range(MIN_SIZE - 1, TINY - 1, -1):
-        layout = next(filter(None, (try_layout(text, region, look, size, hyphenate, names) for look, hyphenate in looks(style))), None)
+        layout = next(filter(None, (try_layout(text, region, style, size, hyphenate, names) for hyphenate in (False, True))), None)
         if layout:
             return layout
     return None
