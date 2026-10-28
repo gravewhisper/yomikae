@@ -709,8 +709,19 @@ def separate(blocks: list[Box], candidates: list[tuple[Region, Region]]) -> list
     return out
 
 
-def page_target(max_fits: list[int]) -> int:
+def page_target(max_fits: list[float]) -> int:
     return min(MAX_SIZE, int(np.median(max_fits)))
+
+
+def balloon_groups(bubbles: list[Bubble]) -> list[int]:
+    return [next(j for j, o in enumerate(bubbles) if o is b or (b.balloon is not None and o.balloon is b.balloon)) for b in bubbles]
+
+
+def once(values: list[float], groups: list[int]) -> list[float]:
+    by: dict[int, list[float]] = {}
+    for v, g in zip(values, groups):
+        by.setdefault(g, []).append(v)
+    return [float(max(v)) for v in by.values()]
 
 
 def glyph_sizes(bubbles: list[Bubble]) -> list[tuple[float, float]]:
@@ -730,10 +741,11 @@ def glyph_sizes(bubbles: list[Bubble]) -> list[tuple[float, float]]:
         return min(thickness, (box.w * box.h / max(1, len(b.source))) ** 0.5)
 
     estimates = [[runs(b.block) for b in bubbles], [per_char(b) for b in bubbles]]
+    groups = balloon_groups(bubbles)
     ratios = []
     for values in estimates:
-        known = [v for v in values if v > 0]
-        median = float(np.median(known)) if known else 0.0
+        known = [(v, g) for v, g in zip(values, groups) if v > 0]
+        median = float(np.median(once(*zip(*known)))) if known else 0.0
         ratios.append([v / median if v > 0 and median else None for v in values])
     glyph = [min((r for r in pair if r is not None), default=1.0) for pair in zip(*ratios)]
     lettering = [min(r, c) if r > 0 else 0.0 for r, c in zip(*estimates)]
@@ -756,6 +768,7 @@ class Piece:
     largest: tuple[Region, Layout]
     shout: float | None
     source: int
+    group: int = 0
 
     def lifted(self, size: int) -> int:
         return max(size, min(self.largest[1].size, self.source))
@@ -765,10 +778,11 @@ class Piece:
 
 
 def dialogue_sizes(pieces: list[Piece]) -> tuple[list[int], int, int]:
-    target = page_target([min(p.largest[1].size, round(MAX_SIZE * (1 + BAND))) for p in pieces])
+    groups = [p.group for p in pieces]
+    target = page_target(once([min(p.largest[1].size, round(MAX_SIZE * (1 + BAND))) for p in pieces], groups))
     floor = round(target * HYPHEN_FLOOR)
     base = [p.refit(target, floor) if p.largest[1].size > target or p.largest[1].size < floor else p.largest for p in pieces]
-    page_size = round(np.median(same_sizes([layout.size for _, layout in base])))
+    page_size = round(np.median(once(same_sizes([layout.size for _, layout in base]), groups)))
     wanted = [wanted_size(p, region, layout, page_size) for p, (region, layout) in zip(pieces, base)]
     return same_sizes([p.lifted(size) for p, size in zip(pieces, wanted)]), page_size, floor
 
@@ -781,7 +795,7 @@ def typeset(lettering: Lettering, inpainted: np.ndarray, bubbles: list[Bubble]) 
     grown = [bubble_region(gray, b, others) for b, others in zip(bubbles, siblings)]
     candidates = separate(blocks, [(g, art_region(box, w, h, g.dark)) for g, box in zip(grown, blocks)])
     pieces: list[Piece | None] = []
-    for bubble, (glyph, px), regions in zip(bubbles, glyph_sizes(bubbles), candidates):
+    for bubble, (glyph, px), regions, group in zip(bubbles, glyph_sizes(bubbles), candidates, balloon_groups(bubbles)):
         shout = glyph if is_shout(bubble, glyph, regions[0].burst) else None
         style = lettering.shout if shout else lettering.dialogue
         text = style.display(bubble.translation)
@@ -789,7 +803,7 @@ def typeset(lettering: Lettering, inpainted: np.ndarray, bubbles: list[Bubble]) 
         top = max(round(MAX_SIZE * (SHOUT_GLYPH_CAP if shout else 1 + BAND)), source)
         names = lining.names(bubble.translation)
         largest = fit_bubble(text, regions, style, top, names=names)
-        pieces.append(Piece(text, names, style, regions, largest, shout, source) if text else None)
+        pieces.append(Piece(text, names, style, regions, largest, shout, source, group) if text else None)
 
     dialogue = [p for p in pieces if p and not p.shout]
     sizes, page_size, floor = dialogue_sizes(dialogue) if dialogue else ([], MAX_SIZE, MIN_SIZE)
