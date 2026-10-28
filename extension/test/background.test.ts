@@ -137,6 +137,36 @@ describe('image fetching', () => {
       assert.equal(requested()[2], 'http://127.0.0.1:7878/v1/pages');
     });
   }
+  it('refuses an image that redirects closer to the user than the URL it started from', async () => {
+    const { connect, requests, requested } = await worker(['https://img.example/*']);
+    const tab = connect('https://reader.example/chapter/1');
+    const pages = [want('https://img.example/1.png'), want('https://img.example/2.png'), want('https://img.example/3.png')];
+    tab.send({ type: 'want', jobs: pages });
+    await tick();
+    const moved = (url: string) => Object.defineProperty(image(), 'url', { value: url });
+    requests[0]?.resolve(moved('http://127.0.0.1:8080/cam.png'));
+    requests[1]?.resolve(moved('http://192.168.1.1/cgi-bin/snapshot.jpg'));
+    await tick();
+    for (const [page, host, words] of [[pages[0], '127.0.0.1', 'this computer'], [pages[1], '192.168.1.1', 'your local network']] as const) {
+      const failed = tab.received.find((m) => m.key === page?.key && m.type === 'failed');
+      assert.ok(failed?.type === 'failed' && !failed.retryable && failed.error.includes(host) && failed.error.includes(words), JSON.stringify(failed));
+    }
+    assert.ok(!requested().includes('http://127.0.0.1:7878/v1/pages'));
+    requests[2]?.resolve(moved('https://cdn.example/3.png'));
+    await tick();
+    assert.deepEqual(requested().slice(3), ['http://127.0.0.1:7878/v1/pages']);
+  });
+
+  it('follows a redirect that stays on the local network for a page on the local network', async () => {
+    const { connect, requests, requested } = await worker();
+    const tab = connect('http://192.168.1.10:25600/book/1');
+    tab.send({ type: 'want', jobs: [want('http://192.168.1.10:25600/page/1.jpg')] });
+    await tick();
+    requests[0]?.resolve(Object.defineProperty(image(), 'url', { value: 'http://nas.local/cache/1.jpg' }));
+    await tick();
+    assert.deepEqual(requested().slice(1), ['http://127.0.0.1:7878/v1/pages']);
+  });
+
   it('stops reading an image larger than the server accepts and fails it without Retry', async () => {
     const { connect, requests, requested } = await worker(['https://img.example/*']);
     const tab = connect('https://reader.example/chapter/1');
