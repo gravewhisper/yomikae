@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import math
 import os
 import random
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -30,6 +32,8 @@ WORDY = re.compile(r"\w")
 JAPANESE_TEXT = re.compile(r"[\u3040-\u309f\u30a0-\u30fa\u3400-\u9fff\uff66-\uff9f]")
 TITLE_GLYPH = 0.065
 LOOKAHEAD_REACH = 3
+OPENERS = 3
+FINGERPRINT_KEYS = ("sha", "translator", "base_url", "reasoning_effort", "image", "image_side", "lookahead", "context_skip_filler", "context_stage", "stage_dir", "dataset_hash", "series", "limit", "pages", "chapter_starts")
 ROMAJI_SUFFIX = re.compile(r"-\s?(" + "|".join(sorted(set(SUFFIXES.values()))) + r")\b", re.I)
 
 
@@ -91,6 +95,41 @@ def upcoming(pages: list[dict], page_index: int, count: int) -> list[dict]:
     return after[:count]
 
 
+def pick_pages(pages: list[dict], ahead: dict[str, list[dict]], spec: str, starts: list[int]) -> list[dict]:
+    if spec != "openers":
+        wanted = [item.rpartition(":") for item in spec.split(",")]
+        return [p for p in pages if any(str(p["page_index"]) == index and series in ("", p["series"]) for series, _, index in wanted)]
+    keep = set()
+    for series, outlined in ahead.items():
+        fill = {p["page_index"]: p["filler"] for p in outlined}
+        have = [p["page_index"] for p in pages if p["series"] == series]
+        marks = starts or [min(fill, default=0)]
+        for i, start in enumerate(marks):
+            end = marks[i + 1] if i + 1 < len(marks) else math.inf
+            keep |= {(series, index) for index in [index for index in have if start <= index < end and not fill.get(index, False)][:OPENERS]}
+    return [p for p in pages if (p["series"], p["page_index"]) in keep]
+
+
+def fingerprint(meta: dict) -> str | None:
+    if meta["dirty"] or meta["sha"] == "unknown":
+        return None
+    return hashlib.sha256(json.dumps({k: meta[k] for k in FINGERPRINT_KEYS}, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def finished_twin(out_root: Path, label: str, wanted: str, pages: list[dict]) -> Path | None:
+    for meta_path in sorted(out_root.glob("*/meta.json")):
+        run_dir = meta_path.parent
+        if run_dir.name == label:
+            continue
+        try:
+            meta = json.loads(meta_path.read_text())
+        except ValueError:
+            continue
+        if meta.get("fingerprint") == wanted and meta.get("finished") and all(done(page_path(run_dir, p["series"], p["page_index"])) for p in pages if not p.get("context_only")):
+            return run_dir
+    return None
+
+
 def page_path(out: Path, series: str, page_index: int) -> Path:
     return out / "pages" / f"{series}__{page_index:03d}.json"
 
@@ -100,6 +139,13 @@ def git_sha(path: Path) -> str:
         return subprocess.run(["git", "-C", str(path), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         return "unknown"
+
+
+def git_dirty(path: Path) -> bool:
+    try:
+        return bool(subprocess.run(["git", "-C", str(path), "status", "--porcelain", "--", "."], capture_output=True, text=True, check=True).stdout.strip())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return True
 
 
 async def run(args) -> None:
@@ -116,18 +162,28 @@ async def run(args) -> None:
     (out / "pages").mkdir(parents=True, exist_ok=True)
     source_dir = Path(yomikae.__file__).resolve().parent
     settings = replace(Settings.from_env(), translator="openai", openai_base_url=args.base_url.rstrip("/"), openai_model=args.model, openai_reasoning_effort=args.reasoning_effort)
-    translator = make_translator(settings)
-    problem = await translator.health()
+    probe = make_translator(settings)
+    problem = await probe.health()
     if problem:
         sys.exit(problem)
+    if args.chapter_starts and args.pages != "openers":
+        sys.exit("--chapter-starts needs --pages openers")
+    if args.pages and args.context_stage:
+        sys.exit("--pages and --context-stage do not go together")
     pages, dropped = load_pages(args.annotation, args.series)
     if args.limit:
         pages = [p for p in pages if sum(q["series"] == p["series"] and q["page_index"] <= p["page_index"] for q in pages) <= args.limit]
+    ahead = outline(args.annotation, args.stage_dir) if args.lookahead or args.context_skip_filler or args.context_stage or args.pages == "openers" else {}
+    if args.chapter_starts and len(ahead) != 1:
+        sys.exit("--chapter-starts needs an annotation with one book")
+    if args.pages:
+        pages = pick_pages(pages, ahead, args.pages, args.chapter_starts)
     meta = {
         "label": args.label,
         "sha": git_sha(source_dir),
+        "dirty": git_dirty(source_dir.parent),
         "yomikae": str(source_dir),
-        "translator": translator.name,
+        "translator": probe.name,
         "base_url": settings.openai_base_url,
         "reasoning_effort": settings.openai_reasoning_effort,
         "image": args.image,
@@ -138,13 +194,31 @@ async def run(args) -> None:
         "stage_dir": str(args.stage_dir) if args.stage_dir else None,
         "dataset": str(args.annotation),
         "dataset_sha": git_sha(args.annotation.parent),
+        "dataset_hash": hashlib.sha256(args.annotation.read_bytes()).hexdigest()[:16],
+        "series": args.series,
+        "limit": args.limit,
+        "pages": args.pages,
+        "chapter_starts": args.chapter_starts,
+        "jobs": args.jobs,
         "blank_source_lines_dropped": dropped,
         "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+    meta["fingerprint"] = fingerprint(meta)
+    twin = finished_twin(args.out_root, args.label, meta["fingerprint"], pages) if args.reuse and meta["fingerprint"] else None
+    if twin:
+        shutil.copytree(twin / "pages", out / "pages", dirs_exist_ok=True)
+        for name in ("names.json", "comet.json"):
+            if (twin / name).exists():
+                shutil.copy(twin / name, out / name)
+        meta.update(reused_from=twin.name, finished=meta["started"], wall_s_this_session=0.0)
+        (out / "meta.json").write_text(json.dumps(meta, indent=1))
+        print(f"reusing {twin.name}: finished run with fingerprint {meta['fingerprint']}, nothing to translate", flush=True)
+        return
+    if args.reuse:
+        print(f"no finished run in {args.out_root} with fingerprint {meta['fingerprint']}{' (uncommitted changes, never reused)' if meta['dirty'] else ''}, translating", flush=True)
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
-    print(f"yomikae from {source_dir} at {meta['sha']}, {translator.name} at {settings.openai_base_url}, {len(pages)} pages", flush=True)
+    print(f"yomikae from {source_dir} at {meta['sha']}, {probe.name} at {settings.openai_base_url}, {len(pages)} pages, {args.jobs} at once", flush=True)
 
-    ahead = outline(args.annotation, args.stage_dir) if args.lookahead or args.context_skip_filler or args.context_stage else {}
     fill = {(series, p["page_index"]): p["filler"] for series, ps in ahead.items() for p in ps} if args.context_skip_filler else {}
     if args.context_stage:
         if not args.stage_dir:
@@ -153,48 +227,57 @@ async def run(args) -> None:
         extra = [{"series": series, "page_index": p["page_index"], "lines": [{"ja": line, "ref": ""} for line in p["lines"]], "boxes": [], "image": None, "context_only": True} for series, ps in ahead.items() for p in ps if (series, p["page_index"]) not in known]
         pages = sorted(pages + extra, key=lambda p: (p["series"], p["page_index"]))
         (out / "context" / "pages").mkdir(parents=True, exist_ok=True)
-    stores: dict[str, ContextStore] = {}
+    works = {series: [p for p in pages if p["series"] == series] for series in dict.fromkeys(p["series"] for p in pages)}
+    stores = {series: ContextStore() for series in works}
     todo = [p for p in pages if not done(page_path(out / "context" if p.get("context_only") else out, p["series"], p["page_index"]))]
+    gate = asyncio.Semaphore(args.jobs)
     started, finished = time.perf_counter(), 0
-    for page in pages:
-        series, index = page["series"], page["page_index"]
-        store = stores.setdefault(series, ContextStore())
-        path = page_path(out / "context" if page.get("context_only") else out, series, index)
-        if done(path):
-            saved = json.loads(path.read_text())
-            store.add(series, str(index), index, [ContextLine(line["ja"], line["hyp"]) for line in saved["lines"]], filler=fill.get((series, index), False))
-            continue
-        sources = [line["ja"] for line in page["lines"]]
-        recalled = store.recall(series, sources)
-        error = None
-        page_img = None
-        if args.image != "off" and sources:
-            with Image.open(page["image"]) as im:
-                page_img = page_image(im, [Box(*b) for b in page["boxes"]], args.image == "tagged", args.image_side)
-        nexts = upcoming(ahead.get(series, []), index, args.lookahead) if args.lookahead else []
-        tokens_before = translator.prompt_tokens
-        t = time.perf_counter()
-        try:
-            ruby = [tuple(pair) for line in page["lines"] for pair in line.get("ruby", [])]
-            hyps = await translate_page(translator, store, sources, series, index, page_img, ruby, upcoming=[p["lines"] for p in nexts]) if sources else []
-        except (TranslatorUnavailable, TranslatorFailed) as e:
-            hyps, error = [""] * len(sources), str(e)
-        ms = round((time.perf_counter() - t) * 1000)
-        if error is None:
-            store.add(series, str(index), index, [ContextLine(ja, hyp) for ja, hyp in zip(sources, hyps)], filler=fill.get((series, index), False))
-        record = {
-            "series": series,
-            "page_index": index,
-            "ms": ms,
-            "prompt_tokens": translator.prompt_tokens - tokens_before,
-            "error": error,
-            "upcoming": [p["page_index"] for p in nexts],
-            "lines": [{"line_index": i, **line, "hyp": hyp, "recalled": known is not None} for i, (line, hyp, known) in enumerate(zip(page["lines"], hyps, recalled))],
-        }
-        path.write_text(json.dumps(record, ensure_ascii=False, indent=1))
-        finished += 1
-        per_page = (time.perf_counter() - started) / finished
-        print(f"{series} p{index}: {len(sources)} lines in {ms} ms{' ERROR ' + error if error else ''}, {len(todo) - finished} pages left, about {per_page * (len(todo) - finished) / 60:.1f} min", flush=True)
+
+    async def translate_work(series: str, work: list[dict]) -> None:
+        nonlocal finished
+        translator = make_translator(settings)
+        store = stores[series]
+        for page in work:
+            index = page["page_index"]
+            path = page_path(out / "context" if page.get("context_only") else out, series, index)
+            if done(path):
+                saved = json.loads(path.read_text())
+                store.add(series, str(index), index, [ContextLine(line["ja"], line["hyp"]) for line in saved["lines"]], filler=fill.get((series, index), False))
+                continue
+            sources = [line["ja"] for line in page["lines"]]
+            recalled = store.recall(series, sources)
+            error = None
+            page_img = None
+            if args.image != "off" and sources:
+                with Image.open(page["image"]) as im:
+                    page_img = page_image(im, [Box(*b) for b in page["boxes"]], args.image == "tagged", args.image_side)
+            nexts = upcoming(ahead.get(series, []), index, args.lookahead) if args.lookahead else []
+            tokens_before = translator.prompt_tokens
+            async with gate:
+                t = time.perf_counter()
+                try:
+                    ruby = [tuple(pair) for line in page["lines"] for pair in line.get("ruby", [])]
+                    hyps = await translate_page(translator, store, sources, series, index, page_img, ruby, upcoming=[p["lines"] for p in nexts]) if sources else []
+                except (TranslatorUnavailable, TranslatorFailed) as e:
+                    hyps, error = [""] * len(sources), str(e)
+                ms = round((time.perf_counter() - t) * 1000)
+            if error is None:
+                store.add(series, str(index), index, [ContextLine(ja, hyp) for ja, hyp in zip(sources, hyps)], filler=fill.get((series, index), False))
+            record = {
+                "series": series,
+                "page_index": index,
+                "ms": ms,
+                "prompt_tokens": translator.prompt_tokens - tokens_before,
+                "error": error,
+                "upcoming": [p["page_index"] for p in nexts],
+                "lines": [{"line_index": i, **line, "hyp": hyp, "recalled": known is not None} for i, (line, hyp, known) in enumerate(zip(page["lines"], hyps, recalled))],
+            }
+            path.write_text(json.dumps(record, ensure_ascii=False, indent=1))
+            finished += 1
+            per_page = (time.perf_counter() - started) / finished
+            print(f"{series} p{index}: {len(sources)} lines in {ms} ms{' ERROR ' + error if error else ''}, {len(todo) - finished} pages left, about {per_page * (len(todo) - finished) / 60:.1f} min", flush=True)
+
+    await asyncio.gather(*(translate_work(series, work) for series, work in works.items()))
     learned = {series: [asdict(e) for e in store.saved_names(series)] for series, store in stores.items() if store.saved_names(series)}
     if learned:
         (out / "names.json").write_text(json.dumps(learned, ensure_ascii=False, indent=1))
@@ -223,7 +306,7 @@ def comet_gpus(device: str) -> int:
     import torch
 
     if not torch.cuda.is_available():
-        print("COMET on cpu: CUDA is not available", flush=True)
+        print(f"COMET on cpu: {'this torch build has no CUDA' if torch.version.cuda is None else 'CUDA is not available'}", flush=True)
         return 0
     free, _ = torch.cuda.mem_get_info()
     if free < COMET_GPU_MIN_FREE:
@@ -236,10 +319,9 @@ def comet_gpus(device: str) -> int:
 def comet(out: Path, model_name: str, device: str = "cpu") -> None:
     from comet import download_model, load_from_checkpoint
 
-    _, lines = read_lines(out)
-    scored = [line for line in lines if line["ref"].strip()]
+    triples = json.loads((out / "comet-todo.json").read_text())
     model = load_from_checkpoint(download_model(model_name))
-    data = [{"src": line["ja"], "mt": clean(line["hyp"]), "ref": clean(line["ref"])} for line in scored]
+    data = [{"src": src, "mt": mt, "ref": ref} for src, mt, ref in triples]
     gpus = comet_gpus(device)
     try:
         result = model.predict(data, batch_size=32, gpus=gpus, progress_bar=False)
@@ -248,23 +330,53 @@ def comet(out: Path, model_name: str, device: str = "cpu") -> None:
             raise
         print("COMET ran out of GPU memory, scoring on cpu", flush=True)
         result = model.predict(data, batch_size=32, gpus=0, progress_bar=False)
-    keys = [f"{line['series']}/{line['page_index']}/{line['line_index']}" for line in scored]
-    (out / "comet.json").write_text(json.dumps({"model": model_name, "scores": dict(zip(keys, result.scores))}, indent=1))
+    (out / "comet-done.json").write_text(json.dumps(result.scores))
 
 
-def comet_scores(out: Path, args, keys: list[str]) -> dict[str, float]:
+def triple(line: dict) -> str:
+    return json.dumps([line["ja"], clean(line["hyp"]), clean(line["ref"])], ensure_ascii=False)
+
+
+def earlier_scores(out: Path, model_name: str) -> dict[str, float]:
+    known = {}
+    for summary in out.parent.glob("*/summary.json"):
+        if summary.parent == out:
+            continue
+        try:
+            if json.loads(summary.read_text()).get("comet_model") != model_name:
+                continue
+            rows = [json.loads(row) for row in (summary.parent / "lines.jsonl").read_text().splitlines()]
+        except (OSError, ValueError):
+            continue
+        known.update((triple(row), row["comet"]) for row in rows if row.get("comet") is not None)
+    return known
+
+
+def comet_scores(out: Path, args, lines: list[dict]) -> tuple[dict[str, float], int]:
+    scored = {f"{line['series']}/{line['page_index']}/{line['line_index']}": triple(line) for line in lines if line["ref"].strip()}
     path = out / "comet.json"
     if path.exists():
         cached = json.loads(path.read_text())
-        if cached["model"] == args.comet_model and set(cached["scores"]) == set(keys):
-            return cached["scores"]
-    python = args.comet_python or (COMET_PYTHON if COMET_PYTHON.exists() else Path(sys.executable))
-    env = {**os.environ, "CUDA_VISIBLE_DEVICES": ""} if args.comet_device == "cpu" else dict(os.environ)
-    print(f"scoring COMET with {args.comet_model} under {python} on {args.comet_device}", flush=True)
-    t = time.perf_counter()
-    subprocess.run([str(python), "-I", str(Path(__file__).resolve()), "--comet-model", args.comet_model, "--comet-device", args.comet_device, "--comet-only", "--out-root", str(out.parent), "--label", out.name], env=env, check=True)
-    print(f"COMET took {time.perf_counter() - t:.0f} s", flush=True)
-    return json.loads(path.read_text())["scores"]
+        if cached["model"] == args.comet_model and set(cached["scores"]) == set(scored) and cached.get("triples", scored) == scored:
+            return cached["scores"], cached.get("reused", 0)
+    known = {} if args.comet_fresh else earlier_scores(out, args.comet_model)
+    todo = sorted(set(scored.values()) - set(known))
+    reused = sum(t in known for t in scored.values())
+    print(f"COMET: {reused} of {len(scored)} lines already scored in earlier runs with the same source, output and reference", flush=True)
+    if todo:
+        python = args.comet_python or (COMET_PYTHON if COMET_PYTHON.exists() else Path(sys.executable))
+        env = {**os.environ, "CUDA_VISIBLE_DEVICES": ""} if args.comet_device == "cpu" else dict(os.environ)
+        print(f"scoring {len(todo)} lines with {args.comet_model} under {python} on {args.comet_device}", flush=True)
+        clock = time.perf_counter()
+        (out / "comet-todo.json").write_text(json.dumps([json.loads(t) for t in todo], ensure_ascii=False))
+        subprocess.run([str(python), "-I", str(Path(__file__).resolve()), "--comet-model", args.comet_model, "--comet-device", args.comet_device, "--comet-only", "--out-root", str(out.parent), "--label", out.name], env=env, check=True)
+        known.update(zip(todo, json.loads((out / "comet-done.json").read_text())))
+        (out / "comet-todo.json").unlink()
+        (out / "comet-done.json").unlink()
+        print(f"COMET took {time.perf_counter() - clock:.0f} s", flush=True)
+    scores = {key: known[t] for key, t in scored.items()}
+    path.write_text(json.dumps({"model": args.comet_model, "scores": scores, "triples": scored, "reused": reused}, ensure_ascii=False, indent=1))
+    return scores, reused
 
 
 def bootstrap(values: list[float], seed: int = 0) -> tuple[float, float]:
@@ -349,8 +461,7 @@ def pct(n: int, d: int) -> str:
 def score(out: Path, args) -> None:
     meta = json.loads((out / "meta.json").read_text())
     pages, lines = read_lines(out)
-    keys = [f"{line['series']}/{line['page_index']}/{line['line_index']}" for line in lines if line["ref"].strip()]
-    scores = comet_scores(out, args, keys)
+    scores, reused = comet_scores(out, args, lines)
     with (out / "lines.jsonl").open("w") as f:
         for line in lines:
             key = f"{line['series']}/{line['page_index']}/{line['line_index']}"
@@ -370,14 +481,18 @@ def score(out: Path, args) -> None:
         "ms_per_line": round(sum(ms) / max(1, system["lines"] - system["recalled"])),
         "median_prompt_tokens": round(statistics.median(p.get("prompt_tokens", 0) for p in pages)),
     }
-    summary = {"meta": meta, "comet_model": args.comet_model, "system": system, "by_series": by_series, "honorifics": {k: v for k, v in hon.items() if k != "cases"}, "timing": timing, "failed_pages": failed}
+    summary = {"meta": meta, "comet_model": args.comet_model, "comet_reused_lines": reused, "system": system, "by_series": by_series, "honorifics": {k: v for k, v in hon.items() if k != "cases"}, "timing": timing, "failed_pages": failed}
     (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=1))
 
     s = system
     md = [f"# Translation benchmark {meta['label']}", ""]
     md.append(f"OpenMantra, translation only: gold Japanese per bubble through `yomikae.pipeline.translate_page`, one page per call in reading order, one context key per series. Commit `{meta['sha']}`, translator `{meta['translator']}` at `{meta['base_url']}`, reasoning_effort `{meta['reasoning_effort'] or 'unset'}`, {timing['pages']} pages, {s['lines']} lines ({meta['blank_source_lines_dropped']} lines with blank Japanese dropped).")
+    if meta.get("pages"):
+        md += ["", f"Pages: only `{meta['pages']}`{' with chapters starting at ' + ', '.join(map(str, meta['chapter_starts'])) if meta.get('chapter_starts') else ''}. Skipped pages never entered context, so compare these scores only with runs of the same pages."]
+    if meta.get("reused_from"):
+        md += ["", f"Translations reused from run `{meta['reused_from']}`, a finished run with the same fingerprint `{meta['fingerprint']}` (commit, translator, settings, page selection and dataset). Nothing was translated again; the timing below is that run's."]
     md += ["", "## Scores", ""]
-    md.append(f"COMET `{args.comet_model}` with a 95% bootstrap interval over lines ({BOOTSTRAP} resamples), chrF case-insensitive and cased. {s['scored']} lines have a reference; blank output counts as an empty hypothesis.")
+    md.append(f"COMET `{args.comet_model}` with a 95% bootstrap interval over lines ({BOOTSTRAP} resamples), chrF case-insensitive and cased. {s['scored']} lines have a reference; blank output counts as an empty hypothesis. {reused} of them took their score from an earlier run in the same folder with the same source, output and reference.")
     md += ["", "| Series | Lines | COMET | 95% CI | chrF | chrF cased | Blank |", "| --- | ---: | ---: | --- | ---: | ---: | ---: |"]
     for name, v in [("**all**", s)] + list(by_series.items()):
         md.append(f"| {name} | {v['scored']} | {v['comet']:.4f} | {v['comet_ci95'][0]:.4f} to {v['comet_ci95'][1]:.4f} | {v['chrf']} | {v['chrf_cased']} | {v['blank']} |")
@@ -391,7 +506,7 @@ def score(out: Path, args) -> None:
         "",
         "## Timing",
         "",
-        f"Per page, translation only: median {timing['median_ms']} ms, p90 {timing['p90_ms']} ms, {timing['total_s']} s over {timing['pages']} pages, {timing['ms_per_line']} ms per translated line, median {timing['median_prompt_tokens']} prompt tokens. Page image sent: {meta.get('image', 'off')}.",
+        f"Per page, translation only, with up to {meta.get('jobs', 1)} pages from different series in flight at once: median {timing['median_ms']} ms, p90 {timing['p90_ms']} ms, {timing['total_s']} s over {timing['pages']} pages, {timing['ms_per_line']} ms per translated line, median {timing['median_prompt_tokens']} prompt tokens. Page image sent: {meta.get('image', 'off')}.",
         "",
         "## Method",
         "",
@@ -409,7 +524,7 @@ def score(out: Path, args) -> None:
     print(f"wrote {out / 'scorecard.md'}")
 
 
-def main() -> None:
+def parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser()
     ap.add_argument("annotation", type=Path, nargs="?", help="OpenMantra annotation.json")
     ap.add_argument("--out-root", type=Path, required=True)
@@ -425,12 +540,21 @@ def main() -> None:
     ap.add_argument("--context-stage", action="store_true", help="also translate --stage-dir pages missing from the annotation, unscored, so they enter context as on a real read")
     ap.add_argument("--series", action="append", default=[], help="only this book_title, repeatable")
     ap.add_argument("--limit", type=int, default=0, help="pages per series, for a smoke run")
+    ap.add_argument("--pages", help="only these pages: 'openers' for the first 3 non-filler pages of each series, or page indexes like 4,9 or SERIES:4; skipped pages never enter context")
+    ap.add_argument("--chapter-starts", type=lambda v: [int(x) for x in v.split(",")], default=[], help="page indexes where chapters start, so --pages openers takes 3 from each chapter of a one-book annotation")
+    ap.add_argument("--jobs", type=int, default=3, help="series translated at once; pages within a series stay in reading order")
+    ap.add_argument("--reuse", action="store_true", help="copy a finished run in --out-root with the same commit, translator, settings and dataset instead of translating")
     ap.add_argument("--score", action="store_true", help="only rescore an existing run")
     ap.add_argument("--comet-model", default=COMET_MODEL)
     ap.add_argument("--comet-python", type=Path, help=f"interpreter with unbabel-comet, default {COMET_PYTHON}")
     ap.add_argument("--comet-device", choices=("cpu", "auto"), default="cpu", help="auto uses the GPU when it has 4 GiB free, else the CPU")
+    ap.add_argument("--comet-fresh", action="store_true", help="score every line with COMET, without taking scores of identical lines from other runs in --out-root")
     ap.add_argument("--comet-only", action="store_true", help=argparse.SUPPRESS)
-    args = ap.parse_args()
+    return ap
+
+
+def main() -> None:
+    args = parser().parse_args()
     out = args.out_root / args.label
     if args.comet_only:
         comet(out, args.comet_model, args.comet_device)
