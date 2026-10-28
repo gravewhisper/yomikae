@@ -361,7 +361,10 @@ async function readyFrom(server: string, res: Response, contextKey: string): Pro
     throw new ServerDown('Local server not reachable.');
   });
   if (SERVER_DOWN_STATUSES.has(rendered.status)) throw new ServerDown(`Rendered page fetch failed (${rendered.status}).`);
-  if (!rendered.ok) throw new JobError(`Rendered page fetch failed (${rendered.status}).`, true);
+  if (!rendered.ok) {
+    const { code, detail } = parseServerError(await rendered.json().catch(() => null));
+    throw new JobError(`Rendered page fetch failed (${rendered.status}): ${detail}`, !FINAL_ERRORS.has(code));
+  }
   const bytes = new Uint8Array(await rendered.arrayBuffer());
   return { page, mime: rendered.headers.get('content-type') ?? 'image/webp', base64: toBase64(bytes), contextKey };
 }
