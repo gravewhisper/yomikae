@@ -46,7 +46,7 @@ export function fakeChrome(data: Record<string, unknown> = {}, granted: string[]
     },
     tabs: { TAB_ID_NONE: -1, query: async () => [], sendMessage: async () => undefined },
     declarativeNetRequest: { RuleActionType: {}, HeaderOperation: {}, ResourceType: {}, getSessionRules: async () => [], updateSessionRules: async () => undefined },
-    runtime: { onConnect: event('connect'), onMessage: event('message'), onInstalled: event('installed'), onStartup: event('startup'), sendMessage: async (msg: unknown) => void sent.push(msg) },
+    runtime: { onConnect: event('connect'), onMessage: event('message'), onInstalled: event('installed'), onStartup: event('startup'), sendMessage: async (msg: unknown) => void sent.push(msg), getURL: (path: string) => `chrome-extension://fakeextensionid/${path}` },
   };
   return { chrome, data, grants, scripts, revoked, listeners, sent };
 }

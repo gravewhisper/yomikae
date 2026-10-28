@@ -103,6 +103,13 @@ describe('image fetching', () => {
     assert.ok(failed?.type === 'failed' && failed.error.includes('this computer'));
   });
 
+  it("fetches any image for the extension's own pages", async () => {
+    const { connect, requested } = await worker();
+    connect('chrome-extension://fakeextensionid/popup.html?tab=3').send({ type: 'want', jobs: [want('http://127.0.0.1:8000/1.png'), want('http://192.168.1.4/2.png')] });
+    await tick();
+    assert.deepEqual(requested(), ['http://127.0.0.1:8000/1.png', 'http://192.168.1.4/2.png']);
+  });
+
   it('still fetches images on the web, and images on this computer for a page on this computer', async () => {
     const { connect, requested } = await worker();
     connect('https://reader.example/chapter/1').send({ type: 'want', jobs: [want('https://img.example/1.png')] });
