@@ -88,7 +88,7 @@ class Layout:
     lines: list[tuple[str, int, int]]
     style: Style
     faults: int = 0
-    clip: bool = False
+    spill: bool = False
     off: bool = False
 
 
@@ -631,8 +631,11 @@ def fit_bubble(
     if layout is None:
         cx, cy = next(iter(layout_centers(region)), region.anchor)
         above, below = style.extent(MIN_SIZE)
-        x = round(region.box.x0 + cx - style.face.length(text, MIN_SIZE) / 2)
-        layout = Layout(MIN_SIZE, [(text, x, region.box.y0 + cy + (above - below) // 2)], style, clip=bool(region.mask.any()))
+        pitch = style.pitch(MIN_SIZE)
+        words = text.split() or [text]
+        first = region.box.y0 + cy - (above + (len(words) - 1) * pitch + below) // 2 + above
+        lines = [(w, round(region.box.x0 + cx - style.face.length(w, MIN_SIZE) / 2), first + i * pitch) for i, w in enumerate(words)]
+        layout = Layout(MIN_SIZE, lines, style, spill=True)
     return region, layout
 
 
@@ -781,11 +784,7 @@ def typeset(lettering: Lettering, inpainted: np.ndarray, bubbles: list[Bubble]) 
             region, layout = p.refit(chosen[id(p)], MIN_SIZE if p.shout else floor)
         out.append(layout.size)
         ink, halo = ((255, 255, 255), (0, 0, 0)) if region.dark else ((0, 0, 0), (255, 255, 255))
-        stroke = max(2, layout.size // 8) if region.on_art or region.busy else 0
-        canvas = page.copy() if layout.clip else page
+        stroke = max(2, layout.size // 8) if region.on_art or region.busy or layout.spill else 0
         for line, x, y in layout.lines:
-            layout.style.face.draw(canvas, (x, y), line, layout.size, ink, stroke, halo)
-        if layout.clip:
-            box = region.box
-            page.paste(canvas.crop((box.x0, box.y0, box.x1, box.y1)), (box.x0, box.y0), Image.fromarray(region.mask.astype(np.uint8) * 255))
+            layout.style.face.draw(page, (x, y), line, layout.size, ink, stroke, halo)
     return np.asarray(page), out

@@ -523,6 +523,13 @@ def test_a_bubble_whose_regions_were_trimmed_away_still_letters_instead_of_crash
     assert layout.lines
 
 
+def test_text_that_fits_nowhere_is_laid_out_whole_instead_of_cut_at_the_outline():
+    text = FONTS.dialogue.display("Of the discouragements, brother...")
+    _, layout = typeset.fit_bubble(text, (ellipse_region(34, 60),) * 2, FONTS.dialogue, 32)
+    assert " ".join(line for line, _, _ in layout.lines) == text
+    assert layout.spill
+
+
 def glyph_block(x0: int, y0: int, columns: int, thickness: int, height: int, gap: int) -> TextBlock:
     box = Box(x0, y0, x0 + columns * thickness + (columns - 1) * gap, y0 + height)
     mask = np.zeros((box.h, box.w), np.uint8)
