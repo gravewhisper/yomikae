@@ -16,7 +16,14 @@ const HEALTH_BACKOFF_MS = [2_000, 4_000, 8_000, 16_000, 30_000];
 const HEALTH_TIMEOUT_MS = 5_000;
 const SERVER_DOWN_STATUSES = new Set([502, 503, 504]);
 const FINAL_ERRORS = new Set(['bad_image', 'bad_request', 'forbidden']);
-const LOOPBACK = /^(localhost|.+\.localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1?\]|\[::ffff:(7f[0-9a-f]{2}|0):[0-9a-f]+\])$/;
+const PLACES = [
+  { rank: 2, words: 'this computer', host: /^(localhost|.+\.localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1?\]|\[::ffff:(7f[0-9a-f]{2}|0):[0-9a-f]+\])$/ },
+  {
+    rank: 1,
+    words: 'your local network',
+    host: /^(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+|\[f[cd][0-9a-f]*:[0-9a-f:]*\]|\[fe[89ab][0-9a-f]*:[0-9a-f:]*\]|\[::ffff:(a[0-9a-f]{2}|ac1[0-9a-f]|c0a8|a9fe|64[4-7][0-9a-f]):[0-9a-f]+\]|[^.:[\]]+|.+\.(local|lan|home\.arpa|internal|localdomain))$/,
+  },
+];
 
 type Entry = {
   want: Want;
@@ -94,22 +101,26 @@ function sendCached(port: chrome.runtime.Port, key: string): boolean {
   return true;
 }
 
-function isLoopback(url: string): boolean {
+function placeOf(url: string): (typeof PLACES)[number] | undefined {
   try {
-    return LOOPBACK.test(new URL(url).hostname.replace(/\.$/, ''));
+    const host = new URL(url).hostname.replace(/\.$/, '');
+    return PLACES.find((p) => p.host.test(host));
   } catch {
-    return false;
+    return undefined;
   }
 }
 
-function loopbackRefusal(port: chrome.runtime.Port, w: Want): string | undefined {
-  if (isLoopback(port.sender?.tab?.url ?? '')) return undefined;
-  const url = w.candidates.find(isLoopback);
-  return url && `Refused to fetch ${new URL(url).hostname}: a web page cannot load images from this computer.`;
+function localRefusal(port: chrome.runtime.Port, w: Want): string | undefined {
+  const tabRank = placeOf(port.sender?.tab?.url ?? '')?.rank ?? 0;
+  for (const url of w.candidates) {
+    const place = placeOf(url);
+    if (place && place.rank > tabRank) return `Refused to fetch ${new URL(url).hostname}: a web page cannot load images from ${place.words}.`;
+  }
+  return undefined;
 }
 
 function want(port: chrome.runtime.Port, w: Want): void {
-  const refusal = loopbackRefusal(port, w);
+  const refusal = localRefusal(port, w);
   if (refusal) return send(port, { type: 'failed', key: w.key, error: refusal, retryable: false });
   if (sendCached(port, w.key)) return;
   const existing = entries.get(w.key);
@@ -364,7 +375,7 @@ function namesChanged(contextKey: string): void {
 
 async function retranslate(port: chrome.runtime.Port, r: RetranslateRequest): Promise<void> {
   const { key, contextKey, pageIndex } = r.want;
-  const refusal = loopbackRefusal(port, r.want);
+  const refusal = localRefusal(port, r.want);
   if (refusal) return send(port, { type: 'retranslated', key, outcome: { ok: false, error: refusal } });
   try {
     const image = originals.get(key) ?? (await fetchImage(r.want.candidates));
@@ -389,7 +400,7 @@ async function retranslate(port: chrome.runtime.Port, r: RetranslateRequest): Pr
 
 async function report(port: chrome.runtime.Port, r: ReportRequest): Promise<void> {
   const { key } = r.want;
-  const refusal = loopbackRefusal(port, r.want);
+  const refusal = localRefusal(port, r.want);
   if (refusal) return send(port, { type: 'reported', key, outcome: { ok: false, error: refusal } });
   try {
     const image = originals.get(key) ?? (await fetchImage(r.want.candidates));
