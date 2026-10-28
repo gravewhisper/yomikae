@@ -26,7 +26,7 @@ A request body must come with a `Content-Length` of at most 64 MB. A chunked bod
 ### `GET /v1/health`
 
 ```json
-{ "ok": true, "version": "0.2.0", "translator": "openai:google/gemma-4-12b", "gpu": "NVIDIA GeForce RTX 5070 Ti" }
+{ "ok": true, "version": "0.3.0", "translator": "openai:google/gemma-4-12b", "gpu": "NVIDIA GeForce RTX 5070 Ti" }
 ```
 
 ### `POST /v1/pages`
