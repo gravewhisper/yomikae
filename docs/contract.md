@@ -6,7 +6,18 @@ The server never fetches URLs. Only the extension touches the network for page i
 
 ## Server
 
-Base URL: `http://127.0.0.1:7878`. The browser tests point the extension at a mock server by setting `serverUrl` in `chrome.storage.local`. It is a test hook, not a setting: nothing in the extension writes it. CORS allows `chrome-extension://*` origins for `GET`, `POST`, `PUT` and `DELETE`.
+Base URL: `http://127.0.0.1:7878`. The browser tests point the extension at a mock server by setting `serverUrl` in `chrome.storage.local`. It is a test hook, not a setting: nothing in the extension writes it, and web pages cannot reach `chrome.storage`. CORS allows `chrome-extension://*` origins for `GET`, `POST`, `PUT` and `DELETE`.
+
+### Who may call the server
+
+Every request, on every path, passes these checks first. A request that fails one gets 403 `forbidden` and the server logs a warning that names the reason.
+
+- The client address is a loopback address. This holds even if the server is started with `--host 0.0.0.0` by mistake.
+- The `Host` header names this computer: `127.0.0.1`, `localhost` or `[::1]`, any port. This stops DNS rebinding, where a web site's name starts resolving to 127.0.0.1 so that its pages become same-origin with the server.
+- If the request has an `Origin` header, it is `chrome-extension://<id>`. Browsers add `Origin` to every cross-origin `fetch` and every form `POST`, and pages cannot change it, so this refuses all of them, including simple multipart `POST`s that skip CORS preflight. Setting `YOMIKAE_EXTENSION_ID` to an extension id (or several, comma-separated) accepts only those ids.
+- If the request has no `Origin` but has `Sec-Fetch-Site`, it is `none` or `same-origin`. Chrome sends `Sec-Fetch-Site: cross-site` or `same-site` with every request a web page causes, including `<img>`, `<script>` and link loads, which carry no `Origin`. The extension's own `GET`s carry no `Origin` and `Sec-Fetch-Site: none`.
+
+A request with neither header comes from a local tool such as `curl`, the benchmark scripts or the test suite, and is accepted. No content script talks to the server: the background worker fetches every rendered page and hands its bytes to the tab, which shows them as a `blob:` URL.
 
 ### `GET /v1/health`
 
@@ -179,7 +190,7 @@ Response `200 application/json`:
 
 ### Errors
 
-Non-2xx responses return `{ "error": "<code>", "detail": "<human text>" }`. Codes: `bad_image`, `bad_request`, `not_found`, `translator_unavailable`, `translator_error`, `internal`. A request with missing or malformed fields also gets `bad_image`. `translator_error` (500) means the translator answered but refused the request, for example a 400, or a 404 because it has no model named by `YOMIKAE_OPENAI_MODEL`. A 404 fails the page rather than waiting, because the health check only asks whether the translator answers, so waiting would resend the page forever. The server resends a 400 whose body contains `Channel Error` or `predict request failed: fetch failed`, which LM Studio returns now and then for a request that succeeds when sent again, up to twice, after 0.5 s and then 1 s, before it answers `translator_error`. If the translator is down, the server still answers `/v1/health` with `"ok": false` and a `detail`.
+Non-2xx responses return `{ "error": "<code>", "detail": "<human text>" }`. Codes: `bad_image`, `bad_request`, `forbidden`, `not_found`, `translator_unavailable`, `translator_error`, `internal`. `forbidden` (403) means the request failed a check in [Who may call the server](#who-may-call-the-server); the extension shows it as a failure without Retry. A request with missing or malformed fields also gets `bad_image`. `translator_error` (500) means the translator answered but refused the request, for example a 400, or a 404 because it has no model named by `YOMIKAE_OPENAI_MODEL`. A 404 fails the page rather than waiting, because the health check only asks whether the translator answers, so waiting would resend the page forever. The server resends a 400 whose body contains `Channel Error` or `predict request failed: fetch failed`, which LM Studio returns now and then for a request that succeeds when sent again, up to twice, after 0.5 s and then 1 s, before it answers `translator_error`. If the translator is down, the server still answers `/v1/health` with `"ok": false` and a `detail`.
 
 ## Extension page state
 

@@ -60,6 +60,10 @@ def lettering_fonts(case: str, fonts: Path = FONTS_DIR, env=os.environ) -> tuple
     return Path(env.get("YOMIKAE_DIALOGUE_FONT") or dialogue), Path(env.get("YOMIKAE_SHOUT_FONT") or shout)
 
 
+def extension_ids(env=os.environ) -> tuple[str, ...]:
+    return tuple(i.strip() for i in env.get("YOMIKAE_EXTENSION_ID", "").split(",") if i.strip())
+
+
 def parse_case(value: str) -> str:
     if value not in LETTERING_FONTS:
         raise ValueError(f"YOMIKAE_CASE must be one of {', '.join(LETTERING_FONTS)}, not {value!r}")
