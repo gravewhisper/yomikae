@@ -344,4 +344,11 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 
 **Tried and rejected.** Changing the reply format. On the same input the list of strings left the heart alone 7 times in 10, an object keyed by id 10 in 10, and the older id and text objects 10 in 10, so the format is not what moves the word.
 
-**Not fixed.** The 作 badge still gets "perv" or "treasure", and about 2 runs in 10 split the word as "per-" / "verted♡". The bubble then has words, so this check does not see it. The title is also read only in part, which leaves 知らない uninpainted.
+**Followed up the same night.** That check missed the other way the word moved, "per-" on the badge and "verted♡" in the bubble, which the owner then saw. Two more changes, PIPELINE_VERSION 36:
+
+- A line whose whole text is a credit word (作, 画, 原作, 作画, 漫画 and the like) and that sits in no balloon is left out of the dialogue, like a sound effect outside a bubble. Its pixels stay as drawn. None of the 2,663 human-annotated lines in OpenMantra and the two Naruto sets is such a word.
+- When one line ends in a word cut with a hyphen and the next starts in lower case ("per-" / "verted♡"), each of the two lines is asked again in its own call. Across about 16,000 saved model lines and the human references this never happens.
+
+Through `Engine.process` on the reported page, 10 runs: before, 6 runs left the bubble with only the heart and others split the word; after, 作 is not sent and the bubble read "pervert♡" or "Pervert♡" all 10 times.
+
+**Going back to v0.2.0 does not fix it.** The owner first asked to revert. Rebuilt as v0.2.0 plus the picked server, translator and security fixes (local branch `revert-to-v0.2.0`), the same page broke 8 times in 10: 3 left only the heart and 5 split the word. The cause is this page's layout, not a change since v0.2.0.
