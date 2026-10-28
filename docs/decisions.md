@@ -280,6 +280,12 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 
 **Tried and rejected.** A per-install token. The server would have to hand it to the extension, which cannot read files, so you would copy it from the server's log into a settings page the extension does not have, and paste it again after every reinstall. The header checks need no setup and block the same requests from web pages. What they leave open is another installed extension that has access to `127.0.0.1`. Setting `YOMIKAE_EXTENSION_ID` closes that for anyone who wants it.
 
+## Uploads are decoded only as web image formats, with Pillow 13
+
+**Decision.** The server opens uploads with Pillow's JPEG, PNG, WebP, GIF and AVIF plugins only, and `pyproject.toml` requires Pillow 13.0 or newer.
+
+**Why.** Pillow 12.3 has 44 advisories fixed in 13.0, among them heap overflows in the JPEG, FlashPix and TIFF decoders and a Ghostscript argument injection through EPS. The extension posts whatever image a site serves, so a hostile site reaches the decoder through the user's own extension, and the request checks cannot stop that. Limiting the plugins keeps rare formats away from their decoders on any Pillow version. Measured on 2026-10-28: the full server suite passes on Pillow 13.0.0, and six synthetic pages rendered through the fake translator came out byte-identical on 12.3.0 and 13.0.0, so the upgrade changes no output. An existing venv keeps its Pillow until you reinstall or run `uv pip install -U pillow`.
+
 ## Local install only
 
 **Decision.** You install the extension with **Load unpacked** from your own build. It is not on the Chrome Web Store.
