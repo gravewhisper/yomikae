@@ -1,6 +1,7 @@
 .claude/
 server/.venv
 server/.venv-comet
+server/.venv-export
 server/models
 server/cache/
 extension/node_modules

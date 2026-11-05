@@ -76,7 +76,7 @@ Never use sexual content that involves minors or characters who look like minors
 
 ## Benchmarks
 
-`server/tools/benchmark.py` scores the full pipeline on held-out pages, and `server/tools/translation_bench.py` scores translation on OpenMantra. The README's Benchmarks section has the commands and setup. [docs/benchmarks.md](docs/benchmarks.md) says how much the scores move between runs and lists the mistakes that void a comparison.
+`server/tools/benchmark.py` scores the full pipeline on held-out pages, and `server/tools/translation_bench.py` scores translation on OpenMantra. [docs/benchmarks.md](docs/benchmarks.md) has the commands and setup, says how much the scores move between runs, and lists the mistakes that void a comparison.
 
 Keep held-out pages away from development:
 

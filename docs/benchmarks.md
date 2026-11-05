@@ -55,7 +55,17 @@ It reports:
 
 The run directory holds `scorecard.md`, `summary.json`, `lines.jsonl` with every line and its COMET score, `honorifics.json` with every counted line, and `samples.md` with 30 random lines for you to read.
 
-The README's [Benchmarks](../README.md#benchmarks) section has the setup, which installs the `bench` extra and a second venv for COMET at `server/.venv-comet`. Then, from `server/`:
+OpenMantra is by Ryota Hinami, Shonosuke Ishiwatari, Kazuhiko Yasuda, and Yusuke Matsui, from "Towards Fully Automated Manga Translation" (AAAI 2021). It is licensed CC BY-NC 4.0 and is not in this repo, so clone it yourself.
+
+The bench needs the server's `bench` extra, which installs `sacrebleu`, and COMET in a second venv at `server/.venv-comet`. Set them up once, from `server/`:
+
+```sh
+uv pip install --python .venv/bin/python -e '.[bench]'
+uv venv --python 3.12 .venv-comet
+uv pip install --python .venv-comet/bin/python unbabel-comet
+```
+
+Then run it:
 
 ```sh
 .venv/bin/python tools/translation_bench.py PATH/TO/open-mantra-dataset/annotation.json --out-root RUNS_DIR --label NAME
