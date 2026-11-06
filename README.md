@@ -20,7 +20,7 @@ The name comes from 読み替え (yomikae), Japanese for "reading something as s
 
 - Linux and an NVIDIA GPU with CUDA. Yomikae was developed on an RTX 5070 Ti with 16 GB, which runs the server and a 12B translation model side by side. Other platforms are untested.
 - Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), git, and a C++ compiler. The install builds `pydensecrf` from source.
-- Node.js 22.23.4, 24.22.1, or 26.12.1 or newer, and [pnpm](https://pnpm.io/). Older Node releases have the Brotli decoder flaw CVE-2026-111497.
+- Node.js 22.23.4, 24.22.1, or 26.12.1 or newer, and [pnpm](https://pnpm.io/).
 - Chrome or Chromium 116 or newer.
 - [LM Studio](https://lmstudio.ai/), or another LLM server with an OpenAI-compatible API.
 
