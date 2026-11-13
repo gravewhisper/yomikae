@@ -36,7 +36,7 @@ class Settings:
     detect_device: str = "cuda"
     low_vram: bool = False
     claude_command: str = "claude"
-    claude_model: str = "claude-opus-5-5"
+    claude_model: str = "claude-sonnet-5-5"
     claude_effort: str = "low"
 
     @staticmethod
@@ -55,7 +55,7 @@ class Settings:
             detect_device=parse_device(env("YOMIKAE_DETECT_DEVICE", "cuda")),
             low_vram=env("YOMIKAE_LOW_VRAM") == "1",
             claude_command=env("YOMIKAE_CLAUDE_COMMAND", "claude"),
-            claude_model=env("YOMIKAE_CLAUDE_MODEL", "claude-opus-5-5"),
+            claude_model=env("YOMIKAE_CLAUDE_MODEL", "claude-sonnet-5-5"),
             claude_effort=env("YOMIKAE_CLAUDE_EFFORT", "low"),
         )
 
