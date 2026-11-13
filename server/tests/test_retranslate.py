@@ -83,7 +83,7 @@ def test_only_the_picked_bubbles_get_new_english_and_the_page_is_replaced(client
     assert second["cached"] is False
     assert [b["translation"] for b in second["bubbles"]] == [b["translation"] if i != 1 else "call 2 line 0" for i, b in enumerate(first["bubbles"])]
     assert second["rendered_url"] != first["rendered_url"] and second["rendered_url"].endswith("?v=1")
-    assert not {"names_in_force", "revision", "fixed", "context_key"} & second.keys()
+    assert not {"names_in_force", "revision", "fixed", "context_key", "position"} & second.keys()
 
     after = decode(client.get(second["rendered_url"]).content)
     assert region_change(before, after, second["bubbles"][1]["box"]) > 3, "the picked bubble was not re-lettered"

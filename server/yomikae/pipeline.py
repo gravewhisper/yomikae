@@ -310,6 +310,7 @@ class Engine:
 
             h, w = image.shape[:2]
             revision = base.get("revision", 0) + 1 if base else 0
+            position = self.context.position(context_key, page_index, page_id) if context_key else None
             result = {
                 "page_id": page_id,
                 "width": w,
@@ -321,6 +322,7 @@ class Engine:
                 ],
                 "context_key": context_key,
                 "page_index": page_index,
+                "position": position,
                 "font_sizes": font_sizes,
                 "skipped": [{"box": b.block.box.as_list(), "source": b.source} for b in unsure],
                 "names_in_force": names_in_force(self.context.cast(context_key)),
@@ -332,7 +334,7 @@ class Engine:
                 self.context.forget(base)
             if context_key:
                 lines = [ContextLine(b.source, b.translation) for b in bubbles]
-                self.context.add(context_key, page_id, page_index, lines, [lines[i] for i in fixed])
+                self.context.add(context_key, page_id, page_index, lines, [lines[i] for i in fixed], position=position)
             timings = {**timer.ms, "total": round((time.perf_counter() - start) * 1000)}
             return {**result, "timings_ms": timings, "cached": False}
 

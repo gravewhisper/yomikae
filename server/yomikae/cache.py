@@ -183,7 +183,7 @@ class ContextStore:
         for r in cache.all_results():
             if r.get("context_key"):
                 lines = [ContextLine(b["source"], b["translation"]) for b in r["bubbles"]]
-                self.add(r["context_key"], r["page_id"], r.get("page_index"), lines, [lines[i] for i in r.get("fixed", []) if i < len(lines)])
+                self.add(r["context_key"], r["page_id"], r.get("page_index"), lines, [lines[i] for i in r.get("fixed", []) if i < len(lines)], position=r.get("position"))
 
     def ordered(self, key: str | None) -> list[ContextPage]:
         return sorted(self.pages.get(key, {}).values(), key=lambda p: p.position) if key else []
@@ -203,8 +203,8 @@ class ContextStore:
         earlier = [p for p in self.ordered(key) if pos - CONTEXT_REACH <= p.position < pos and not p.filler][-CONTEXT_PAGES:]
         return [p.lines for p in earlier if p.lines]
 
-    def add(self, key: str, page_id: str, page_index: int | None, lines: list[ContextLine], fixed: list[ContextLine] = (), filler: bool = False) -> None:
-        pos = self.position(key, page_index, page_id)
+    def add(self, key: str, page_id: str, page_index: int | None, lines: list[ContextLine], fixed: list[ContextLine] = (), filler: bool = False, position: float | None = None) -> None:
+        pos = self.position(key, page_index, page_id) if position is None else position
         self.pages.setdefault(key, {})[page_id] = ContextPage(pos, [line for line in lines if line.translation], [line for line in fixed if line.translation], filler)
 
     def forget(self, result: dict) -> None:
