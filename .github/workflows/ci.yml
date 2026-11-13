@@ -64,6 +64,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - name: Install the Japanese font the test pages use
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q fonts-noto-cjk
+          sudo mkdir -p /usr/share/fonts/noto-cjk
+          sudo ln -sf "$(fc-list : file | grep -m1 'NotoSansCJK-Bold.ttc' | cut -d: -f1)" /usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc
+          test -f /usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc
       - uses: actions/cache@v4
         id: models
         with:
