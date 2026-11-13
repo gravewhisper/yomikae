@@ -324,7 +324,7 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 
 ## Detection stays on the GPU
 
-**Decision.** The text detector and the balloon segmenter run on the GPU by default, with their memory pools capped at 1.5 GB each. The server hands back PyTorch's cached memory after each page's GPU work. `YOMIKAE_DETECT_DEVICE=cpu` moves detection to the CPU, and `YOMIKAE_LOW_VRAM=1` moves everything.
+**Decision.** The text detector and the balloon segmenter run on the GPU by default, with their memory pools capped at 1.5 GB each. The server hands back PyTorch's cached memory after each page's GPU work. `YOMIKAE_DETECT_DEVICE=cpu` moves detection to the CPU, and `YOMIKAE_LOW_VRAM=1` moves everything. Before 2026-11-14 the install did not bring the CUDA 13 runtime, cuBLAS and NVRTC that `onnxruntime-gpu` needs, and without them the detectors run on the CPU. The server's dependencies now include them.
 
 **Why.** On the CPU, detection costs about 0.95 s more per page. Capping the pools and releasing the cache stopped the server from growing while you read, which was the reason to consider the CPU in the first place.
 

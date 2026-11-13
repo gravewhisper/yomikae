@@ -16,7 +16,7 @@ If the site serves its images from a different domain and has no adapter, the po
 
 ## The chip says "Waiting for server…"
 
-The Yomikae server is not running, or the LLM server behind it is not answering. Hovering the chip shows which.
+The Yomikae server is not running, or the translator behind it is not answering. Hovering the chip shows which.
 
 1. Click the toolbar icon. The popup shows whether the server is running, and the command to start it if it isn't.
 2. Start the server. If it is already running, check that LM Studio has the model loaded and its server started:
@@ -26,7 +26,11 @@ The Yomikae server is not running, or the LLM server behind it is not answering.
 	lms server start
 	```
 
+	With the Claude translator, check that `claude` is on the server's `PATH`, or set `YOMIKAE_CLAUDE_COMMAND` to its full path.
+
 Waiting pages continue by themselves. The extension checks the server after 2, 4, 8, and 16 seconds, then every 30 seconds, and sends the pages in their usual order once it answers.
+
+If the server answers its health check but turns the same page away four times, the chip stops waiting and shows the server's error with **Retry**. This happens, for example, when LM Studio is running but its model failed to load.
 
 ## The chip says "Translation failed"
 
@@ -38,6 +42,7 @@ Hover the chip to read the error, then check the cause that matches:
 - **"translator at … returned 400"** with `exceeds the available context size` in it. The page's request is longer than the context LM Studio loaded the model with, so the server does not resend it. Load the model with a larger context, such as `lms load <model> -c 16384`, or set it in LM Studio's model settings.
 - **"translator at … returned 400"** with any other body. The translator rejected the request itself, and a retry gets the same answer. Check `YOMIKAE_OPENAI_MODEL` and the endpoint's own log.
 - **"translator … translated no line of this page, and its reply could not be read"**, followed by the start of the reply. The model answered, but not with the list of translations the server asks for, and no line of the page got English. Read the quoted reply. If the model refused the content, use another model. If the reply is reasoning or other prose, the model or the endpoint ignores `response_format`, so pick one that accepts a JSON schema. The page is not saved, and **Retry** asks the model again.
+- **"claude failed"** or **"claude exited with"**, followed by `claude`'s message. With the Claude translator, `claude -p` reported an error, for example that it is signed out or over its usage limit. Run `claude` in a terminal to sign in again or to see the limit, then click **Retry**. **"claude gave no answer in 180 s"** means the call timed out, and **Retry** sends it again.
 - **"Rendered page fetch failed"**, or any other error from the server. Look in the server's terminal for a traceback.
 
 Click **Retry** in the chip to try again. A chip that says **Can't translate** has an error that a retry won't fix, such as an image the server cannot decode or an image the site no longer has.

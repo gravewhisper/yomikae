@@ -31,7 +31,7 @@ The server listens on `127.0.0.1` and accepts requests only from the Yomikae ext
 
 Any extension can send an `Origin` of `chrome-extension://...`. To make the server refuse every request other than a `GET` from other extensions, set `YOMIKAE_EXTENSION_ID` to the id shown on `chrome://extensions`. `GET`s carry no `Origin`, so another extension with access to `127.0.0.1` can still read the health check, a work's names and rendered pages.
 
-The extension refuses to fetch images on your local network or your computer for a page on the web, because it fetches with your cookies and hands the result back to the page. It refuses an image that redirects there too. It judges this from the host name, so a web name that resolves to a local address, such as `cam.attacker.example` pointing at `192.168.1.1`, is still fetched. Turning the extension on only for sites you trust limits this. [docs/contract.md](docs/contract.md#who-may-call-the-server) has the exact rules.
+The extension refuses to fetch images on your local network or your computer for a page on the web, because it fetches with your cookies and hands the result back to the page. It refuses an image that redirects there too. A page on the web also gets no translated page or image bytes that the extension kept from such a fetch. It judges this from the host name, so a web name that resolves to a local address, such as `cam.attacker.example` pointing at `192.168.1.1`, is still fetched. Turning the extension on only for sites you trust limits this. [docs/contract.md](docs/contract.md#who-may-call-the-server) has the exact rules.
 
 ## Supported versions
 

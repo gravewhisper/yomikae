@@ -1,6 +1,6 @@
 # Picking a translation model
 
-Yomikae sends each page's dialogue to an LLM through an OpenAI-compatible endpoint. The default is Google's Gemma 4 12B in LM Studio (`google/gemma-4-12b`), but any model that meets the requirements below works. This page helps you pick one for the graphics memory you have.
+Yomikae sends each page's dialogue to an LLM through an OpenAI-compatible endpoint. The default is Google's Gemma 4 12B in LM Studio (`google/gemma-4-12b`), but any model that meets the requirements below works. This page helps you pick one for the graphics memory you have. With `YOMIKAE_TRANSLATOR=claude` the server runs `claude -p` instead, and the memory tiers below do not apply. The README's [Translate with a Claude subscription](../README.md#translate-with-a-claude-subscription) has its settings.
 
 Most of this page condenses web research done on 2026-10-26. None of the models in the tier tables has been run on Yomikae's own benchmark yet. The one model that has is in [Measured on our benchmark](#measured-on-our-benchmark).
 

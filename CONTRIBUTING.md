@@ -23,7 +23,7 @@ Follow the README's [Install](README.md#install) steps. [AGENTS.md](AGENTS.md) h
 5. If you change translation or lettering, measure it as [docs/benchmarks.md](docs/benchmarks.md) describes, and put the before and after numbers in the pull request.
 6. Open a pull request against `main`.
 
-CI runs the extension checks, a quick lint of the server and the commit message check on every pull request. The server tests need the model files, so run them yourself before you open the pull request.
+CI runs the extension checks, a quick lint of the server, the server tests on the CPU and the commit message check on every pull request.
 
 ## Commit messages
 

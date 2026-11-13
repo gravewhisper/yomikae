@@ -6,7 +6,7 @@
 ![Chrome: MV3 extension](https://img.shields.io/badge/Chrome-MV3%20extension-4285F4?logo=googlechrome&logoColor=white)
 ![Python: 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![translator: local LLM or OpenAI-compatible](https://img.shields.io/badge/translator-local%20LLM%20%7C%20OpenAI--compatible-6E40C9)
+![translator: local LLM, OpenAI-compatible or Claude](https://img.shields.io/badge/translator-local%20LLM%20%7C%20OpenAI--compatible%20%7C%20Claude-6E40C9)
 
 Yomikae translates raw Japanese manga into English while you read it in Chrome. A browser extension sends each page image to a server on your own computer. The server finds the text, reads it, translates it with a local LLM or your Claude subscription, erases the Japanese, and letters the English into the speech balloons. The extension then shows the translated page in place of the original.
 
@@ -118,7 +118,7 @@ pnpm build
 4. Switch on **Translate** for the site and allow access when Chrome asks.
 5. Choose **Every page, automatically** or **Only images I click Translate on**.
 
-The popup shows whether the server is running. Next time you want to read, start LM Studio's server and the Yomikae server again. You don't need to reload the extension.
+The popup shows whether the server is running. Next time you want to read, start LM Studio's server, unless you use the Claude translator, and the Yomikae server again. You don't need to reload the extension.
 
 ### Optional: the Anime Ace font
 
