@@ -107,3 +107,14 @@ def test_each_call_is_saved_when_a_log_folder_is_set(cli, tmp_path):
     assert entry["request"]["lines"] == [{"id": 0, "text": "やあ"}]
     assert "Japanese manga dialogue" in entry["system"]
     assert entry["reply"][-1]["structured_output"] == {"translations": ["Hi"]}
+
+
+def test_claude_is_not_told_to_translate_without_censoring(cli):
+    translator, out = cli
+    (out / "reply.txt").write_text(result_event(structured_output={"translations": ["Hi"]}))
+    asyncio.run(translator.translate(["やあ"], Context()))
+    argv = json.loads((out / "argv.json").read_text())
+    system = argv[argv.index("--system-prompt") + 1]
+    assert "censor" not in system
+    assert "Japanese honorifics" in system
+    assert "censor" in translate.SYSTEM_PROMPT
