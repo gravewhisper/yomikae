@@ -36,7 +36,7 @@ Multipart form:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `image` | file | Original page bytes: JPEG, PNG, WebP, GIF or AVIF. Other formats get 400 `bad_image`, so a crafted TIFF, EPS or other rare format never reaches Pillow's decoder for it. An image of more than 40,000,000 pixels, such as a decompression bomb, gets 400 `bad_image` before it is decoded. That still takes an 800x50000 webtoon strip. |
-| `context_key` | string, optional | Groups pages of one work (for example `example.com/g/12345`). The translator sees earlier pages' dialogue with the same key, so names and tone stay consistent. |
+| `context_key` | string, optional | Groups pages of one work (for example `example.com/g/12345`). The translator sees earlier pages' dialogue with the same key, so names and tone stay consistent. The server translates the pages of one key one at a time, in the order they arrive, so a page sent while the page before it is still in flight gets that page as context. |
 | `page_index` | int, optional | Order within the context. Used to pick which earlier pages are context. The extension sends it only when the site adapter knows the page number, so the default adapter omits it. A page without one is placed after the work's latest page, and a page posted again keeps its place. Two pages with the same `page_index` are both kept as context. At most 1,000,000 either way, or the request gets 400. |
 
 Response `200 application/json`, a `TranslatedPage`:
@@ -63,6 +63,8 @@ Response `200 application/json`, a `TranslatedPage`:
 Boxes are in pixels of the original image. Re-posting identical bytes returns the cached result with `"cached": true` and near-zero timings, unless a name of the work changed since the page was translated in a way that touches one of its bubbles (see [Old pages after a name change](#old-pages-after-a-name-change)). `rendered_url` can end in a query such as `?v=2`, which changes whenever the page is rendered again; treat the whole URL as opaque. The cache lives on disk under `server/cache/v<pipeline version>/` keyed by `page_id`, so a server whose rendering changed re-renders pages instead of serving old results. At startup the server deletes the folders of older pipeline versions and the unversioned `<page_id>` folders of the first cache layout, and nothing else. The current version's cache is capped at `YOMIKAE_CACHE_MAX_BYTES`, 2 GiB by default. After a newly rendered page is written, a background task evicts the least recently read pages until the cache fits again. Every cache hit counts as a read. The page just written and pages still being written are never evicted. An evicted page drops out of the translation memory, names and context of its work, exactly as if the server had restarted without it, and is re-rendered the next time it is posted.
 
 A page with no text returns `bubbles: []` and `rendered_url` pointing at an unchanged copy.
+
+A page that arrives while an earlier page with the same `context_key` is still in flight waits for that page before it is translated. The wait holds back only the translation, and detection, OCR and erasing still run. `timings_ms.total` includes the wait, and `timings_ms.translate` does not. A retranslate waits the same way. Pages with different keys do not wait for each other, and a page without a key waits for nothing.
 
 ### `POST /v1/pages/{page_id}/retranslate`
 
@@ -221,7 +223,7 @@ type Redo = 'stale' | 'refreshing' | 'retranslating'
 
 A `ready` job keeps the `contextKey` its page was translated under. `redo` is set while the page shown may be replaced: `stale` after a name of its work changed, `refreshing` while a stale page is requested again, and `retranslating` while the reader's retranslate is on the server. The old render stays in place until the new one arrives, and a failed redo leaves it there.
 
-Priority is distance from the page the reader is looking at, so the current page goes first and the next pages after it. At most 2 jobs are in flight at once.
+Priority is distance from the page the reader is looking at, so the current page goes first and the next pages after it. At most 2 jobs are in flight at once. When both are pages of one work, the server translates them one at a time, in the order they arrive, so the second still gets the first as context.
 
 A job's image is fetched from a list of candidate URLs, best first, for example the original resolution and then smaller sizes, or the same file on other mirrors. A candidate that answers 404 or 410 moves on to the next one. A candidate larger than 64 MB, the server's body limit, is cancelled once its `Content-Length` or the bytes read so far pass it, and also moves on. The job fails without Retry only when every candidate was missing or too large, or when it was refused.
 

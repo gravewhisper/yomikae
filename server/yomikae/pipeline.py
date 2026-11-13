@@ -161,6 +161,7 @@ class Engine:
         self.context = ContextStore(settings.cache_dir / "names")
         self.context.rebuild(self.cache)
         self.inflight: dict[str, asyncio.Future] = {}
+        self.turns: dict[str, asyncio.Future[None]] = {}
         self.editing: dict[str, asyncio.Lock] = {}
 
     @cached_property
@@ -177,6 +178,19 @@ class Engine:
                     import torch
 
                     torch.cuda.empty_cache()
+
+    @contextmanager
+    def turn(self, context_key: str | None) -> Iterator[asyncio.Future[None] | None]:
+        earlier = self.turns.get(context_key)
+        done = asyncio.get_running_loop().create_future()
+        if context_key:
+            self.turns[context_key] = done
+        try:
+            yield earlier
+        finally:
+            done.set_result(None)
+            if self.turns.get(context_key) is done:
+                del self.turns[context_key]
 
     def warmup(self) -> None:
         self.gpu_thread.submit(self._warmup).result()
@@ -245,74 +259,75 @@ class Engine:
     ) -> dict:
         start = time.perf_counter()
         timer = Timer()
-        image = await asyncio.to_thread(decode_image, data)
+        with self.turn(context_key) as earlier:
+            image = await asyncio.to_thread(decode_image, data)
 
-        def read_page() -> tuple[list[Bubble], list[Bubble]]:
-            with self.gpu():
-                blocks = timer.run("detect", detect.detect, self.detector, image)
-                balloons = timer.run("balloons", balloon.segment, self.balloons, image)
-                bubbles, unsure = timer.run("ocr", ocr.read, self.ocr, image, blocks, balloons)
-                return timer.run("ocr", ruby.attach, self.ocr, image, bubbles), unsure
+            def read_page() -> tuple[list[Bubble], list[Bubble]]:
+                with self.gpu():
+                    blocks = timer.run("detect", detect.detect, self.detector, image)
+                    balloons = timer.run("balloons", balloon.segment, self.balloons, image)
+                    bubbles, unsure = timer.run("ocr", ocr.read, self.ocr, image, blocks, balloons)
+                    return timer.run("ocr", ruby.attach, self.ocr, image, bubbles), unsure
 
-        def remove_text(bubbles: list[Bubble]) -> np.ndarray:
-            with self.gpu():
-                return timer.run("inpaint", inpaint.inpaint, self.lama, image, bubbles).image
+            def remove_text(bubbles: list[Bubble]) -> np.ndarray:
+                with self.gpu():
+                    return timer.run("inpaint", inpaint.inpaint, self.lama, image, bubbles).image
 
-        async def remove_text_anywhere(bubbles: list[Bubble]) -> np.ndarray:
-            import torch
+            async def remove_text_anywhere(bubbles: list[Bubble]) -> np.ndarray:
+                import torch
 
-            try:
-                return await loop.run_in_executor(self.gpu_thread, remove_text, bubbles)
-            except torch.OutOfMemoryError:
-                return (await asyncio.to_thread(timer.run, "inpaint", inpaint.inpaint, self.cpu_lama, image, bubbles)).image
+                try:
+                    return await loop.run_in_executor(self.gpu_thread, remove_text, bubbles)
+                except torch.OutOfMemoryError:
+                    return (await asyncio.to_thread(timer.run, "inpaint", inpaint.inpaint, self.cpu_lama, image, bubbles)).image
 
-        loop = asyncio.get_running_loop()
-        bubbles, unsure = await loop.run_in_executor(self.gpu_thread, read_page)
-        matched = match_bubbles(base["bubbles"], bubbles) if base else [None] * len(bubbles)
-        pinned = [base["bubbles"][j]["translation"] if j is not None and j not in picked else None for j in matched] if base else None
-        fixed = [i for i, j in enumerate(matched) if j is not None and (j in picked or j in base.get("fixed", []))] if base else []
-        if bubbles:
-            readings = [pair for b in bubbles for pair in b.ruby]
-            translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings, pinned, hint))
-            try:
-                inpainted = await remove_text_anywhere(bubbles)
-            finally:
-                translations = await translate_task
-            bubbles = [replace(b, translation=t) for b, t in zip(bubbles, translations)]
-            if not all(translations):
-                inpainted = await asyncio.to_thread(keep_original, image, inpainted, [b for b in bubbles if not b.translation])
-            rendered, font_sizes = await asyncio.to_thread(timer.run, "typeset", typeset.typeset, self.lettering, inpainted, bubbles)
-        else:
-            rendered, font_sizes = image, []
-        name, encoded = await asyncio.to_thread(timer.run, "encode", encode, rendered)
+            loop = asyncio.get_running_loop()
+            bubbles, unsure = await loop.run_in_executor(self.gpu_thread, read_page)
+            matched = match_bubbles(base["bubbles"], bubbles) if base else [None] * len(bubbles)
+            pinned = [base["bubbles"][j]["translation"] if j is not None and j not in picked else None for j in matched] if base else None
+            fixed = [i for i, j in enumerate(matched) if j is not None and (j in picked or j in base.get("fixed", []))] if base else []
+            if bubbles:
+                readings = [pair for b in bubbles for pair in b.ruby]
+                translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings, pinned, hint, earlier))
+                try:
+                    inpainted = await remove_text_anywhere(bubbles)
+                finally:
+                    translations = await translate_task
+                bubbles = [replace(b, translation=t) for b, t in zip(bubbles, translations)]
+                if not all(translations):
+                    inpainted = await asyncio.to_thread(keep_original, image, inpainted, [b for b in bubbles if not b.translation])
+                rendered, font_sizes = await asyncio.to_thread(timer.run, "typeset", typeset.typeset, self.lettering, inpainted, bubbles)
+            else:
+                rendered, font_sizes = image, []
+            name, encoded = await asyncio.to_thread(timer.run, "encode", encode, rendered)
 
-        h, w = image.shape[:2]
-        revision = base.get("revision", 0) + 1 if base else 0
-        result = {
-            "page_id": page_id,
-            "width": w,
-            "height": h,
-            "rendered_url": f"/v1/pages/{page_id}/{name}" + (f"?v={revision}" if revision else ""),
-            "bubbles": [
-                {"box": b.block.box.as_list(), "source": b.source, "translation": b.translation, "vertical": b.block.vertical}
-                for b in bubbles
-            ],
-            "context_key": context_key,
-            "page_index": page_index,
-            "font_sizes": font_sizes,
-            "skipped": [{"box": b.block.box.as_list(), "source": b.source} for b in unsure],
-            "names_in_force": names_in_force(self.context.cast(context_key)),
-            "revision": revision,
-            "fixed": fixed,
-        }
-        await asyncio.to_thread(self.cache.store, page_id, name, encoded, result)
-        if base and base.get("context_key") != context_key:
-            self.context.forget(base)
-        if context_key:
-            lines = [ContextLine(b.source, b.translation) for b in bubbles]
-            self.context.add(context_key, page_id, page_index, lines, [lines[i] for i in fixed])
-        timings = {**timer.ms, "total": round((time.perf_counter() - start) * 1000)}
-        return {**result, "timings_ms": timings, "cached": False}
+            h, w = image.shape[:2]
+            revision = base.get("revision", 0) + 1 if base else 0
+            result = {
+                "page_id": page_id,
+                "width": w,
+                "height": h,
+                "rendered_url": f"/v1/pages/{page_id}/{name}" + (f"?v={revision}" if revision else ""),
+                "bubbles": [
+                    {"box": b.block.box.as_list(), "source": b.source, "translation": b.translation, "vertical": b.block.vertical}
+                    for b in bubbles
+                ],
+                "context_key": context_key,
+                "page_index": page_index,
+                "font_sizes": font_sizes,
+                "skipped": [{"box": b.block.box.as_list(), "source": b.source} for b in unsure],
+                "names_in_force": names_in_force(self.context.cast(context_key)),
+                "revision": revision,
+                "fixed": fixed,
+            }
+            await asyncio.to_thread(self.cache.store, page_id, name, encoded, result)
+            if base and base.get("context_key") != context_key:
+                self.context.forget(base)
+            if context_key:
+                lines = [ContextLine(b.source, b.translation) for b in bubbles]
+                self.context.add(context_key, page_id, page_index, lines, [lines[i] for i in fixed])
+            timings = {**timer.ms, "total": round((time.perf_counter() - start) * 1000)}
+            return {**result, "timings_ms": timings, "cached": False}
 
     async def _translate(
         self,
@@ -323,7 +338,10 @@ class Engine:
         readings: list[tuple[str, str]],
         pinned: list[str | None] | None,
         hint: str,
+        earlier: asyncio.Future[None] | None,
     ) -> list[str]:
+        if earlier:
+            await asyncio.shield(earlier)
         t = time.perf_counter()
         try:
             return await translate_page(self.translator, self.context, lines, context_key, page_index, ruby=readings, pinned=pinned, hint=hint)
