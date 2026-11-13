@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
 import time
 from dataclasses import replace
 
+import pytest
+
 from yomikae.cache import ContextStore, PageCache, prune_stale
 from yomikae.model import ContextLine
-from yomikae.pipeline import PIPELINE_VERSION
+from yomikae.pipeline import PIPELINE_VERSION, Engine
 
 from conftest import png_bytes
 
@@ -173,3 +176,59 @@ def test_pages_of_one_work_keep_their_context_with_the_same_or_no_page_index(cli
     fresh = ContextStore()
     fresh.rebuild(cache)
     assert sorted(map(repr, fresh.memory("work"))) == sorted(map(repr, engine.context.memory("work")))
+
+
+class Second:
+    name = "second"
+
+    async def translate(self, lines, context):
+        return [f"second translator {i}" for i in range(len(lines))]
+
+    async def health(self):
+        return None
+
+
+@pytest.fixture(scope="module")
+def openai_server(client):
+    return Engine(replace(client.app.state.engine.settings, translator="openai"))
+
+
+def rebuilt(cache: PageCache) -> ContextStore:
+    context = ContextStore()
+    context.rebuild(cache)
+    return context
+
+
+def test_a_server_with_another_translator_translates_a_cached_page_again(client, openai_server, monkeypatch):
+    from make_test_page import make_page
+
+    data = png_bytes(make_page(250)[0])
+    r = client.post("/v1/pages", files={"image": ("p.png", data, "image/png")}, data={"context_key": "two translators"})
+    assert r.status_code == 200, r.text
+    assert rebuilt(client.app.state.engine.cache).memory("two translators"), "the page did not reach its own translator's context"
+    assert rebuilt(openai_server.cache).memory("two translators") == [], "another translator's lines reached the context"
+
+    monkeypatch.setattr(openai_server, "translator", Second())
+    again = asyncio.run(openai_server.process(data, "two translators", None))
+    assert again["cached"] is False, "a page made by another translator was served from the cache"
+    assert [b["translation"] for b in again["bubbles"]] == [f"second translator {i}" for i in range(len(again["bubbles"]))]
+    assert asyncio.run(openai_server.process(data, "two translators", None))["cached"] is True
+
+
+def test_a_page_cached_before_translators_were_recorded_counts_as_an_openai_page(client, openai_server):
+    from make_test_page import make_page
+
+    engine = client.app.state.engine
+    data = png_bytes(make_page(251)[0])
+    r = client.post("/v1/pages", files={"image": ("p.png", data, "image/png")}, data={"context_key": "no translator recorded"})
+    assert r.status_code == 200, r.text
+    page_id = r.json()["page_id"]
+    path = engine.cache.root / page_id / "result.json"
+    result = json.loads(path.read_text())
+    result.pop("translator", None)
+    path.write_text(json.dumps(result, ensure_ascii=False))
+
+    assert openai_server.cache.load(page_id) is not None
+    assert rebuilt(openai_server.cache).memory("no translator recorded")
+    assert engine.cache.load(page_id) is None, "the fake translator was served a page made before translators were recorded"
+    assert rebuilt(engine.cache).memory("no translator recorded") == []
