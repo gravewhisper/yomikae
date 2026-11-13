@@ -8,7 +8,7 @@
 ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![translator: local LLM or OpenAI-compatible](https://img.shields.io/badge/translator-local%20LLM%20%7C%20OpenAI--compatible-6E40C9)
 
-Yomikae translates raw Japanese manga into English while you read it in Chrome. A browser extension sends each page image to a server on your own computer. The server finds the text, reads it, translates it with a local LLM, erases the Japanese, and letters the English into the speech balloons. The extension then shows the translated page in place of the original.
+Yomikae translates raw Japanese manga into English while you read it in Chrome. A browser extension sends each page image to a server on your own computer. The server finds the text, reads it, translates it with a local LLM or your Claude subscription, erases the Japanese, and letters the English into the speech balloons. The extension then shows the translated page in place of the original.
 
 The name comes from 読み替え (yomikae), Japanese for "reading something as something else."
 
@@ -22,9 +22,9 @@ The name comes from 読み替え (yomikae), Japanese for "reading something as s
 - Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), git, and a C++ compiler. The install builds `pydensecrf` from source.
 - Node.js 22.23.4, 24.22.1, or 26.12.1 or newer, and [pnpm](https://pnpm.io/).
 - Chrome or Chromium 116 or newer.
-- [LM Studio](https://lmstudio.ai/), or another LLM server with an OpenAI-compatible API.
+- A translator. Either [LM Studio](https://lmstudio.ai/) or another LLM server with an OpenAI-compatible API, or [Claude Code](https://claude.com/claude-code) signed in to a Claude subscription.
 
-The server holds about 3 GB of graphics memory while you read, and the LLM takes the rest. With a smaller GPU, pick a smaller model from [docs/models.md](docs/models.md), or move the server's work to the CPU as [docs/performance.md](docs/performance.md) explains.
+The server holds about 3 GB of graphics memory while you read, and a local LLM takes the rest. With the Claude translator, the server is all that runs on the GPU. With a smaller GPU, pick a smaller model from [docs/models.md](docs/models.md), or move the server's work to the CPU as [docs/performance.md](docs/performance.md) explains.
 
 ## Install
 
@@ -69,7 +69,9 @@ The export ends with `export success` and saves `best.onnx`, about 12 MB. manga-
 
 ### 3. Start the translator
 
-The default translator is Google's Gemma 4 12B in LM Studio. Install LM Studio, then download the model, load it, and start LM Studio's server:
+Pick one of two translators.
+
+**A local LLM.** The default translator is Google's Gemma 4 12B in LM Studio. Nothing leaves your computer. Install LM Studio, then download the model, load it, and start LM Studio's server:
 
 ```sh
 lms get google/gemma-4-12b
@@ -79,10 +81,18 @@ lms server start
 
 To use another model or another LLM server, see [Use another translator](#use-another-translator).
 
+**Your Claude subscription.** Install [Claude Code](https://claude.com/claude-code) and sign in once by running `claude` and following its prompts. Then skip LM Studio, and in step 4 start the server with `YOMIKAE_TRANSLATOR=claude`. The page's Japanese text goes to Anthropic, and each page uses some of your subscription's limit. [Translate with a Claude subscription](#translate-with-a-claude-subscription) has the settings.
+
 ### 4. Start the server
 
 ```sh
 .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
+```
+
+With the Claude translator:
+
+```sh
+YOMIKAE_TRANSLATOR=claude .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
 ```
 
 The first start downloads the manga-ocr weights and takes about a minute. Later starts take a few seconds. In another terminal, check it:
@@ -91,7 +101,7 @@ The first start downloads the manga-ocr weights and takes about a minute. Later 
 curl http://127.0.0.1:7878/v1/health
 ```
 
-The reply contains `"ok": true`. If it says `"ok": false`, its `detail` says what is wrong, most often that LM Studio is not running.
+The reply contains `"ok": true`. If it says `"ok": false`, its `detail` says what is wrong, most often that LM Studio is not running, or with the Claude translator that `claude` is not on `PATH`.
 
 ### 5. Load the extension
 
