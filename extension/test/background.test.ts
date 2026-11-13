@@ -307,6 +307,38 @@ describe('retranslating and stale pages', () => {
     assert.deepEqual(requested().slice(3), ['http://127.0.0.1:7878/v1/pages']);
   });
 
+  it('gives a page on the web no render of a local network image, whatever key it asks for', async () => {
+    const w = await worker();
+    const reader = w.connect('http://192.168.1.10/library');
+    const page = want('http://192.168.1.50/library/secret-page.png');
+    reader.send({ type: 'want', jobs: [page] });
+    await tick();
+    w.requests[0]?.resolve(image());
+    await tick();
+    w.requests[1]?.resolve(pageJson('/v1/pages/p/rendered.webp'));
+    await tick();
+    w.requests[2]?.resolve(rendered());
+    await tick();
+    assert.equal(reader.received.at(-1)?.type, 'ready');
+    const evil = w.connect('https://evil.example/');
+    evil.send({ type: 'lookup', keys: [page.key] });
+    await tick();
+    assert.deepEqual(evil.received, []);
+    const other = w.connect('http://192.168.1.20/');
+    other.send({ type: 'lookup', keys: [page.key] });
+    await tick();
+    assert.equal(other.received.at(-1)?.type, 'ready');
+    const disguised = { ...want('https://evil.example/a.png'), key: page.key };
+    evil.send({ type: 'want', jobs: [disguised] });
+    await tick();
+    assert.ok(!evil.received.some((m) => m.type === 'ready'), JSON.stringify(evil.received));
+    assert.equal(w.requested().length, 3);
+    (w.fake.listeners.message as (msg: unknown) => unknown)({ type: 'names', contextKey: 'c' });
+    evil.send({ type: 'want', jobs: [disguised] });
+    await tick();
+    assert.deepEqual(w.requested().slice(3), ['https://evil.example/a.png']);
+  });
+
   it('keeps the old render and says why when a retranslate fails', async () => {
     const { tab, other, page, requests } = await translated();
     tab.send({ type: 'retranslate', request: { want: page, bubbles: [7], hint: '', names: [] } });
