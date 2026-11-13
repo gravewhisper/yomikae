@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, describe, it, mock } from 'node:test';
 import type { ToBackground, ToContent, Want } from '../src/messages.ts';
 import { bundle, fakeChrome } from './fake-chrome.ts';
 
@@ -219,6 +219,51 @@ describe('image fetching', () => {
     await tick();
     const failed = tab.received.at(-1);
     assert.ok(failed?.type === 'failed' && !failed.retryable && failed.error.includes(detail), JSON.stringify(failed));
+  });
+});
+
+describe('server outages', () => {
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  };
+
+  async function outage(health: unknown) {
+    const { connect } = await worker(['https://img.example/*']);
+    const detail = 'Translator not reachable at http://127.0.0.1:1234/v1.';
+    const posts: string[] = [];
+    globalThis.fetch = (async (url: string | URL) => {
+      const u = String(url);
+      if (u.endsWith('/v1/health')) return new Response(JSON.stringify(health));
+      if (!u.endsWith('/v1/pages')) return image();
+      posts.push(u);
+      return new Response(JSON.stringify({ error: 'translator_unavailable', detail }), { status: 503 });
+    }) as typeof fetch;
+    mock.timers.enable({ apis: ['setTimeout'] });
+    try {
+      const tab = connect('https://reader.example/chapter/1');
+      const page = want('https://img.example/1.png');
+      tab.send({ type: 'want', jobs: [page] });
+      for (let s = 0; s < 300; s += 2) {
+        await settle();
+        mock.timers.tick(2_000);
+      }
+      await settle();
+      return { received: tab.received, page, detail, posts };
+    } finally {
+      mock.timers.reset();
+    }
+  }
+
+  it('fails a page with Retry when the server keeps answering 503 while its health is ok', async () => {
+    const { received, page, detail, posts } = await outage({ ok: true });
+    assert.deepEqual(received.at(-1), { type: 'failed', key: page.key, error: detail, retryable: true });
+    assert.equal(posts.length, 4);
+  });
+
+  it('keeps a page waiting while the server reports it is not ok', async () => {
+    const { received, posts } = await outage({ ok: false, detail: 'Translator not reachable.' });
+    assert.equal(states(received).at(-1), 'waiting');
+    assert.equal(posts.length, 1);
   });
 });
 
