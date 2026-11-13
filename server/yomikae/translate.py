@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import tempfile
+import time
 import unicodedata
 from collections.abc import Callable, Sequence
 from functools import cache
@@ -399,6 +400,7 @@ class ClaudeCLI:
         self.command = settings.claude_command
         self.model = settings.claude_model
         self.effort = settings.claude_effort
+        self.log_dir = settings.claude_log_dir
         self.name = f"claude:{self.model}"
         self.schema = json.dumps(RESPONSE_SCHEMA["json_schema"]["schema"])
 
@@ -417,6 +419,8 @@ class ClaudeCLI:
                 proc.kill()
                 await proc.wait()
                 raise TranslatorFailed(f"{self.command} gave no answer in {self.timeout:.0f} s") from None
+        if self.log_dir:
+            self.log(system["content"], user["content"], proc.returncode, out, err)
         try:
             events = json.loads(out)
             result = next(e for e in reversed(events if isinstance(events, list) else [events]) if e.get("type") == "result")
@@ -429,6 +433,16 @@ class ClaudeCLI:
         if parsed is None:
             raise Misaligned(reply)
         return parsed
+
+    def log(self, system: str, user: str, code: int | None, out: bytes, err: bytes) -> None:
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            reply = json.loads(out)
+        except ValueError:
+            reply = out.decode(errors="replace")
+        entry = {"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "model": self.model, "effort": self.effort, "exit": code, "system": system, "request": json.loads(user), "reply": reply, "stderr": err.decode(errors="replace")}
+        name = f"{time.strftime('%Y%m%dT%H%M%S')}-{time.perf_counter_ns() % 10**9:09d}.json"
+        (self.log_dir / name).write_text(json.dumps(entry, ensure_ascii=False, indent=1))
 
     async def health(self) -> str | None:
         return None if shutil.which(self.command) else f"translator command {self.command!r} not found"

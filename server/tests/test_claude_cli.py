@@ -95,3 +95,15 @@ def test_health_reports_a_missing_claude_command(cli, tmp_path):
 
 def test_claude_is_a_registered_translator():
     assert "claude" in translate.REGISTRY
+
+
+def test_each_call_is_saved_when_a_log_folder_is_set(cli, tmp_path):
+    translator, out = cli
+    translator.log_dir = tmp_path / "calls"
+    (out / "reply.txt").write_text(result_event(structured_output={"translations": ["Hi"]}))
+    asyncio.run(translator.translate(["やあ"], Context()))
+    (saved,) = (tmp_path / "calls").iterdir()
+    entry = json.loads(saved.read_text())
+    assert entry["request"]["lines"] == [{"id": 0, "text": "やあ"}]
+    assert "Japanese manga dialogue" in entry["system"]
+    assert entry["reply"][-1]["structured_output"] == {"translations": ["Hi"]}
