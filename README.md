@@ -141,7 +141,7 @@ The server sends each page to any OpenAI-compatible `/chat/completions` endpoint
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `YOMIKAE_OPENAI_BASE_URL` | `http://localhost:1234/v1` | The endpoint. For Ollama, use `http://localhost:11434/v1`. |
-| `YOMIKAE_OPENAI_MODEL` | `google/gemma-4-12b` | The model name the endpoint knows. Pick a model that handles Japanese. |
+| `YOMIKAE_OPENAI_MODEL` | `google/gemma-4-12b` | The model name the endpoint knows. Pick a model that handles Japanese. The server translates a page again when another model or translator made its cached copy. |
 | `YOMIKAE_OPENAI_API_KEY` | `lm-studio` | The bearer token, for a cloud API. |
 
 For example, to translate with a cloud API:

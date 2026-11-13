@@ -28,9 +28,9 @@ All configuration is environment variables. There is no settings UI.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `YOMIKAE_TRANSLATOR` | `openai` | `openai` (any OpenAI-compatible endpoint), `google_free` (keyless Google endpoint, no context), or `fake` (tests). |
+| `YOMIKAE_TRANSLATOR` | `openai` | `openai` (any OpenAI-compatible endpoint), `google_free` (keyless Google endpoint, no context), or `fake` (tests). The cache gives a page only to the translator that made it, so the server translates a page again when another translator made its cached copy. |
 | `YOMIKAE_OPENAI_BASE_URL` | `http://localhost:1234/v1` | LM Studio, Ollama (`http://localhost:11434/v1`), or Gemini's compat endpoint. |
-| `YOMIKAE_OPENAI_MODEL` | `google/gemma-4-12b` | Model name sent to the endpoint. Any OpenAI-compatible model works. |
+| `YOMIKAE_OPENAI_MODEL` | `google/gemma-4-12b` | Model name sent to the endpoint. Any OpenAI-compatible model works. The model is part of the translator's name, so the server translates a page again when another model made its cached copy. |
 | `YOMIKAE_OPENAI_API_KEY` | `lm-studio` | Bearer token. |
 | `YOMIKAE_OPENAI_REASONING_EFFORT` | `none` | Sent as `reasoning_effort`. `none` stops Gemma from thinking first, which cut a call from 7.6 s to 0.7 s. Set it empty to omit the field for endpoints that reject it. |
 | `YOMIKAE_CASE` | `upper` | `upper` sets dialogue in all caps in Anime Ace 2 when `fonts/animeace2_reg.ttf` exists, else in Shantell Sans Medium (the closest open-licensed match), and shouts in Bangers. `mixed` keeps the translation's casing in Comic Neue Regular, with shouts in Comic Neue Bold. The translation in the JSON response keeps its casing either way. |

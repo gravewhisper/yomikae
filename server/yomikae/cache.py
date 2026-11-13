@@ -25,6 +25,7 @@ NOISE = re.compile(r"[\s.,、。・ー一っッ~～\-]+")
 VERSION_DIR = re.compile(r"v(\d+)")
 LEGACY_DIR = re.compile(r"[0-9a-f]{64}")
 SAVED_SOURCES = ("furigana", "user")
+UNSTAMPED_TRANSLATOR = "openai:"
 KINDS = ("name", "term")
 MAX_WAS = 8
 KANJI_RUN = re.compile(r"[㐀-鿿々]+$")
@@ -46,8 +47,9 @@ def write_atomic(path: Path, data: bytes) -> None:
 
 
 class PageCache:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, translator: str):
         self.root = root
+        self.translator = translator
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock()
         self.writing: set[str] = set()
@@ -56,19 +58,25 @@ class PageCache:
     def rendered_path(self, page_id: str) -> Path:
         return next((self.root / page_id).glob("rendered.*"), self.root / page_id / "rendered.webp")
 
+    def ours(self, result: dict) -> bool:
+        made_by = result.get("translator")
+        return made_by == self.translator if made_by else self.translator.startswith(UNSTAMPED_TRANSLATOR)
+
     def load(self, page_id: str) -> dict | None:
         path = self.root / page_id / "result.json"
         try:
             if not self.rendered_path(page_id).exists():
                 return None
             result = json.loads(path.read_text())
+            if not self.ours(result):
+                return None
             os.utime(path)
         except (OSError, ValueError):
             return None
         return result
 
     def store(self, page_id: str, rendered_name: str, rendered: bytes, result: dict) -> None:
-        data = json.dumps(result, ensure_ascii=False).encode()
+        data = json.dumps({**result, "translator": self.translator}, ensure_ascii=False).encode()
         with self.lock:
             self.writing.add(page_id)
         try:
@@ -84,9 +92,11 @@ class PageCache:
     def all_results(self):
         for path in self.root.glob("*/result.json"):
             try:
-                yield json.loads(path.read_text())
+                result = json.loads(path.read_text())
             except (OSError, ValueError):
                 continue
+            if self.ours(result):
+                yield result
 
     def page_dirs(self) -> list[Path]:
         return [d for d in self.root.iterdir() if d.is_dir() and not d.is_symlink() and not d.name.startswith(".")]

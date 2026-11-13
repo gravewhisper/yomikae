@@ -28,7 +28,7 @@ from .translate import TranslatorFailed, TranslatorUnavailable
 
 log = logging.getLogger("yomikae")
 PAGE_ID_CHARS = set("0123456789abcdef")
-INTERNAL_FIELDS = ("context_key", "page_index", "position", "font_sizes", "skipped", "names_in_force", "revision", "fixed")
+INTERNAL_FIELDS = ("context_key", "page_index", "position", "font_sizes", "skipped", "names_in_force", "revision", "fixed", "translator")
 MAX_NAMES = 500
 MAX_RETRANSLATE_NAMES = 20
 MAX_WAS_SENT = 20

@@ -47,7 +47,7 @@ def test_startup_prunes_only_older_versions_and_legacy_hash_folders(tmp_path):
 
 
 def test_eviction_under_a_tiny_cap_drops_the_least_recently_read_pages(tmp_path):
-    cache = PageCache(tmp_path / "v1")
+    cache = PageCache(tmp_path / "v1", "fake")
     for i, page_id in enumerate(["a", "b", "c", "d"]):
         stored(cache, page_id, page(None, i), read_at=1000 + i)
 
@@ -59,7 +59,7 @@ def test_eviction_under_a_tiny_cap_drops_the_least_recently_read_pages(tmp_path)
 
 
 def test_a_cache_hit_refreshes_recency(tmp_path):
-    cache = PageCache(tmp_path / "v1")
+    cache = PageCache(tmp_path / "v1", "fake")
     for i, page_id in enumerate(["a", "b", "c"]):
         stored(cache, page_id, page(None, i), read_at=1000 + i)
 
@@ -70,7 +70,7 @@ def test_a_cache_hit_refreshes_recency(tmp_path):
 
 
 def test_eviction_never_removes_a_page_mid_write(tmp_path):
-    cache = PageCache(tmp_path / "v1")
+    cache = PageCache(tmp_path / "v1", "fake")
     for i, page_id in enumerate(["a", "b"]):
         stored(cache, page_id, page(None, i), read_at=1000 + i)
     cache.writing.add("a")
@@ -81,7 +81,7 @@ def test_eviction_never_removes_a_page_mid_write(tmp_path):
 
 
 def test_context_drops_evicted_pages_and_matches_a_rebuild(tmp_path):
-    cache = PageCache(tmp_path / "v1")
+    cache = PageCache(tmp_path / "v1", "fake")
     context = ContextStore()
     pages = [
         page("work", 0, ("一", "First page")),
@@ -106,7 +106,7 @@ def test_context_drops_evicted_pages_and_matches_a_rebuild(tmp_path):
 
 def test_delete_cache_clears_the_current_version_and_its_context(client, tmp_path, monkeypatch):
     engine = client.app.state.engine
-    cache = PageCache(tmp_path / f"v{PIPELINE_VERSION}")
+    cache = PageCache(tmp_path / f"v{PIPELINE_VERSION}", "fake")
     monkeypatch.setattr(engine, "cache", cache)
     monkeypatch.setattr(engine, "context", ContextStore())
     for i in range(3):
@@ -124,7 +124,7 @@ def test_delete_cache_clears_the_current_version_and_its_context(client, tmp_pat
 
 def test_a_new_page_triggers_eviction_after_the_response(client, synthetic_pages, tmp_path, monkeypatch):
     engine = client.app.state.engine
-    cache = PageCache(tmp_path / f"v{PIPELINE_VERSION}")
+    cache = PageCache(tmp_path / f"v{PIPELINE_VERSION}", "fake")
     monkeypatch.setattr(engine, "cache", cache)
     monkeypatch.setattr(engine, "context", ContextStore())
     monkeypatch.setattr(engine, "settings", replace(engine.settings, cache_max_bytes=1))
@@ -152,7 +152,7 @@ def test_pages_of_one_work_keep_their_context_with_the_same_or_no_page_index(cli
     from make_test_page import make_page
 
     engine = client.app.state.engine
-    cache = PageCache(tmp_path / f"v{PIPELINE_VERSION}")
+    cache = PageCache(tmp_path / f"v{PIPELINE_VERSION}", "fake")
     monkeypatch.setattr(engine, "cache", cache)
     monkeypatch.setattr(engine, "context", ContextStore())
 

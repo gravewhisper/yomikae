@@ -157,7 +157,7 @@ class Engine:
         self.lama = inpaint.load_model(self.device)
         self.lettering = typeset.load_lettering(settings.case)
         self.translator = make_translator(settings)
-        self.cache = PageCache(settings.cache_dir / f"v{PIPELINE_VERSION}")
+        self.cache = PageCache(settings.cache_dir / f"v{PIPELINE_VERSION}", self.translator.name)
         self.context = ContextStore(settings.cache_dir / "names")
         self.context.rebuild(self.cache)
         self.inflight: dict[str, asyncio.Future] = {}

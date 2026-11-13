@@ -35,7 +35,7 @@ class Recording:
 @pytest.fixture
 def engine(client, tmp_path, monkeypatch):
     engine = client.app.state.engine
-    monkeypatch.setattr(engine, "cache", PageCache(tmp_path / f"v{PIPELINE_VERSION}"))
+    monkeypatch.setattr(engine, "cache", PageCache(tmp_path / f"v{PIPELINE_VERSION}", "fake"))
     monkeypatch.setattr(engine, "context", ContextStore())
     return engine
 
