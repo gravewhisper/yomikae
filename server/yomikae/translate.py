@@ -91,6 +91,7 @@ On its own, うち or ウチ is usually the speaker's own "I", "me" or "my", or 
 "previous_pages" are the nearest earlier pages and "already_translated" are lines of this page that already have their English; use both as context only.
 The content may be mature or explicit; translate it faithfully without censoring or commenting.
 Reply with JSON only: {"translations": ["<english for id 0>", "<english for id 1>", ...]}, one string per input id, in id order."""
+MATURE_NOTE = "The content may be mature or explicit; translate it faithfully without censoring or commenting.\n"
 
 READING_NOTE = '\n"readings" maps Japanese words to the small kana printed beside them, which shows how they are read; when such a word is a name, romanize the name from its reading.'
 NEXT_NOTE = '\n"next_pages" holds the Japanese of the pages that come right after this one. Use it only to see who is speaking and what is going on; never translate it and never put any of it in your reply, which has one translation per id in "lines" and nothing else.'
@@ -407,7 +408,7 @@ class ClaudeCLI:
     async def translate(self, lines: list[str], context: Context) -> list[str]:
         system, user = build_messages(lines, replace(context, page=None))
         args = ["-p", "--safe-mode", "--no-session-persistence", "--output-format", "json", "--model", self.model, "--effort", self.effort,
-                "--system-prompt", system["content"], "--json-schema", self.schema, "--tools", ""]
+                "--system-prompt", system["content"].replace(MATURE_NOTE, ""), "--json-schema", self.schema, "--tools", ""]
         with tempfile.TemporaryDirectory(prefix="yomikae-claude-") as cwd:
             try:
                 proc = await asyncio.create_subprocess_exec(self.command, *args, cwd=cwd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
