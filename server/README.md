@@ -56,8 +56,10 @@ From `server/` in a fresh clone, create the venv and install the server with [uv
 ```sh
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cu128
-uv pip install --python .venv/bin/python -e '.[test]'
+uv pip install --python .venv/bin/python -e '.[gpu,test]'
 ```
+
+With no NVIDIA GPU, install `torch` from `https://download.pytorch.org/whl/cpu` and leave out the `gpu` extra, then run with `YOMIKAE_LOW_VRAM=1`.
 
 `pydensecrf` is built from source from a pinned git commit, so the install needs `git` and a C++ compiler. Add the `bench` extra, as in `-e '.[test,bench]'`, to install `sacrebleu` for `tools/translation_bench.py`.
 
@@ -80,7 +82,7 @@ The third is `models/manga109-bubble-seg.onnx`, the speech balloon segmenter. Th
 
 manga-ocr downloads its weights from Hugging Face on first start.
 
-`onnxruntime-gpu` needs CUDA 13's runtime, cuBLAS and NVRTC, which the server's dependencies install next to PyTorch's CUDA 12. Without them the text detector and the balloon segmenter run on the CPU. onnxruntime's CUDA provider also needs cuDNN, which it finds only after `torch` is imported and `onnxruntime.preload_dlls()` runs. `detect.load_session` does both.
+`onnxruntime-gpu` needs CUDA 13's runtime, cuBLAS and NVRTC, which the `gpu` extra installs next to PyTorch's CUDA 12. Without them the text detector and the balloon segmenter run on the CPU. onnxruntime's CUDA provider also needs cuDNN, which it finds only after `torch` is imported and `onnxruntime.preload_dlls()` runs. `detect.load_session` does both.
 
 ## Pipeline
 

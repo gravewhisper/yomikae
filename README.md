@@ -18,17 +18,18 @@ The name comes from 読み替え (yomikae), Japanese for "reading something as s
 
 ## What you need
 
-- Linux and an NVIDIA GPU with CUDA. Yomikae was developed on an RTX 5070 Ti with 16 GB, which runs the server and a 12B translation model side by side. Other platforms are untested.
+- Linux. Other platforms are untested.
+- An NVIDIA GPU with CUDA for a local LLM. Yomikae was developed on an RTX 5070 Ti with 16 GB, which runs the server and a 12B translation model side by side. With the Claude translator, a GPU is optional.
 - Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), git, and a C++ compiler. The install builds `pydensecrf` from source.
 - Node.js 22.23.4, 24.22.1, or 26.12.1 or newer, and [pnpm](https://pnpm.io/).
 - Chrome or Chromium 116 or newer.
 - A translator. Either [LM Studio](https://lmstudio.ai/) or another LLM server with an OpenAI-compatible API, or [Claude Code](https://claude.com/claude-code) signed in to a Claude subscription.
 
-The server holds about 3 GB of graphics memory while you read, and a local LLM takes the rest. With the Claude translator, the server is all that runs on the GPU. With a smaller GPU, pick a smaller model from [docs/models.md](docs/models.md), or move the server's work to the CPU as [docs/performance.md](docs/performance.md) explains.
+The server holds about 3 GB of graphics memory while you read, and a local LLM takes the rest. With the Claude translator, the server is all that runs on the GPU. With a smaller GPU, pick a smaller model from [docs/models.md](docs/models.md), or move the server's work to the CPU as [docs/performance.md](docs/performance.md) explains. With no GPU at all, use the Claude translator and run everything on the CPU, as [step 1](#1-install-the-server) shows. On 2026-11-14, on an AMD Ryzen 7 7800X3D with no GPU, a synthetic page took 3.9 to 4.7 s from start to finish, 2.1 to 2.6 s of it Claude.
 
 ## Install
 
-These steps take a fresh clone to a translated page. Plan on about 15 GB of disk. The server's venv takes about 7.5 GB, most of it PyTorch with CUDA, and a 12B model about 7 GB more.
+These steps take a fresh clone to a translated page. Plan on about 15 GB of disk with a GPU and a local LLM. The server's venv takes about 8 GB, most of it PyTorch with CUDA, and a 12B model about 7 GB more. With no GPU and the Claude translator, the venv takes about 1.8 GB and there is no model to download.
 
 ### 1. Install the server
 
@@ -37,10 +38,19 @@ git clone https://github.com/gravewhisper/yomikae.git
 cd yomikae/server
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cu128
+uv pip install --python .venv/bin/python -e '.[gpu,test]'
+```
+
+With no NVIDIA GPU, install PyTorch for the CPU and leave out `gpu` instead:
+
+```sh
+uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
 uv pip install --python .venv/bin/python -e '.[test]'
 ```
 
-The second command also installs CUDA 13's runtime, cuBLAS and NVRTC, which `onnxruntime-gpu` needs to run the text and bubble detectors on the GPU. PyTorch brings CUDA 12, and without these the detectors run on the CPU, about 0.9 s slower per page. Do not install `nvidia-cudnn-cu13`. It writes over the cuDNN files PyTorch uses, and the detectors run with PyTorch's cuDNN.
+Then start the server in step 4 with `YOMIKAE_LOW_VRAM=1`, which runs all of its models on the CPU, and use the Claude translator.
+
+With a GPU, the `gpu` extra installs CUDA 13's runtime, cuBLAS and NVRTC, which `onnxruntime-gpu` needs to run the text and bubble detectors on the GPU. PyTorch brings CUDA 12, and without these the detectors run on the CPU, about 0.9 s slower per page. Do not install `nvidia-cudnn-cu13`. It writes over the cuDNN files PyTorch uses, and the detectors run with PyTorch's cuDNN.
 
 Run the rest of the server steps from `server/` too.
 
@@ -93,6 +103,12 @@ With the Claude translator:
 
 ```sh
 YOMIKAE_TRANSLATOR=claude .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
+```
+
+With the Claude translator and no GPU:
+
+```sh
+YOMIKAE_TRANSLATOR=claude YOMIKAE_LOW_VRAM=1 .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
 ```
 
 The first start downloads the manga-ocr weights and takes about a minute. Later starts take a few seconds. In another terminal, check it:
