@@ -35,6 +35,9 @@ class Settings:
     cache_max_bytes: int = CACHE_MAX_BYTES
     detect_device: str = "cuda"
     low_vram: bool = False
+    claude_command: str = "claude"
+    claude_model: str = "claude-opus-5-5"
+    claude_effort: str = "low"
 
     @staticmethod
     def from_env() -> Settings:
@@ -51,6 +54,9 @@ class Settings:
             cache_max_bytes=int(env("YOMIKAE_CACHE_MAX_BYTES") or CACHE_MAX_BYTES),
             detect_device=parse_device(env("YOMIKAE_DETECT_DEVICE", "cuda")),
             low_vram=env("YOMIKAE_LOW_VRAM") == "1",
+            claude_command=env("YOMIKAE_CLAUDE_COMMAND", "claude"),
+            claude_model=env("YOMIKAE_CLAUDE_MODEL", "claude-opus-5-5"),
+            claude_effort=env("YOMIKAE_CLAUDE_EFFORT", "low"),
         )
 
 

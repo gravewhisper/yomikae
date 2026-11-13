@@ -11,7 +11,7 @@ import pytest
 from yomikae import translate
 from yomikae.config import Settings
 from yomikae.model import ContextLine
-from yomikae.translate import Context, Misaligned, TranslatorUnavailable, make_translator
+from yomikae.translate import Context, Misaligned, TranslatorFailed, TranslatorUnavailable, make_translator
 
 FAKE_CLI = """
 import json, os, sys
@@ -20,6 +20,7 @@ out = Path(os.environ["FAKE_CLAUDE_DIR"])
 (out / "argv.json").write_text(json.dumps(sys.argv[1:]))
 (out / "stdin.txt").write_text(sys.stdin.read())
 (out / "cwd.txt").write_text(os.getcwd())
+(out / "cwd_files.json").write_text(json.dumps(os.listdir()))
 sys.stdout.write((out / "reply.txt").read_text())
 sys.exit(int((out / "exit.txt").read_text()) if (out / "exit.txt").exists() else 0)
 """
@@ -62,7 +63,7 @@ def test_the_claude_translator_runs_with_no_tools_no_settings_and_no_session(cli
     assert "translations" in json.loads(argv[argv.index("--json-schema") + 1])["properties"]
     assert "Japanese manga dialogue" in argv[argv.index("--system-prompt") + 1]
     assert Path((out / "cwd.txt").read_text()) != Path.cwd()
-    assert not any(Path((out / "cwd.txt").read_text()).iterdir())
+    assert json.loads((out / "cwd_files.json").read_text()) == []
 
 
 def test_a_reply_in_prose_is_misaligned_and_carries_the_text(cli):
@@ -72,14 +73,14 @@ def test_a_reply_in_prose_is_misaligned_and_carries_the_text(cli):
         asyncio.run(translator.translate(["やあ"], Context()))
 
 
-def test_a_failed_run_makes_the_translator_unavailable(cli):
+def test_a_failed_run_fails_the_page_without_making_the_translator_unavailable(cli):
     translator, out = cli
     (out / "reply.txt").write_text(json.dumps([{"type": "result", "subtype": "error", "is_error": True, "result": "Not logged in"}]))
-    with pytest.raises(TranslatorUnavailable, match="Not logged in"):
+    with pytest.raises(TranslatorFailed, match="Not logged in"):
         asyncio.run(translator.translate(["やあ"], Context()))
     (out / "reply.txt").write_text("")
     (out / "exit.txt").write_text("1")
-    with pytest.raises(TranslatorUnavailable):
+    with pytest.raises(TranslatorFailed):
         asyncio.run(translator.translate(["やあ"], Context()))
 
 

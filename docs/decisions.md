@@ -382,3 +382,12 @@ The page answers 500 and not 503. The extension takes a 503 for an outage and se
 **Why.** On 2026-11-14 an audit found that the cache key was the image hash under the pipeline version and nothing else. A server started with another translator or model served the old translator's pages and reused its lines and names, and a run with `YOMIKAE_TRANSLATOR=fake` on the default cache folder left fake pages for the real translator to serve. With a second translator next to the local LLM, a work read under one would be served to the other.
 
 A page with no record was made before this change. The OpenAI-compatible translator is the default, `google_free` is a keyless translator with no context, and `fake` is for tests, so the server takes such a page for an `openai` page. That keeps the cache the reader already has. Raising PIPELINE_VERSION would delete every cached page, and counting such pages as absent would translate each of them again. The cost is that a page made by an earlier model, or by `fake` or `google_free`, before the record existed is still served by an `openai` translator. `DELETE /v1/cache` removes such pages.
+
+## A Claude subscription translates through `claude -p`
+
+**Decision.** Since 2026-11-14, `YOMIKAE_TRANSLATOR=claude` runs `claude -p` once per translate call. It passes the server's own system prompt with `--system-prompt`, the reply schema with `--json-schema`, and the request JSON on standard input, and it reads `structured_output` from `--output-format json`. It runs with `--tools ""`, `--safe-mode` and `--no-session-persistence`, in a new empty folder, and it sends no page image.
+
+**Why.** The reader has a Claude subscription and no API key, and `claude` signs in with the subscription. The text on a page is untrusted, so the command gets no tools and loads no settings, plugins, hooks or `CLAUDE.md`. Without `--tools ""`, a call asked to read a file could. With it, the model could only write a tool call into its reply, and that reply fails to parse and counts as unreadable. A refusal or a prose reply also counts as unreadable, so a page with no translated line fails with the reply's text instead of being saved.
+
+**Tried and rejected.** The Codex command line tool, `codex exec`, which signs in with a ChatGPT plan. It worked, but it read a local file when asked unless its shell tool was turned off, and each call cost about 14,000 tokens. It was left out by choice.
+

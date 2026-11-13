@@ -155,6 +155,18 @@ YOMIKAE_OPENAI_API_KEY=<key> \
 
 If the endpoint rejects the `reasoning_effort` field, also set `YOMIKAE_OPENAI_REASONING_EFFORT=` to an empty string.
 
+### Translate with a Claude subscription
+
+The server can run the [Claude Code](https://claude.com/claude-code) command line tool, `claude -p`, for each page instead of calling an endpoint. It uses whatever account `claude` is signed in to, so a Claude subscription works with no API key. Start the server with `YOMIKAE_TRANSLATOR=claude`:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `YOMIKAE_CLAUDE_MODEL` | `claude-opus-5-5` | The model `claude` uses. |
+| `YOMIKAE_CLAUDE_EFFORT` | `low` | How long the model thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `YOMIKAE_CLAUDE_COMMAND` | `claude` | The command to run, if `claude` is not on `PATH`. |
+
+The page's Japanese text, the earlier pages' lines and the work's names leave your computer and go to Anthropic. The page image does not. Each call starts `claude` with no tools, no settings, no plugins and no saved session, in an empty folder, so text on a page cannot make it read files or run commands. On 2026-11-14 a call with 8 lines took 3.2 to 3.4 s with Claude Opus 5.5 at low effort, of which about 1 s is `claude` starting.
+
 With a cloud API, the Japanese text of each page leaves your computer, along with the dialogue of up to two earlier pages as context. Page images never leave it. Cloud models may refuse some content, which leaves those lines in Japanese or fails the page.
 
 [docs/models.md](docs/models.md) suggests models for each amount of graphics memory. [server/README.md](server/README.md#configuration) lists every setting, including lettering case, fonts, the cache size, and CPU mode.

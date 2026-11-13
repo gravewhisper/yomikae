@@ -5,6 +5,8 @@ import base64
 import io
 import json
 import re
+import shutil
+import tempfile
 import unicodedata
 from collections.abc import Callable, Sequence
 from functools import cache
@@ -390,8 +392,51 @@ class Fake:
         return None
 
 
+class ClaudeCLI:
+    timeout = 180.0
+
+    def __init__(self, settings: Settings):
+        self.command = settings.claude_command
+        self.model = settings.claude_model
+        self.effort = settings.claude_effort
+        self.name = f"claude:{self.model}"
+        self.schema = json.dumps(RESPONSE_SCHEMA["json_schema"]["schema"])
+
+    async def translate(self, lines: list[str], context: Context) -> list[str]:
+        system, user = build_messages(lines, replace(context, page=None))
+        args = ["-p", "--safe-mode", "--no-session-persistence", "--output-format", "json", "--model", self.model, "--effort", self.effort,
+                "--system-prompt", system["content"], "--json-schema", self.schema, "--tools", ""]
+        with tempfile.TemporaryDirectory(prefix="yomikae-claude-") as cwd:
+            try:
+                proc = await asyncio.create_subprocess_exec(self.command, *args, cwd=cwd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            except OSError as e:
+                raise TranslatorUnavailable(f"cannot run {self.command}: {e}") from e
+            try:
+                out, err = await asyncio.wait_for(proc.communicate(user["content"].encode()), self.timeout)
+            except TimeoutError:
+                proc.kill()
+                await proc.wait()
+                raise TranslatorFailed(f"{self.command} gave no answer in {self.timeout:.0f} s") from None
+        try:
+            events = json.loads(out)
+            result = next(e for e in reversed(events if isinstance(events, list) else [events]) if e.get("type") == "result")
+        except (ValueError, StopIteration, AttributeError):
+            raise TranslatorFailed(f"{self.command} exited with {proc.returncode}: {(err or out).decode(errors='replace')[-200:]}") from None
+        if result.get("is_error"):
+            raise TranslatorFailed(f"{self.command} failed: {str(result.get('result'))[:200]}")
+        reply = json.dumps(result["structured_output"], ensure_ascii=False) if result.get("structured_output") else str(result.get("result") or "")
+        parsed = parse_translations(reply, len(lines))
+        if parsed is None:
+            raise Misaligned(reply)
+        return parsed
+
+    async def health(self) -> str | None:
+        return None if shutil.which(self.command) else f"translator command {self.command!r} not found"
+
+
 REGISTRY: dict[str, Callable[[Settings], Translator]] = {
     "openai": OpenAICompatible,
+    "claude": ClaudeCLI,
     "google_free": GoogleFree,
     "fake": Fake,
 }
