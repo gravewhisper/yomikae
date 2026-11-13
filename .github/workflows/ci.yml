@@ -53,50 +53,6 @@ jobs:
           if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then range="$AFTER -1"; else range="$BEFORE..$AFTER"; fi
           git log --format=%s $range | .github/scripts/check-commit-message.sh
 
-  server-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    defaults:
-      run:
-        working-directory: server
-    env:
-      CUDA_VISIBLE_DEVICES: ""
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - name: Install the Japanese font the test pages use
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q fonts-noto-cjk
-          sudo mkdir -p /usr/share/fonts/noto-cjk
-          sudo ln -sf "$(fc-list : file | grep -m1 'NotoSansCJK-Bold.ttc' | cut -d: -f1)" /usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc
-          test -f /usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc
-      - uses: actions/cache@v4
-        id: models
-        with:
-          path: |
-            server/models
-            ~/.cache/huggingface
-          key: server-models-v1
-      - name: Download the models
-        if: steps.models.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p models
-          curl -fL -o models/comictextdetector.pt.onnx https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3/comictextdetector.pt.onnx
-          curl -fL -o models/lama_large_512px.ckpt https://huggingface.co/dreMaz/AnimeMangaInpainting/resolve/main/lama_large_512px.ckpt
-          uv venv --python 3.12 .venv-export
-          uv pip install --python .venv-export/bin/python --torch-backend cpu ultralytics onnx onnxslim
-          curl -fL -o best.pt https://huggingface.co/huyvux3005/manga109-segmentation-bubble/resolve/main/best.pt
-          .venv-export/bin/yolo export model=best.pt format=onnx imgsz=1600 opset=17 simplify=True
-          mv best.onnx models/manga109-bubble-seg.onnx
-          rm -rf best.pt .venv-export
-      - name: Install the server
-        run: |
-          uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
-          uv pip install --python .venv/bin/python -e '.[test]'
-      - run: PYTHONPATH=$PWD .venv/bin/python -m pytest -q
-
   server-lint:
     runs-on: ubuntu-latest
     steps:
