@@ -185,12 +185,19 @@ class Engine:
         done = asyncio.get_running_loop().create_future()
         if context_key:
             self.turns[context_key] = done
-        try:
-            yield earlier
-        finally:
+
+        def release() -> None:
             done.set_result(None)
             if self.turns.get(context_key) is done:
                 del self.turns[context_key]
+
+        try:
+            yield earlier
+        finally:
+            if earlier and not earlier.done():
+                earlier.add_done_callback(lambda _: release())
+            else:
+                release()
 
     def warmup(self) -> None:
         self.gpu_thread.submit(self._warmup).result()

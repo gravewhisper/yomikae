@@ -64,7 +64,7 @@ Boxes are in pixels of the original image. Re-posting identical bytes returns th
 
 A page with no text returns `bubbles: []` and `rendered_url` pointing at an unchanged copy.
 
-A page that arrives while an earlier page with the same `context_key` is still in flight waits for that page before it is translated. The wait holds back only the translation, and detection, OCR and erasing still run. `timings_ms.total` includes the wait, and `timings_ms.translate` does not. A retranslate waits the same way. Pages with different keys do not wait for each other, and a page without a key waits for nothing.
+A page that arrives while an earlier page with the same `context_key` is still in flight waits for that page before it is translated. The wait holds back only the translation, and detection, OCR and erasing still run. `timings_ms.total` includes the wait, and `timings_ms.translate` does not. A retranslate waits the same way. A page with no text, or one that fails before its translation, answers without waiting, and the pages that arrived after it still wait for every earlier page in flight. Pages with different keys do not wait for each other, and a page without a key waits for nothing.
 
 ### `POST /v1/pages/{page_id}/retranslate`
 
