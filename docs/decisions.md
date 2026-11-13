@@ -364,3 +364,13 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 Through `Engine.process` on the reported page, 10 runs: before, 6 runs left the bubble with only the heart and others split the word; after, 作 is not sent and the bubble read "pervert♡" or "Pervert♡" all 10 times.
 
 **Going back to v0.2.0 does not fix it.** The owner first asked to revert. Rebuilt as v0.2.0 plus the picked server, translator and security fixes (local branch `revert-to-v0.2.0`), the same page broke 8 times in 10: 3 left only the heart and 5 split the word. The cause is this page's layout, not a change since v0.2.0.
+
+## A page the translator never answered fails instead of being saved
+
+**Decision.** A new page fails with `translator_error` when none of its lines gets English and the reply for at least one line could not be read as translations. The error holds the first 200 characters of the first such reply. Nothing is cached, and the page does not join the context of its work. An empty string that the model returned on purpose still counts as a translation. A page on which some lines got English is still saved, and a line whose reply could not be read keeps its Japanese. Retranslating is not covered and behaves as before.
+
+**Why.** On 2026-11-14 an audit ran the engine with a translator whose replies never parsed. A page with 4 bubbles took 7 calls, came back with 4 blank lines and no error, and was cached, so the second request for it made no call. A model that refuses, or one that ignores `response_format`, would leave every page saved in Japanese with nothing on the chip to say why. The reply is in the error so the reader can tell a refusal from a broken reply format.
+
+The page answers 500 and not 503. The extension takes a 503 for an outage and sends the page again as soon as `/v1/health` answers, and health asks only whether the translator is reachable, so a 503 would resend the page in a loop. After a 500 the chip shows the error with **Retry**.
+
+**Tried and rejected.** Failing every page that has a line with no readable reply. It was not built. One line that only ever gets JSON syntax back among lines that translate is an old, tested case, and failing the page for it would withhold a page that is otherwise readable.

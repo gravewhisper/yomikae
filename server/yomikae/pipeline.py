@@ -21,7 +21,7 @@ from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, INPUT_FORMATS, Settings
 from .model import Box, Bubble, CastEntry, ContextLine
 from .ruby import furigana_names
-from .translate import Context, PageImage, Translator, TranslatorUnavailable, make_translator, mend_stutters, subset, translate_lines
+from .translate import Context, PageImage, Translator, TranslatorFailed, TranslatorUnavailable, make_translator, mend_stutters, subset, translate_lines
 
 T = TypeVar("T")
 PIPELINE_VERSION = 36
@@ -393,9 +393,12 @@ async def translate_page(
         [list(page) for page in upcoming],
     )
     context = subset(context, [i for i, known in enumerate(recalled) if known is None])
-    fresh = iter(await translate_lines(translator, todo, context) if todo else [])
+    unread: list[str] = []
+    fresh = iter(await translate_lines(translator, todo, context, unread) if todo else [])
     out = mend_stutters(lines, [known if known is not None else next(fresh) for known in recalled])
     if pinned is not None:
         out = [known if known is not None else line for known, line in zip(pinned, out)]
+    elif unread and not any(out):
+        raise TranslatorFailed(f"translator {translator.name} translated no line of this page, and its reply could not be read: {unread[0][:200]}")
     store.learn_names(context_key, furigana_names(lines, out, list(ruby), store.memory(context_key)))
     return out

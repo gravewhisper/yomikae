@@ -214,15 +214,16 @@ def cut_words(out: list[str]) -> set[int]:
     return {j for i in range(len(out) - 1) if CUT_END.search(out[i]) and CUT_START.match(out[i + 1]) for j in (i, i + 1)}
 
 
-async def aligned(translator: Translator, lines: list[str], context: Context) -> list[str]:
+async def aligned(translator: Translator, lines: list[str], context: Context, unread: list[str]) -> list[str]:
     try:
         return await translator.translate(lines, context)
-    except Misaligned:
+    except Misaligned as e:
         if len(lines) == 1:
+            unread.append(str(e))
             return [""]
         mid = len(lines) // 2
-        first = await aligned(translator, lines[:mid], subset(context, range(mid)))
-        return first + await aligned(translator, lines[mid:], subset(context, range(mid, len(lines))))
+        first = await aligned(translator, lines[:mid], subset(context, range(mid)), unread)
+        return first + await aligned(translator, lines[mid:], subset(context, range(mid, len(lines))), unread)
 
 
 KIN_HONORIFIC = re.compile(r"\b(brother|sister|bro|sis|mother|father|mom|mum|dad|grandpa|grandma|granny|grandmother|grandfather|uncle|aunt|auntie)-(?:sama|chan|san|kun|dono|tan)\b", re.I)
@@ -232,11 +233,12 @@ def plain_kin(text: str) -> str:
     return KIN_HONORIFIC.sub(r"\1", text)
 
 
-async def translate_lines(translator: Translator, lines: list[str], context: Context) -> list[str]:
-    out = await aligned(translator, lines, context)
+async def translate_lines(translator: Translator, lines: list[str], context: Context, unread: list[str] | None = None) -> list[str]:
+    unread = [] if unread is None else unread
+    out = await aligned(translator, lines, context, unread)
     redo = {i for i, (source, text) in enumerate(zip(lines, out)) if text and unusable(source, text)} | cut_words(out)
     for i in sorted(redo):
-        text = (await aligned(translator, [lines[i]], subset(context, [i])))[0]
+        text = (await aligned(translator, [lines[i]], subset(context, [i]), unread))[0]
         out[i] = "" if unusable(lines[i], text) else text
     return [plain_kin(text) for text in out]
 
@@ -332,9 +334,10 @@ class OpenAICompatible:
             raise TranslatorUnavailable(f"unexpected response shape: {r.text[:200]}") from e
 
     async def translate(self, lines: list[str], context: Context) -> list[str]:
-        parsed = parse_translations(await self._complete(build_messages(lines, context), structured=True), len(lines))
+        reply = await self._complete(build_messages(lines, context), structured=True)
+        parsed = parse_translations(reply, len(lines))
         if parsed is None:
-            raise Misaligned(f"reply does not align with {len(lines)} lines")
+            raise Misaligned(reply)
         return parsed
 
     async def health(self) -> str | None:
