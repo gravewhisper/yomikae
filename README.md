@@ -40,6 +40,8 @@ uv pip install --python .venv/bin/python torch --index-url https://download.pyto
 uv pip install --python .venv/bin/python -e '.[test]'
 ```
 
+The second command also installs CUDA 13's runtime, cuBLAS and NVRTC, which `onnxruntime-gpu` needs to run the text and bubble detectors on the GPU. PyTorch brings CUDA 12, and without these the detectors run on the CPU, about 0.9 s slower per page. Do not install `nvidia-cudnn-cu13`. It writes over the cuDNN files PyTorch uses, and the detectors run with PyTorch's cuDNN.
+
 Run the rest of the server steps from `server/` too.
 
 ### 2. Download the models
