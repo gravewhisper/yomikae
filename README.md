@@ -16,22 +16,39 @@ The name comes from 読み替え (yomikae), Japanese for "reading something as s
 
 *Demo pages from the OpenMantra dataset (Hinami et al., AAAI 2021), CC BY-NC 4.0, translated by Yomikae.*
 
-## What you need
+## Pick a translator
 
-- Linux. Other platforms are untested.
-- An NVIDIA GPU with CUDA for a local LLM. Yomikae was developed on an RTX 5070 Ti with 16 GB, which runs the server and a 12B translation model side by side. With the Claude or Codex translator, a GPU is optional.
-- Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), git, and a C++ compiler. The install builds `pydensecrf` from source.
-- Node.js 22.23.4, 24.22.1, or 26.12.1 or newer, and [pnpm](https://pnpm.io/).
-- Chrome or Chromium 116 or newer.
-- A translator. Either [LM Studio](https://lmstudio.ai/) or another LLM server with an OpenAI-compatible API, [Claude Code](https://claude.com/claude-code) signed in to a Claude subscription, or [Codex](https://developers.openai.com/codex) signed in to a ChatGPT account.
+Yomikae does the image work on your computer and hands the Japanese text to a translator. Pick one before you install. You can switch later.
 
-The server holds about 3 GB of graphics memory while you read, and a local LLM takes the rest. With the Claude or Codex translator, the server is all that runs on the GPU. With a smaller GPU, pick a smaller model from [docs/models.md](docs/models.md), or move the server's work to the CPU as [docs/performance.md](docs/performance.md) explains. With no GPU at all, use Claude or Codex and run everything on the CPU, as [step 1](#1-install-the-server) shows. A page then takes about 4 to 5 s.
+| | Local LLM | Claude | Codex |
+| --- | --- | --- | --- |
+| **You need** | An NVIDIA GPU, 16 GB for the default model | A Claude subscription | A ChatGPT account, free works |
+| **GPU** | Required | Optional | Optional |
+| **Cost** | Free | Uses your subscription's limit | Uses Codex's monthly allowance |
+| **Privacy** | Nothing leaves your computer | Page text goes to Anthropic | Page text goes to OpenAI |
+
+Page images never leave your computer with any of them. [docs/translators.md](docs/translators.md) has the details. With a smaller GPU, [docs/models.md](docs/models.md) suggests smaller models and [docs/performance.md](docs/performance.md) shows how to move work to the CPU.
 
 ## Install
 
-These steps take a fresh clone to a translated page. Plan on about 15 GB of disk with a GPU and a local LLM. The server's venv takes about 8 GB, most of it PyTorch with CUDA, and a 12B model about 7 GB more. With no GPU and the Claude or Codex translator, the venv takes about 1.8 GB and there is no model to download.
+Run each block as it is, in order.
 
-### 1. Install the server
+### 1. Get the tools
+
+- **Linux.** Other systems are untested.
+- **[uv](https://docs.astral.sh/uv/)**, **git** and a **C++ compiler** (`build-essential` on Ubuntu and Debian, `base-devel` on Arch).
+- **Node.js** 22.23.4, 24.22.1 or 26.12.1 or newer, and **[pnpm](https://pnpm.io/)**.
+- **Chrome** or **Chromium** 116 or newer.
+- Your translator:
+  - Local LLM: [LM Studio](https://lmstudio.ai/).
+  - Claude: [Claude Code](https://claude.com/claude-code). Run `claude` once and sign in.
+  - Codex: [Codex](https://developers.openai.com/codex). Run `codex` once and sign in.
+
+### 2. Install the server
+
+Pick the block that matches your computer.
+
+**With an NVIDIA GPU** (about 8 GB of disk):
 
 ```sh
 git clone https://github.com/gravewhisper/yomikae.git
@@ -41,20 +58,21 @@ uv pip install --python .venv/bin/python torch --index-url https://download.pyto
 uv pip install --python .venv/bin/python -e '.[gpu,test]'
 ```
 
-With no NVIDIA GPU, install PyTorch for the CPU and leave out `gpu` instead:
+**Without one** (about 2 GB of disk, Claude or Codex only):
 
 ```sh
+git clone https://github.com/gravewhisper/yomikae.git
+cd yomikae/server
+uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
 uv pip install --python .venv/bin/python -e '.[test]'
 ```
 
-Then add `YOMIKAE_LOW_VRAM=1` when you start the server in step 4, and use Claude or Codex. The `gpu` extra brings the CUDA 13 libraries the detectors need on the GPU. [server/README.md](server/README.md) explains why.
+Stay in `yomikae/server` for steps 3 to 5.
 
-Run the rest of the server steps from `server/` too.
+### 3. Download the image models
 
-### 2. Download the models
-
-The server needs three model files in `server/models/`. Download the text detector and the inpainting model:
+Every translator needs these. They find, read and erase the Japanese. About 300 MB:
 
 ```sh
 mkdir -p models
@@ -62,7 +80,7 @@ curl -L -o models/comictextdetector.pt.onnx https://github.com/zyddnys/manga-ima
 curl -L -o models/lama_large_512px.ckpt https://huggingface.co/dreMaz/AnimeMangaInpainting/resolve/main/lama_large_512px.ckpt
 ```
 
-The speech balloon segmenter ships only as PyTorch weights, so convert it to ONNX once. These commands do it in a throwaway venv and then delete it:
+The bubble model needs a one-time conversion. This block does it in a throwaway folder and cleans up after itself:
 
 ```sh
 uv venv --python 3.12 .venv-export
@@ -73,11 +91,29 @@ mv best.onnx models/manga109-bubble-seg.onnx
 rm -rf best.pt .venv-export
 ```
 
-The export ends with `export success` and saves `best.onnx`, about 12 MB. manga-ocr, the fourth model, downloads itself the first time the server starts.
+It ends with `export success`. A fourth model, for reading Japanese, downloads itself the first time the server starts.
 
-### 3. Start the translator
+### 4. Start the server
 
-**A local LLM.** The default is Google's Gemma 4 12B in LM Studio. Install LM Studio, then download the model, load it, and start LM Studio's server:
+Pick the line for your translator and computer:
+
+```sh
+# Local LLM. Start LM Studio's server first (see below).
+.venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
+
+# Claude, with an NVIDIA GPU
+YOMIKAE_TRANSLATOR=claude .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
+
+# Claude, without a GPU
+YOMIKAE_TRANSLATOR=claude YOMIKAE_LOW_VRAM=1 .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
+```
+
+For Codex, use the Claude lines with `codex` in place of `claude`.
+
+<details>
+<summary>Local LLM: start LM Studio's server first</summary>
+
+Install LM Studio, then download Gemma 4 12B, load it and start the server:
 
 ```sh
 lms get google/gemma-4-12b
@@ -85,44 +121,37 @@ lms load google/gemma-4-12b -y
 lms server start
 ```
 
-**Claude or Codex.** Skip LM Studio. Install [Claude Code](https://claude.com/claude-code) or [Codex](https://developers.openai.com/codex), run `claude` or `codex` once to sign in, and set `YOMIKAE_TRANSLATOR=claude` or `codex` in step 4. See [Translators](#translators).
+For other models, see [docs/models.md](docs/models.md).
 
-### 4. Start the server
+</details>
 
-```sh
-.venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
-```
-
-For Claude, put `YOMIKAE_TRANSLATOR=claude` in front, or `codex` for Codex, and add `YOMIKAE_LOW_VRAM=1` with no GPU:
-
-```sh
-YOMIKAE_TRANSLATOR=claude YOMIKAE_LOW_VRAM=1 .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
-```
-
-The first start downloads the manga-ocr weights and takes about a minute. Later starts take a few seconds. In another terminal, check it:
+The first start takes about a minute. Leave this terminal open, and check the server from another one:
 
 ```sh
 curl http://127.0.0.1:7878/v1/health
 ```
 
-The reply contains `"ok": true`. If it says `"ok": false`, its `detail` says what is wrong, most often that LM Studio is not running, or that `claude` or `codex` is not on `PATH`.
+You should see `"ok": true`. If you see `"ok": false`, the `detail` says what is wrong. Usually LM Studio isn't running, or `claude` or `codex` isn't installed.
 
-### 5. Load the extension
-
-From `extension/`:
+### 5. Add the extension to Chrome
 
 ```sh
+cd ../extension
 pnpm install
 pnpm build
 ```
 
-1. Open `chrome://extensions` and switch on **Developer mode**.
-2. Click **Load unpacked** and select `extension/dist`.
-3. Open a page of the manga you want to read and click the Yomikae toolbar icon.
-4. Switch on **Translate** for the site and allow access when Chrome asks.
+1. Open `chrome://extensions` and switch on **Developer mode** in the top right.
+2. Click **Load unpacked** and pick the `extension/dist` folder.
+3. Open a manga page and click the Yomikae icon in the toolbar.
+4. Switch on **Translate** for the site, and allow access when Chrome asks.
 5. Choose **Every page, automatically** or **Only images I click Translate on**.
 
-The popup shows whether the server is running. Next time you want to read, start LM Studio's server if you use it, and the Yomikae server again. You don't need to reload the extension.
+Done. Pages turn into English as you read.
+
+**Next time**, just start the server again (and LM Studio, if you use it). The extension stays installed.
+
+> **A page failed?** Hover it to see why. With Claude or Codex, `claude failed` or `codex exited with` usually means you're signed out or out of usage. Run `claude` or `codex` to check, then press **Retry**. [docs/troubleshooting.md](docs/troubleshooting.md) covers the rest.
 
 ### Optional: the Anime Ace font
 
@@ -149,14 +178,6 @@ Yomikae has built-in adapters for pixiv and X (x.com and twitter.com). An adapte
 Any other site works in click-to-translate mode. Hover an image that is at least 200 px on each side and click **Translate** in its chip. In the popup you can switch a site to translate every page automatically.
 
 [docs/sites.md](docs/sites.md) describes each adapter and its limits. [docs/adapters.md](docs/adapters.md) explains how to write one for another site.
-
-## Translators
-
-- **A local LLM** (the default): Gemma 4 12B or another model in LM Studio, Ollama or any OpenAI-compatible server. Nothing leaves your computer.
-- **Claude** (`YOMIKAE_TRANSLATOR=claude`): your Claude subscription through Claude Code.
-- **Codex** (`YOMIKAE_TRANSLATOR=codex`): your ChatGPT account through Codex. A free account works, with a small monthly allowance.
-
-With Claude or Codex, each page's Japanese text goes to Anthropic or OpenAI, and the page image stays on your computer. [docs/translators.md](docs/translators.md) has each one's settings, speed and limits, and how to use a cloud API.
 
 ## How it works
 
