@@ -32,6 +32,7 @@ type Entry = {
 };
 type Outage = { attempt: number; detail: string };
 type Ready = { page: TranslatedPage; mime: string; base64: string; contextKey: string };
+type Kept<T> = { value: T; from: string[] };
 
 class JobError extends Error {
   constructor(message: string, readonly retryable: boolean) {
@@ -52,8 +53,8 @@ class NoAccess extends JobError {
 }
 
 const entries = new Map<string, Entry>();
-const results = new Map<string, Ready>();
-const originals = new Map<string, Blob>();
+const results = new Map<string, Kept<Ready>>();
+const originals = new Map<string, Kept<Blob>>();
 const slowHosts = new Map<string, number>();
 const ports = new Set<chrome.runtime.Port>();
 let inFlight = 0;
@@ -94,10 +95,10 @@ function detach(port: chrome.runtime.Port): void {
 
 function sendCached(port: chrome.runtime.Port, key: string): boolean {
   const done = results.get(key);
-  if (!done) return false;
+  if (!done || localRefusal(port, done.from)) return false;
   results.delete(key);
   results.set(key, done);
-  send(port, { type: 'ready', key, ...done });
+  send(port, { type: 'ready', key, ...done.value });
   return true;
 }
 
@@ -111,11 +112,20 @@ function placeOf(url: string): (typeof PLACES)[number] | undefined {
   }
 }
 
-function localRefusal(port: chrome.runtime.Port, w: Want): string | undefined {
+function closest(urls: string[]): number {
+  return Math.max(0, ...urls.map((u) => placeOf(u)?.rank ?? 0));
+}
+
+function keptImage(key: string, candidates: string[]): Blob | undefined {
+  const kept = originals.get(key);
+  return kept && closest(kept.from) <= closest(candidates) ? kept.value : undefined;
+}
+
+function localRefusal(port: chrome.runtime.Port, urls: string[]): string | undefined {
   const tab = port.sender?.tab?.url ?? '';
   if (tab.startsWith(chrome.runtime.getURL(''))) return undefined;
   const tabRank = placeOf(tab)?.rank ?? 0;
-  for (const url of w.candidates) {
+  for (const url of urls) {
     const place = placeOf(url);
     if (place && place.rank > tabRank) return `Refused to fetch ${new URL(url).hostname}: a web page cannot load images from ${place.words}.`;
   }
@@ -129,7 +139,7 @@ function redirectRefusal(asked: string, landed: string): string | undefined {
 }
 
 function want(port: chrome.runtime.Port, w: Want): void {
-  const refusal = localRefusal(port, w);
+  const refusal = localRefusal(port, [...w.candidates, ...(results.get(w.key)?.from ?? []), ...(entries.get(w.key)?.want.candidates ?? [])]);
   if (refusal) return send(port, { type: 'failed', key: w.key, error: refusal, retryable: false });
   if (sendCached(port, w.key)) return;
   const existing = entries.get(w.key);
@@ -222,16 +232,16 @@ function forget(entry: Entry): void {
 async function run(entry: Entry): Promise<void> {
   const { key } = entry.want;
   try {
-    let image = originals.get(key);
+    let image = keptImage(key, entry.want.candidates);
     if (!image) {
       setState(entry, 'fetching');
       image = await fetchImage(entry.want.candidates);
     }
-    remember(originals, key, image, ORIGINALS_LIMIT);
+    remember(originals, key, { value: image, from: entry.want.candidates }, ORIGINALS_LIMIT);
     if (entries.get(key) !== entry) return;
     setState(entry, 'translating');
     const ready = await translate(image, entry.want);
-    remember(results, key, ready, RESULT_CACHE_LIMIT);
+    remember(results, key, { value: ready, from: entry.want.candidates }, RESULT_CACHE_LIMIT);
     broadcast(entry, { type: 'ready', key, ...ready });
   } catch (err) {
     if (err instanceof ServerDown && entry.ports.size > 0) {
@@ -396,17 +406,17 @@ async function pageId(image: Blob): Promise<string> {
 }
 
 function namesChanged(contextKey: string): void {
-  for (const [key, done] of results) if (done.contextKey === contextKey) results.delete(key);
+  for (const [key, done] of results) if (done.value.contextKey === contextKey) results.delete(key);
   for (const port of ports) send(port, { type: 'stale', contextKey });
 }
 
 async function retranslate(port: chrome.runtime.Port, r: RetranslateRequest): Promise<void> {
   const { key, contextKey, pageIndex } = r.want;
-  const refusal = localRefusal(port, r.want);
+  const refusal = localRefusal(port, r.want.candidates);
   if (refusal) return send(port, { type: 'retranslated', key, outcome: { ok: false, error: refusal } });
   try {
-    const image = originals.get(key) ?? (await fetchImage(r.want.candidates));
-    remember(originals, key, image, ORIGINALS_LIMIT);
+    const image = keptImage(key, r.want.candidates) ?? (await fetchImage(r.want.candidates));
+    remember(originals, key, { value: image, from: r.want.candidates }, ORIGINALS_LIMIT);
     const server = await getServerUrl();
     const form = new FormData();
     form.append('image', image, 'page');
@@ -417,7 +427,7 @@ async function retranslate(port: chrome.runtime.Port, r: RetranslateRequest): Pr
       namesChanged(contextKey);
       chrome.runtime.sendMessage({ type: 'names', contextKey } satisfies Broadcast).catch(() => undefined);
     }
-    remember(results, key, ready, RESULT_CACHE_LIMIT);
+    remember(results, key, { value: ready, from: r.want.candidates }, RESULT_CACHE_LIMIT);
     send(port, { type: 'ready', key, ...ready });
     send(port, { type: 'retranslated', key, outcome: { ok: true } });
   } catch (err) {
@@ -427,11 +437,11 @@ async function retranslate(port: chrome.runtime.Port, r: RetranslateRequest): Pr
 
 async function report(port: chrome.runtime.Port, r: ReportRequest): Promise<void> {
   const { key } = r.want;
-  const refusal = localRefusal(port, r.want);
+  const refusal = localRefusal(port, r.want.candidates);
   if (refusal) return send(port, { type: 'reported', key, outcome: { ok: false, error: refusal } });
   try {
-    const image = originals.get(key) ?? (await fetchImage(r.want.candidates));
-    remember(originals, key, image, ORIGINALS_LIMIT);
+    const image = keptImage(key, r.want.candidates) ?? (await fetchImage(r.want.candidates));
+    remember(originals, key, { value: image, from: r.want.candidates }, ORIGINALS_LIMIT);
     const form = new FormData();
     form.append('image', image, 'page');
     form.append('page_url', r.pageUrl);
