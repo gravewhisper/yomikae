@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 from dataclasses import replace
 
@@ -12,7 +13,7 @@ from PIL import Image
 
 from make_test_page import make_page
 from yomikae.config import Settings
-from yomikae.translate import OpenAICompatible
+from yomikae.translate import Misaligned, OpenAICompatible
 
 
 def iou(a, b) -> float:
@@ -517,6 +518,33 @@ def test_a_line_that_only_ever_gets_json_syntax_back_is_left_blank(client, seed,
     translations = [b["translation"] for b in page["bubbles"]]
     assert translations[0] == "", translations
     assert translations[1:] == [english(b["source"]) for b in page["bubbles"][1:]]
+
+
+def test_a_page_whose_replies_were_never_readable_fails_and_is_not_cached(client):
+    refusal = "I'm sorry, but I can't help with translating this page. " * 5
+
+    def refuse(call, lines, context):
+        raise Misaligned(refusal)
+
+    translator = Scripted(refuse)
+    r = post_page_with(client, translator, 227)
+    assert r.status_code == 500 and r.json()["error"] == "translator_error", r.text
+    assert refusal[:200] in r.json()["detail"] and refusal[:201] not in r.json()["detail"], r.text
+    page_id = hashlib.sha256(png_bytes(make_page(227)[0])).hexdigest()
+    assert client.app.state.engine.cache.load(page_id) is None, "a page the translator never answered was cached"
+    asked = len(translator.calls)
+    assert post_page_with(client, translator, 227).status_code == 500
+    assert len(translator.calls) > asked, "the second request did not ask the translator again"
+
+
+def test_a_page_whose_lines_all_come_back_empty_on_purpose_is_saved(client):
+    translator = Scripted(lambda call, lines, context: [""] * len(lines))
+    r = post_page_with(client, translator, 228)
+    assert r.status_code == 200, r.text
+    assert r.json()["bubbles"] and not any(b["translation"] for b in r.json()["bubbles"])
+    again = post_page_with(client, translator, 228)
+    assert again.status_code == 200 and again.json()["cached"] is True, again.text
+    assert len(translator.calls) == 1
 
 
 def strip(pages: int, seed: int) -> tuple[Image.Image, list[dict]]:
