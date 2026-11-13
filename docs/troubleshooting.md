@@ -26,7 +26,7 @@ The Yomikae server is not running, or the translator behind it is not answering.
 	lms server start
 	```
 
-	With the Claude translator, check that `claude` is on the server's `PATH`, or set `YOMIKAE_CLAUDE_COMMAND` to its full path.
+	With the Claude translator, check that `claude` is on the server's `PATH`, or set `YOMIKAE_CLAUDE_COMMAND` to its full path. With the Codex translator, do the same for `codex` and `YOMIKAE_CODEX_COMMAND`.
 
 Waiting pages continue by themselves. The extension checks the server after 2, 4, 8, and 16 seconds, then every 30 seconds, and sends the pages in their usual order once it answers.
 
