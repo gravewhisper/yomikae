@@ -6,6 +6,7 @@ from contextlib import suppress
 
 import pytest
 from conftest import png_bytes
+from PIL import Image
 
 from make_test_page import make_page
 from yomikae.cache import ContextStore, PageCache
@@ -189,3 +190,24 @@ def test_the_wait_for_the_page_before_counts_in_the_total_time_and_not_in_transl
     timings, took = run(read())
     assert timings["translate"] < 1000
     assert took - timings["total"] < 500
+
+
+def test_a_page_behind_a_page_without_text_still_waits_for_the_page_before_both(engine, monkeypatch):
+    first, third = pages_adding_a_line_each(2, 970)
+    blank = png_bytes(Image.new("RGB", (800, 1100), (255, 255, 255)))
+    unrelated = page(980)
+
+    async def read():
+        translator, opened, release = holding_the_first_call()
+        monkeypatch.setattr(engine, "translator", translator)
+        held = asyncio.create_task(engine.process(first, "work", 0))
+        await opened.wait()
+        await engine.process(blank, "work", 1)
+        waiting = asyncio.create_task(engine.process(third, "work", 2))
+        await until_detection_and_ocr_are_done(engine, unrelated)
+        release.set()
+        await waiting
+        return translator, await held
+
+    translator, before = run(read())
+    assert translator.calls[-1][1].pages == [lines(before)]
