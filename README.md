@@ -25,7 +25,7 @@ The name comes from 読み替え (yomikae), Japanese for "reading something as s
 - Chrome or Chromium 116 or newer.
 - A translator. Either [LM Studio](https://lmstudio.ai/) or another LLM server with an OpenAI-compatible API, [Claude Code](https://claude.com/claude-code) signed in to a Claude subscription, or [Codex](https://developers.openai.com/codex) signed in to a ChatGPT account.
 
-The server holds about 3 GB of graphics memory while you read, and a local LLM takes the rest. With the Claude or Codex translator, the server is all that runs on the GPU. With a smaller GPU, pick a smaller model from [docs/models.md](docs/models.md), or move the server's work to the CPU as [docs/performance.md](docs/performance.md) explains. With no GPU at all, use the Claude or Codex translator and run everything on the CPU, as [step 1](#1-install-the-server) shows. On 2026-11-14, on an AMD Ryzen 7 7800X3D with no GPU, a synthetic page took 3.9 to 4.7 s from start to finish, 2.1 to 2.6 s of it Claude.
+The server holds about 3 GB of graphics memory while you read, and a local LLM takes the rest. With the Claude or Codex translator, the server is all that runs on the GPU. With a smaller GPU, pick a smaller model from [docs/models.md](docs/models.md), or move the server's work to the CPU as [docs/performance.md](docs/performance.md) explains. With no GPU at all, use Claude or Codex and run everything on the CPU, as [step 1](#1-install-the-server) shows. A page then takes about 4 to 5 s.
 
 ## Install
 
@@ -48,9 +48,7 @@ uv pip install --python .venv/bin/python torch --index-url https://download.pyto
 uv pip install --python .venv/bin/python -e '.[test]'
 ```
 
-Then start the server in step 4 with `YOMIKAE_LOW_VRAM=1`, which runs all of its models on the CPU, and use the Claude or Codex translator.
-
-With a GPU, the `gpu` extra installs CUDA 13's runtime, cuBLAS and NVRTC, which `onnxruntime-gpu` needs to run the text and bubble detectors on the GPU. PyTorch brings CUDA 12, and without these the detectors run on the CPU, about 0.9 s slower per page. Do not install `nvidia-cudnn-cu13`. It writes over the cuDNN files PyTorch uses, and the detectors run with PyTorch's cuDNN.
+Then add `YOMIKAE_LOW_VRAM=1` when you start the server in step 4, and use Claude or Codex. The `gpu` extra brings the CUDA 13 libraries the detectors need on the GPU. [server/README.md](server/README.md) explains why.
 
 Run the rest of the server steps from `server/` too.
 
@@ -79,9 +77,7 @@ The export ends with `export success` and saves `best.onnx`, about 12 MB. manga-
 
 ### 3. Start the translator
 
-Pick one of two translators.
-
-**A local LLM.** The default translator is Google's Gemma 4 12B in LM Studio. Nothing leaves your computer. Install LM Studio, then download the model, load it, and start LM Studio's server:
+**A local LLM.** The default is Google's Gemma 4 12B in LM Studio. Install LM Studio, then download the model, load it, and start LM Studio's server:
 
 ```sh
 lms get google/gemma-4-12b
@@ -89,11 +85,7 @@ lms load google/gemma-4-12b -y
 lms server start
 ```
 
-To use another model or another LLM server, see [Use another translator](#use-another-translator).
-
-**Your Claude subscription.** Install [Claude Code](https://claude.com/claude-code) and sign in once by running `claude` and following its prompts. Then skip LM Studio, and in step 4 start the server with `YOMIKAE_TRANSLATOR=claude`. The page's Japanese text goes to Anthropic, and each page uses some of your subscription's limit. [Translate with a Claude subscription](#translate-with-a-claude-subscription) has the settings.
-
-**Your ChatGPT account through Codex.** Install [Codex](https://developers.openai.com/codex) and sign in once by running `codex` and following its prompts. A free ChatGPT account works, with a small monthly allowance. Then skip LM Studio, and in step 4 start the server with `YOMIKAE_TRANSLATOR=codex`. The page's Japanese text goes to OpenAI. [Translate with a ChatGPT plan through Codex](#translate-with-a-chatgpt-plan-through-codex) has the settings.
+**Claude or Codex.** Skip LM Studio. Install [Claude Code](https://claude.com/claude-code) or [Codex](https://developers.openai.com/codex), run `claude` or `codex` once to sign in, and set `YOMIKAE_TRANSLATOR=claude` or `codex` in step 4. See [Translators](#translators).
 
 ### 4. Start the server
 
@@ -101,19 +93,11 @@ To use another model or another LLM server, see [Use another translator](#use-an
 .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
 ```
 
-With the Claude translator:
-
-```sh
-YOMIKAE_TRANSLATOR=claude .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
-```
-
-With the Claude translator and no GPU:
+For Claude, put `YOMIKAE_TRANSLATOR=claude` in front, or `codex` for Codex, and add `YOMIKAE_LOW_VRAM=1` with no GPU:
 
 ```sh
 YOMIKAE_TRANSLATOR=claude YOMIKAE_LOW_VRAM=1 .venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
 ```
-
-For Codex, use `YOMIKAE_TRANSLATOR=codex` in either command.
 
 The first start downloads the manga-ocr weights and takes about a minute. Later starts take a few seconds. In another terminal, check it:
 
@@ -121,7 +105,7 @@ The first start downloads the manga-ocr weights and takes about a minute. Later 
 curl http://127.0.0.1:7878/v1/health
 ```
 
-The reply contains `"ok": true`. If it says `"ok": false`, its `detail` says what is wrong, most often that LM Studio is not running, or with the Claude or Codex translator that `claude` or `codex` is not on `PATH`.
+The reply contains `"ok": true`. If it says `"ok": false`, its `detail` says what is wrong, most often that LM Studio is not running, or that `claude` or `codex` is not on `PATH`.
 
 ### 5. Load the extension
 
@@ -138,7 +122,7 @@ pnpm build
 4. Switch on **Translate** for the site and allow access when Chrome asks.
 5. Choose **Every page, automatically** or **Only images I click Translate on**.
 
-The popup shows whether the server is running. Next time you want to read, start LM Studio's server, unless you use the Claude or Codex translator, and the Yomikae server again. You don't need to reload the extension.
+The popup shows whether the server is running. Next time you want to read, start LM Studio's server if you use it, and the Yomikae server again. You don't need to reload the extension.
 
 ### Optional: the Anime Ace font
 
@@ -166,57 +150,13 @@ Any other site works in click-to-translate mode. Hover an image that is at least
 
 [docs/sites.md](docs/sites.md) describes each adapter and its limits. [docs/adapters.md](docs/adapters.md) explains how to write one for another site.
 
-## Use another translator
+## Translators
 
-The server sends each page to any OpenAI-compatible `/chat/completions` endpoint that accepts `response_format` with a JSON schema. Set these environment variables before you start the server:
+- **A local LLM** (the default): Gemma 4 12B or another model in LM Studio, Ollama or any OpenAI-compatible server. Nothing leaves your computer.
+- **Claude** (`YOMIKAE_TRANSLATOR=claude`): your Claude subscription through Claude Code.
+- **Codex** (`YOMIKAE_TRANSLATOR=codex`): your ChatGPT account through Codex. A free account works, with a small monthly allowance.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `YOMIKAE_OPENAI_BASE_URL` | `http://localhost:1234/v1` | The endpoint. For Ollama, use `http://localhost:11434/v1`. |
-| `YOMIKAE_OPENAI_MODEL` | `google/gemma-4-12b` | The model name the endpoint knows. Pick a model that handles Japanese. The server translates a page again when another model or translator made its cached copy. |
-| `YOMIKAE_OPENAI_API_KEY` | `lm-studio` | The bearer token, for a cloud API. |
-
-For example, to translate with a cloud API:
-
-```sh
-YOMIKAE_OPENAI_BASE_URL=https://api.example.com/v1 \
-YOMIKAE_OPENAI_MODEL=<model> \
-YOMIKAE_OPENAI_API_KEY=<key> \
-.venv/bin/uvicorn yomikae.app:app --host 127.0.0.1 --port 7878
-```
-
-If the endpoint rejects the `reasoning_effort` field, also set `YOMIKAE_OPENAI_REASONING_EFFORT=` to an empty string.
-
-### Translate with a Claude subscription
-
-The server can run the [Claude Code](https://claude.com/claude-code) command line tool, `claude -p`, for each page instead of calling an endpoint. It uses whatever account `claude` is signed in to, so a Claude subscription works with no API key. Start the server with `YOMIKAE_TRANSLATOR=claude`:
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `YOMIKAE_CLAUDE_MODEL` | `claude-sonnet-5-5` | The model `claude` uses. `claude-haiku-5-5` is faster and uses less of a subscription's limit, and `claude-opus-5-5` is slower and uses more. |
-| `YOMIKAE_CLAUDE_EFFORT` | `low` | How long the model thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
-| `YOMIKAE_CLAUDE_COMMAND` | `claude` | The command to run, if `claude` is not on `PATH`. |
-| `YOMIKAE_CLAUDE_LOG_DIR` | unset | A folder where the server saves each call as JSON: the instructions, the request with the page's lines and context, and `claude`'s whole reply. Unset saves nothing. |
-
-The page's Japanese text, the earlier pages' lines and the work's names leave your computer and go to Anthropic. The page image does not. Each call starts `claude` with no tools, no settings, no plugins and no saved session, in an empty folder, so text on a page cannot make it read files or run commands. On 2026-11-14, at low effort, a call with 8 lines took about 2.7 s with Claude Sonnet 5.5, 2.2 s with Claude Haiku 5.5 and 3.2 to 3.4 s with Claude Opus 5.5, of which about 1 s is `claude` starting. The translation quality of these models on this task was not measured.
-
-### Translate with a ChatGPT plan through Codex
-
-The server can also run OpenAI's [Codex](https://developers.openai.com/codex) command line tool, `codex exec`, once per page, on whatever ChatGPT account `codex` is signed in to. ChatGPT's free plan includes a small Codex allowance. Run `/status` in `codex` to see how much of it is left. Start the server with `YOMIKAE_TRANSLATOR=codex`:
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `YOMIKAE_CODEX_MODEL` | unset | The model `codex` uses. Unset uses Codex's own default. |
-| `YOMIKAE_CODEX_EFFORT` | `none` | How long the model reasons: `none`, `low`, `medium`, `high`, `xhigh` or `max`. |
-| `YOMIKAE_CODEX_COMMAND` | `codex` | The command to run, if `codex` is not on `PATH`. |
-
-As with Claude, the page's text and context go to OpenAI and the page image does not. Each call runs `codex` in an empty folder with its shell tool and its other tools and plugins turned off, without your Codex settings or rules, and with the server's own instructions in place of Codex's. On 2026-11-14 a call took 3.1 to 3.2 s and about 8,600 tokens, most of them Codex's own tool definitions. Reasoning effort barely changed the count.
-
-Use a subscription only through its maker's own tool. Anthropic's terms allow a Claude subscription only in Claude Code and Claude.ai, so do not point other command line tools at one.
-
-With a cloud API, the Japanese text of each page leaves your computer, along with the dialogue of up to two earlier pages as context. Page images never leave it. Cloud models may refuse some content, which leaves those lines in Japanese or fails the page.
-
-[docs/models.md](docs/models.md) suggests models for each amount of graphics memory. [server/README.md](server/README.md#configuration) lists every setting, including lettering case, fonts, the cache size, and CPU mode.
+With Claude or Codex, each page's Japanese text goes to Anthropic or OpenAI, and the page image stays on your computer. [docs/translators.md](docs/translators.md) has each one's settings, speed and limits, and how to use a cloud API.
 
 ## How it works
 
@@ -243,10 +183,10 @@ These are planned but not built yet:
 
 - A batch mode that translates a folder of images.
 - Korean and Chinese.
-- Setups for computers without a strong GPU.
 
 ## More docs
 
+- [Translators](docs/translators.md) covers the local, Claude and Codex translators and their settings.
 - [Picking a translation model](docs/models.md) suggests models for each amount of graphics memory and lists the ones measured so far.
 - [Speed and graphics memory](docs/performance.md) shows where a page's time goes and the settings that trade speed for memory.
 - [Troubleshooting](docs/troubleshooting.md) covers common problems and how to report a bad page.
