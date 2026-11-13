@@ -14,6 +14,7 @@ const REPORT_TIMEOUT_MS = 30_000;
 const SLOW_HOST_PENALTY_MS = 10 * 60_000;
 const HEALTH_BACKOFF_MS = [2_000, 4_000, 8_000, 16_000, 30_000];
 const HEALTH_TIMEOUT_MS = 5_000;
+const MAX_RESENDS = 3;
 const SERVER_DOWN_STATUSES = new Set([502, 503, 504]);
 const FINAL_ERRORS = new Set(['bad_image', 'bad_request', 'forbidden']);
 const PLACES = [
@@ -29,6 +30,7 @@ type Entry = {
   want: Want;
   state: 'queued' | 'fetching' | 'translating' | 'waiting';
   ports: Set<chrome.runtime.Port>;
+  resends: number;
 };
 type Outage = { attempt: number; detail: string };
 type Ready = { page: TranslatedPage; mime: string; base64: string; contextKey: string };
@@ -149,7 +151,7 @@ function want(port: chrome.runtime.Port, w: Want): void {
     send(port, progress(existing));
     return;
   }
-  const entry: Entry = { want: w, state: outage ? 'waiting' : 'queued', ports: new Set([port]) };
+  const entry: Entry = { want: w, state: outage ? 'waiting' : 'queued', ports: new Set([port]), resends: 0 };
   entries.set(w.key, entry);
   send(port, progress(entry));
 }
@@ -244,7 +246,7 @@ async function run(entry: Entry): Promise<void> {
     remember(results, key, { value: ready, from: entry.want.candidates }, RESULT_CACHE_LIMIT);
     broadcast(entry, { type: 'ready', key, ...ready });
   } catch (err) {
-    if (err instanceof ServerDown && entry.ports.size > 0) {
+    if (err instanceof ServerDown && entry.ports.size > 0 && entry.resends++ < MAX_RESENDS) {
       entry.state = 'queued';
       return serverDown(err.message);
     }
