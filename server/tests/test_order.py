@@ -211,3 +211,30 @@ def test_a_page_behind_a_page_without_text_still_waits_for_the_page_before_both(
 
     translator, before = run(read())
     assert translator.calls[-1][1].pages == [lines(before)]
+
+
+class Listed:
+    def __init__(self, results):
+        self.results = results
+
+    def all_results(self):
+        return iter(self.results)
+
+
+def test_pages_without_a_page_index_keep_their_order_after_a_restart(engine, monkeypatch):
+    async def at_once(call):
+        pass
+
+    monkeypatch.setattr(engine, "translator", Recording(at_once))
+
+    async def read():
+        return [await engine.process(page(seed), "work", None) for seed in range(990, 994)]
+
+    results = run(read())
+    live = engine.context.before("work", None)
+    assert live == [lines(result) for result in results[-2:]]
+    on_disk = list(engine.cache.all_results())
+    for listing in (on_disk, on_disk[::-1]):
+        restarted = ContextStore()
+        restarted.rebuild(Listed(listing))
+        assert restarted.before("work", None) == live, "a restart changed which pages come before a new page"
