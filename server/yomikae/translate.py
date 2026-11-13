@@ -12,6 +12,7 @@ import unicodedata
 from collections.abc import Callable, Sequence
 from functools import cache
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Protocol
 
 import fugashi
@@ -394,8 +395,29 @@ class Fake:
         return None
 
 
+COMMAND_TIMEOUT = 180.0
+CODEX_FEATURES_OFF = ("shell_tool", "plugins", "apps", "browser_use", "browser_use_external", "computer_use", "hooks", "skill_search", "tool_suggest", "sleep_tool", "goals", "incremental_tools", "deferred_tool_world_state")
+
+
+async def run_command(command: str, args: list[str], stdin: str, cwd: str, timeout: float = COMMAND_TIMEOUT) -> tuple[int | None, bytes, bytes]:
+    try:
+        proc = await asyncio.create_subprocess_exec(command, *args, cwd=cwd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    except OSError as e:
+        raise TranslatorUnavailable(f"cannot run {command}: {e}") from e
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(stdin.encode()), timeout)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise TranslatorFailed(f"{command} gave no answer in {timeout:.0f} s") from None
+    return proc.returncode, out, err
+
+
+def command_health(command: str) -> str | None:
+    return None if shutil.which(command) else f"translator command {command!r} not found"
+
+
 class ClaudeCLI:
-    timeout = 180.0
 
     def __init__(self, settings: Settings):
         self.command = settings.claude_command
@@ -410,23 +432,14 @@ class ClaudeCLI:
         args = ["-p", "--safe-mode", "--no-session-persistence", "--output-format", "json", "--model", self.model, "--effort", self.effort,
                 "--system-prompt", system["content"].replace(MATURE_NOTE, ""), "--json-schema", self.schema, "--tools", ""]
         with tempfile.TemporaryDirectory(prefix="yomikae-claude-") as cwd:
-            try:
-                proc = await asyncio.create_subprocess_exec(self.command, *args, cwd=cwd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-            except OSError as e:
-                raise TranslatorUnavailable(f"cannot run {self.command}: {e}") from e
-            try:
-                out, err = await asyncio.wait_for(proc.communicate(user["content"].encode()), self.timeout)
-            except TimeoutError:
-                proc.kill()
-                await proc.wait()
-                raise TranslatorFailed(f"{self.command} gave no answer in {self.timeout:.0f} s") from None
+            code, out, err = await run_command(self.command, args, user["content"], cwd)
         if self.log_dir:
-            self.log(system["content"], user["content"], proc.returncode, out, err)
+            self.log(system["content"], user["content"], code, out, err)
         try:
             events = json.loads(out)
             result = next(e for e in reversed(events if isinstance(events, list) else [events]) if e.get("type") == "result")
         except (ValueError, StopIteration, AttributeError):
-            raise TranslatorFailed(f"{self.command} exited with {proc.returncode}: {(err or out).decode(errors='replace')[-200:]}") from None
+            raise TranslatorFailed(f"{self.command} exited with {code}: {(err or out).decode(errors='replace')[-200:]}") from None
         if result.get("is_error"):
             raise TranslatorFailed(f"{self.command} failed: {str(result.get('result'))[:200]}")
         reply = json.dumps(result["structured_output"], ensure_ascii=False) if result.get("structured_output") else str(result.get("result") or "")
@@ -446,12 +459,45 @@ class ClaudeCLI:
         (self.log_dir / name).write_text(json.dumps(entry, ensure_ascii=False, indent=1))
 
     async def health(self) -> str | None:
-        return None if shutil.which(self.command) else f"translator command {self.command!r} not found"
+        return command_health(self.command)
+
+
+class CodexCLI:
+    def __init__(self, settings: Settings):
+        self.command = settings.codex_command
+        self.model = settings.codex_model
+        self.effort = settings.codex_effort
+        self.name = f"codex:{self.model or 'default'}"
+        self.schema = json.dumps({**RESPONSE_SCHEMA["json_schema"]["schema"], "additionalProperties": False})
+
+    async def translate(self, lines: list[str], context: Context) -> list[str]:
+        system, user = build_messages(lines, replace(context, page=None))
+        with tempfile.TemporaryDirectory(prefix="yomikae-codex-") as cwd:
+            work = Path(cwd)
+            (work / "instructions.md").write_text(system["content"].replace(MATURE_NOTE, ""))
+            (work / "schema.json").write_text(self.schema)
+            args = ["exec", "--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--sandbox", "read-only", "--color", "never",
+                    *(x for feature in CODEX_FEATURES_OFF for x in ("--disable", feature)),
+                    "-c", f'model_reasoning_effort="{self.effort}"', "-c", f"model_instructions_file={json.dumps(str(work / 'instructions.md'))}",
+                    *(["-m", self.model] if self.model else []),
+                    "--output-schema", str(work / "schema.json"), "-o", str(work / "reply.txt"), "-C", cwd, "-"]
+            code, out, err = await run_command(self.command, args, user["content"], cwd)
+            reply = (work / "reply.txt").read_text() if (work / "reply.txt").exists() else ""
+        if code != 0:
+            raise TranslatorFailed(f"{self.command} exited with {code}: {err.decode(errors='replace').strip()[-200:]}")
+        parsed = parse_translations(reply, len(lines))
+        if parsed is None:
+            raise Misaligned(reply)
+        return parsed
+
+    async def health(self) -> str | None:
+        return command_health(self.command)
 
 
 REGISTRY: dict[str, Callable[[Settings], Translator]] = {
     "openai": OpenAICompatible,
     "claude": ClaudeCLI,
+    "codex": CodexCLI,
     "google_free": GoogleFree,
     "fake": Fake,
 }

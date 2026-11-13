@@ -39,6 +39,9 @@ class Settings:
     claude_model: str = "claude-sonnet-5-5"
     claude_effort: str = "low"
     claude_log_dir: Path | None = None
+    codex_command: str = "codex"
+    codex_model: str = ""
+    codex_effort: str = "none"
 
     @staticmethod
     def from_env() -> Settings:
@@ -59,6 +62,9 @@ class Settings:
             claude_model=env("YOMIKAE_CLAUDE_MODEL", "claude-sonnet-5-5"),
             claude_effort=env("YOMIKAE_CLAUDE_EFFORT", "low"),
             claude_log_dir=Path(env("YOMIKAE_CLAUDE_LOG_DIR")) if env("YOMIKAE_CLAUDE_LOG_DIR") else None,
+            codex_command=env("YOMIKAE_CODEX_COMMAND", "codex"),
+            codex_model=env("YOMIKAE_CODEX_MODEL", ""),
+            codex_effort=env("YOMIKAE_CODEX_EFFORT", "none"),
         )
 
 

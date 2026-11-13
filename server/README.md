@@ -28,7 +28,7 @@ All configuration is environment variables. There is no settings UI.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `YOMIKAE_TRANSLATOR` | `openai` | `openai` (any OpenAI-compatible endpoint), `claude` (runs `claude -p` on the account it is signed in to; see the main README), `google_free` (keyless Google endpoint, no context), or `fake` (tests). The cache gives a page only to the translator that made it, so the server translates a page again when another translator made its cached copy. |
+| `YOMIKAE_TRANSLATOR` | `openai` | `openai` (any OpenAI-compatible endpoint), `claude` (runs `claude -p` on the account it is signed in to), `codex` (runs `codex exec` on the ChatGPT account it is signed in to; see the main README for both), `google_free` (keyless Google endpoint, no context), or `fake` (tests). The cache gives a page only to the translator that made it, so the server translates a page again when another translator made its cached copy. |
 | `YOMIKAE_OPENAI_BASE_URL` | `http://localhost:1234/v1` | LM Studio, Ollama (`http://localhost:11434/v1`), or Gemini's compat endpoint. |
 | `YOMIKAE_OPENAI_MODEL` | `google/gemma-4-12b` | Model name sent to the endpoint. Any OpenAI-compatible model works. The model is part of the translator's name, so the server translates a page again when another model made its cached copy. |
 | `YOMIKAE_OPENAI_API_KEY` | `lm-studio` | Bearer token. |
@@ -37,6 +37,9 @@ All configuration is environment variables. There is no settings UI.
 | `YOMIKAE_CLAUDE_EFFORT` | `low` | Effort that `claude -p` uses: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `YOMIKAE_CLAUDE_COMMAND` | `claude` | Command to run, if `claude` is not on `PATH`. |
 | `YOMIKAE_CLAUDE_LOG_DIR` | unset | Folder where each `claude` call is saved as JSON, with the instructions, the request and the whole reply. Unset saves nothing. |
+| `YOMIKAE_CODEX_MODEL` | unset | Model that `codex exec` uses with `YOMIKAE_TRANSLATOR=codex`. Unset uses Codex's default, and the cache records it as `codex:default`. |
+| `YOMIKAE_CODEX_EFFORT` | `none` | Reasoning effort that `codex exec` uses: `none`, `low`, `medium`, `high`, `xhigh` or `max`. |
+| `YOMIKAE_CODEX_COMMAND` | `codex` | Command to run, if `codex` is not on `PATH`. |
 | `YOMIKAE_CASE` | `upper` | `upper` sets dialogue in all caps in Anime Ace 2 when `fonts/animeace2_reg.ttf` exists, else in Shantell Sans Medium (the closest open-licensed match), and shouts in Bangers. `mixed` keeps the translation's casing in Comic Neue Regular, with shouts in Comic Neue Bold. The translation in the JSON response keeps its casing either way. |
 | `YOMIKAE_DIALOGUE_FONT` | unset | Path to any font file to set dialogue in, overriding the face `YOMIKAE_CASE` picks. |
 | `YOMIKAE_SHOUT_FONT` | unset | Path to any font file to set shouts in. |

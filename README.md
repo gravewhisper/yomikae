@@ -23,7 +23,7 @@ The name comes from 読み替え (yomikae), Japanese for "reading something as s
 - Python 3.12 or newer, [uv](https://docs.astral.sh/uv/), git, and a C++ compiler. The install builds `pydensecrf` from source.
 - Node.js 22.23.4, 24.22.1, or 26.12.1 or newer, and [pnpm](https://pnpm.io/).
 - Chrome or Chromium 116 or newer.
-- A translator. Either [LM Studio](https://lmstudio.ai/) or another LLM server with an OpenAI-compatible API, or [Claude Code](https://claude.com/claude-code) signed in to a Claude subscription.
+- A translator. Either [LM Studio](https://lmstudio.ai/) or another LLM server with an OpenAI-compatible API, [Claude Code](https://claude.com/claude-code) signed in to a Claude subscription, or [Codex](https://developers.openai.com/codex) signed in to a ChatGPT account.
 
 The server holds about 3 GB of graphics memory while you read, and a local LLM takes the rest. With the Claude translator, the server is all that runs on the GPU. With a smaller GPU, pick a smaller model from [docs/models.md](docs/models.md), or move the server's work to the CPU as [docs/performance.md](docs/performance.md) explains. With no GPU at all, use the Claude translator and run everything on the CPU, as [step 1](#1-install-the-server) shows. On 2026-11-14, on an AMD Ryzen 7 7800X3D with no GPU, a synthetic page took 3.9 to 4.7 s from start to finish, 2.1 to 2.6 s of it Claude.
 
@@ -195,6 +195,20 @@ The server can run the [Claude Code](https://claude.com/claude-code) command lin
 | `YOMIKAE_CLAUDE_LOG_DIR` | unset | A folder where the server saves each call as JSON: the instructions, the request with the page's lines and context, and `claude`'s whole reply. Unset saves nothing. |
 
 The page's Japanese text, the earlier pages' lines and the work's names leave your computer and go to Anthropic. The page image does not. Each call starts `claude` with no tools, no settings, no plugins and no saved session, in an empty folder, so text on a page cannot make it read files or run commands. On 2026-11-14, at low effort, a call with 8 lines took about 2.7 s with Claude Sonnet 5.5, 2.2 s with Claude Haiku 5.5 and 3.2 to 3.4 s with Claude Opus 5.5, of which about 1 s is `claude` starting. The translation quality of these models on this task was not measured.
+
+### Translate with a ChatGPT plan through Codex
+
+The server can also run OpenAI's [Codex](https://developers.openai.com/codex) command line tool, `codex exec`, once per page, on whatever ChatGPT account `codex` is signed in to. ChatGPT's free plan includes a small Codex allowance. Run `/status` in `codex` to see how much of it is left. Start the server with `YOMIKAE_TRANSLATOR=codex`:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `YOMIKAE_CODEX_MODEL` | unset | The model `codex` uses. Unset uses Codex's own default. |
+| `YOMIKAE_CODEX_EFFORT` | `none` | How long the model reasons: `none`, `low`, `medium`, `high`, `xhigh` or `max`. |
+| `YOMIKAE_CODEX_COMMAND` | `codex` | The command to run, if `codex` is not on `PATH`. |
+
+As with Claude, the page's text and context go to OpenAI and the page image does not. Each call runs `codex` in an empty folder with its shell tool and its other tools and plugins turned off, without your Codex settings or rules, and with the server's own instructions in place of Codex's. On 2026-11-14 a call took 3.1 to 3.2 s and about 8,600 tokens, most of them Codex's own tool definitions. Reasoning effort barely changed the count.
+
+Use a subscription only through its maker's own tool. Anthropic's terms allow a Claude subscription only in Claude Code and Claude.ai, so do not point other command line tools at one.
 
 With a cloud API, the Japanese text of each page leaves your computer, along with the dialogue of up to two earlier pages as context. Page images never leave it. Cloud models may refuse some content, which leaves those lines in Japanese or fails the page.
 
