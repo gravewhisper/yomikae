@@ -213,6 +213,36 @@ def test_a_page_behind_a_page_without_text_still_waits_for_the_page_before_both(
     assert translator.calls[-1][1].pages == [lines(before)]
 
 
+def test_a_page_sent_while_the_page_before_it_is_retranslated_waits_for_the_new_translation(engine, monkeypatch):
+    first, second = pages_adding_a_line_each(2, 990)
+    unrelated = page(1000)
+
+    async def read():
+        opened, release = asyncio.Event(), asyncio.Event()
+
+        async def hold_the_retranslate(call):
+            if call == 2:
+                opened.set()
+                await release.wait()
+
+        translator = Recording(hold_the_retranslate)
+        monkeypatch.setattr(engine, "translator", translator)
+        before = await engine.process(first, "work", 0)
+        retranslating = asyncio.create_task(engine.retranslate(before["page_id"], first, "work", 0, [0]))
+        await opened.wait()
+        waiting = asyncio.create_task(engine.process(second, "work", 1))
+        await until_detection_and_ocr_are_done(engine, unrelated)
+        await asyncio.sleep(0.5)
+        assert not waiting.done(), "the page did not wait for the retranslate of the page before it"
+        release.set()
+        return translator, await retranslating, await waiting
+
+    translator, retranslated, after = run(read())
+    assert retranslated["bubbles"][0]["translation"] == "call 2 line 0"
+    assert all(b["translation"] for b in after["bubbles"])
+    assert translator.calls[-1][1].pages[-1:] == [lines(retranslated)]
+
+
 class Listed:
     def __init__(self, results):
         self.results = results
