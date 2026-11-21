@@ -39,11 +39,51 @@ def test_startup_prunes_only_older_versions_and_legacy_hash_folders(tmp_path):
     target.mkdir(parents=True)
     (tmp_path / ("ef" * 32)).symlink_to(target)
 
-    assert prune_stale(current) == len(gone)
+    assert prune_stale(current, translation_version=1) == len(gone)
 
     assert all(not d.exists() for d in gone), "an older version or legacy hash folder survived"
     assert all((d / "x").exists() for d in keep), "a folder outside the stale patterns was touched"
     assert (tmp_path / ("cd" * 32)).is_file() and target.exists(), "a hash-named file or a symlink target was touched"
+
+
+def test_a_version_bump_keeps_the_line_memory_but_serves_no_old_page(tmp_path):
+    old = PageCache(tmp_path / "v1", "fake")
+    stored(old, "p1", page("work", 1, ("こんにちは", "Hello"), ("さようなら", "Goodbye")))
+    stored(old, "p2", page("other", 1, ("はい", "Yes")))
+
+    assert prune_stale(tmp_path / "v2", translation_version=1) == 1
+
+    new = PageCache(tmp_path / "v2", "fake")
+    store = ContextStore()
+    store.rebuild(new)
+    assert store.recall("work", ["こんにちは", "さようなら", "なに"]) == ["Hello", "Goodbye", None]
+    assert store.recall("other", ["はい"]) == ["Yes"]
+    assert new.load("p1") is None, "a page rendered by the old pipeline was served"
+    assert not (tmp_path / "v1").exists()
+
+
+def test_a_version_bump_drops_memory_made_by_older_translations_or_another_translator(tmp_path):
+    stored(PageCache(tmp_path / "v1", "fake"), "p1", page("work", 1, ("こんにちは", "Hello")))
+    stored(PageCache(tmp_path / "v2", "other"), "p2", page("work", 2, ("はい", "Yes")))
+
+    prune_stale(tmp_path / "v3", translation_version=2)
+
+    store = ContextStore()
+    store.rebuild(PageCache(tmp_path / "v3", "fake"))
+    assert store.recall("work", ["こんにちは", "はい"]) == [None, None]
+
+
+def test_a_version_bump_carries_the_newest_memory_of_a_page_and_keeps_its_last_read_time(tmp_path):
+    stored(PageCache(tmp_path / "v1", "fake"), "p1", page("work", 1, ("こんにちは", "Hi")))
+    stored(PageCache(tmp_path / "v2", "fake"), "p1", page("work", 1, ("こんにちは", "Hello")), read_at=1000.0)
+    stored(PageCache(tmp_path / "v3", "fake"), "p2", page("work", 2, ("こんにちは", "Hey")))
+
+    prune_stale(tmp_path / "v3", translation_version=1)
+
+    store = ContextStore()
+    store.rebuild(PageCache(tmp_path / "v3", "fake"))
+    assert [line.translation for line in store.memory("work")] == ["Hello", "Hey"]
+    assert (tmp_path / "v3" / "p1" / "result.json").stat().st_mtime == 1000.0
 
 
 def test_eviction_under_a_tiny_cap_drops_the_least_recently_read_pages(tmp_path):
@@ -236,3 +276,89 @@ def test_a_page_cached_before_translators_were_recorded_counts_as_an_openai_page
     assert rebuilt(openai_server.cache).memory("no translator recorded")
     assert engine.cache.load(page_id) is None, "the fake translator was served a page made before translators were recorded"
     assert rebuilt(engine.cache).memory("no translator recorded") == []
+
+
+class Counting:
+    def __init__(self, inner):
+        self.inner, self.name, self.lines = inner, inner.name, 0
+
+    async def translate(self, lines, context):
+        self.lines += len(lines)
+        return await self.inner.translate(lines, context)
+
+    async def health(self):
+        return None
+
+
+@pytest.mark.models
+@pytest.mark.parametrize(("stamped", "after"), [(7, 7), (7, 8)])
+def test_a_page_opened_again_after_a_version_bump_reuses_its_translations_unless_they_changed(client, synthetic_pages, tmp_path, monkeypatch, stamped, after):
+    import yomikae.pipeline
+
+    engine = client.app.state.engine
+    counting = Counting(engine.translator)
+    monkeypatch.setattr(engine, "translator", counting)
+    monkeypatch.setattr(yomikae.pipeline, "TRANSLATION_VERSION", stamped)
+    image = {"image": ("p.png", png_bytes(synthetic_pages[0][0]), "image/png")}
+    form = {"context_key": "work", "page_index": "1"}
+
+    def open_page_under(version):
+        cache = PageCache(tmp_path / f"v{version}", counting.name)
+        monkeypatch.setattr(engine, "cache", cache)
+        monkeypatch.setattr(engine, "context", ContextStore())
+        engine.context.rebuild(cache)
+        r = client.post("/v1/pages", files=image, data=form)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    first = open_page_under(1)
+    asked = counting.lines
+    assert asked > 0
+    prune_stale(tmp_path / "v2", translation_version=after)
+    again = open_page_under(2)
+
+    assert again["cached"] is False, "the old render was served after the bump"
+    assert [b["translation"] for b in again["bubbles"]] == [b["translation"] for b in first["bubbles"]]
+    assert counting.lines == (asked if stamped == after else 2 * asked)
+
+
+@pytest.mark.models
+def test_a_line_the_reader_fixed_stays_fixed_through_two_version_bumps(client, synthetic_pages, tmp_path, monkeypatch):
+    engine = client.app.state.engine
+    image = {"image": ("p.png", png_bytes(synthetic_pages[0][0]), "image/png")}
+
+    def open_page_under(version, key="work"):
+        cache = PageCache(tmp_path / f"v{version}", engine.translator.name)
+        monkeypatch.setattr(engine, "cache", cache)
+        monkeypatch.setattr(engine, "context", ContextStore())
+        engine.context.rebuild(cache)
+        r = client.post("/v1/pages", files=image, data={"context_key": key, "page_index": "1"})
+        assert r.status_code == 200, r.text
+        return json.loads((cache.root / r.json()["page_id"] / "result.json").read_text())
+
+    first = open_page_under(1)
+    first["bubbles"][0]["translation"], first["fixed"] = "Fixed by the reader", [0]
+    (tmp_path / "v1" / first["page_id"] / "result.json").write_text(json.dumps(first))
+
+    for version in (2, 3):
+        prune_stale(tmp_path / f"v{version}", translation_version=1)
+        again = open_page_under(version)
+        assert again["bubbles"][0]["translation"] == "Fixed by the reader"
+        assert again["fixed"] == [0], f"the fix lost its priority after bump {version - 1}"
+
+
+@pytest.mark.models
+def test_a_carried_page_opened_in_another_work_leaves_its_old_work(client, synthetic_pages, tmp_path, monkeypatch):
+    engine = client.app.state.engine
+    image = {"image": ("p.png", png_bytes(synthetic_pages[0][0]), "image/png")}
+    for version, key in ((1, "work"), (2, "other")):
+        if version == 2:
+            prune_stale(tmp_path / "v2", translation_version=1)
+        cache = PageCache(tmp_path / f"v{version}", engine.translator.name)
+        monkeypatch.setattr(engine, "cache", cache)
+        monkeypatch.setattr(engine, "context", ContextStore())
+        engine.context.rebuild(cache)
+        assert client.post("/v1/pages", files=image, data={"context_key": key, "page_index": "1"}).status_code == 200
+
+    assert engine.context.memory("work") == []
+    assert engine.context.memory("other") != []

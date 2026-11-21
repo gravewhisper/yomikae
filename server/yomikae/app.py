@@ -22,13 +22,13 @@ from .config import Settings, extension_ids
 from .cache import KINDS, SAVED_SOURCES, prune_stale
 from .guard import RequestGuard
 from .model import CastEntry
-from .pipeline import FORMATS, PIPELINE_VERSION, BadImage, Engine, decode_image
+from .pipeline import FORMATS, PIPELINE_VERSION, TRANSLATION_VERSION, BadImage, Engine, decode_image
 from .reports import BadReport, image_extension, image_size, json_bytes, new_report_id, parse_areas, render_marked, resolve_areas, write_report
 from .translate import TranslatorFailed, TranslatorUnavailable
 
 log = logging.getLogger("yomikae")
 PAGE_ID_CHARS = set("0123456789abcdef")
-INTERNAL_FIELDS = ("context_key", "page_index", "position", "font_sizes", "skipped", "names_in_force", "revision", "fixed", "translator")
+INTERNAL_FIELDS = ("context_key", "page_index", "position", "font_sizes", "skipped", "names_in_force", "revision", "fixed", "translator", "translation_version")
 MAX_NAMES = 500
 MAX_RETRANSLATE_NAMES = 20
 MAX_WAS_SENT = 20
@@ -45,7 +45,7 @@ def error(status: int, code: str, detail: str) -> JSONResponse:
 async def lifespan(app: FastAPI):
     t = time.perf_counter()
     settings = Settings.from_env()
-    pruned = prune_stale(settings.cache_dir / f"v{PIPELINE_VERSION}")
+    pruned = prune_stale(settings.cache_dir / f"v{PIPELINE_VERSION}", TRANSLATION_VERSION)
     if pruned:
         log.warning("removed %d stale cache folders", pruned)
     engine = Engine(settings)

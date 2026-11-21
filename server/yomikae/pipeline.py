@@ -25,6 +25,7 @@ from .translate import Context, PageImage, Translator, TranslatorFailed, Transla
 
 T = TypeVar("T")
 PIPELINE_VERSION = 36
+TRANSLATION_VERSION = 1
 STAGES = ("detect", "balloons", "ocr", "translate", "inpaint", "typeset")
 WEBP_QUALITY = 90
 JPEG_QUALITY = 90
@@ -293,6 +294,7 @@ class Engine:
             matched = match_bubbles(base["bubbles"], bubbles) if base else [None] * len(bubbles)
             pinned = [base["bubbles"][j]["translation"] if j is not None and j not in picked else None for j in matched] if base else None
             fixed = [i for i, j in enumerate(matched) if j is not None and (j in picked or j in base.get("fixed", []))] if base else []
+            carried = None if base else self.cache.remembered(page_id)
             if bubbles:
                 readings = [pair for b in bubbles for pair in b.ruby]
                 translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings, pinned, hint, earlier))
@@ -301,6 +303,9 @@ class Engine:
                 finally:
                     translations = await translate_task
                 bubbles = [replace(b, translation=t) for b, t in zip(bubbles, translations)]
+                if carried:
+                    kept = {(b["source"], b["translation"]) for k, b in enumerate(carried["bubbles"]) if k in carried.get("fixed", [])}
+                    fixed = [i for i, b in enumerate(bubbles) if (b.source, b.translation) in kept]
                 if not all(translations):
                     inpainted = await asyncio.to_thread(keep_original, image, inpainted, [b for b in bubbles if not b.translation])
                 rendered, font_sizes = await asyncio.to_thread(timer.run, "typeset", typeset.typeset, self.lettering, inpainted, bubbles)
@@ -328,10 +333,12 @@ class Engine:
                 "names_in_force": names_in_force(self.context.cast(context_key)),
                 "revision": revision,
                 "fixed": fixed,
+                "translation_version": TRANSLATION_VERSION,
             }
             await asyncio.to_thread(self.cache.store, page_id, name, encoded, result)
-            if base and base.get("context_key") != context_key:
-                self.context.forget(base)
+            previous = base or carried
+            if previous and previous.get("context_key") != context_key:
+                self.context.forget(previous)
             if context_key:
                 lines = [ContextLine(b.source, b.translation) for b in bubbles]
                 self.context.add(context_key, page_id, page_index, lines, [lines[i] for i in fixed], position=position)

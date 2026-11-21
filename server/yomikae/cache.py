@@ -27,6 +27,7 @@ VERSION_DIR = re.compile(r"v(\d+)")
 LEGACY_DIR = re.compile(r"[0-9a-f]{64}")
 SAVED_SOURCES = ("furigana", "user")
 UNSTAMPED_TRANSLATOR = "openai:"
+UNSTAMPED_TRANSLATION_VERSION = 1
 KINDS = ("name", "term")
 MAX_WAS = 8
 KANJI_RUN = re.compile(r"[㐀-鿿々]+$")
@@ -75,6 +76,13 @@ class PageCache:
         except (OSError, ValueError):
             return None
         return result
+
+    def remembered(self, page_id: str) -> dict | None:
+        try:
+            result = json.loads((self.root / page_id / "result.json").read_text())
+        except (OSError, ValueError):
+            return None
+        return result if isinstance(result, dict) and self.ours(result) else None
 
     def store(self, page_id: str, rendered_name: str, rendered: bytes, result: dict) -> None:
         data = json.dumps({**result, "translator": self.translator}, ensure_ascii=False).encode()
@@ -142,7 +150,7 @@ class PageCache:
         return result
 
 
-def prune_stale(root: Path) -> int:
+def prune_stale(root: Path, translation_version: int) -> int:
     current = VERSION_DIR.fullmatch(root.name)
     if current is None or not root.parent.is_dir():
         return 0
@@ -153,9 +161,26 @@ def prune_stale(root: Path) -> int:
         and not d.is_symlink()
         and (LEGACY_DIR.fullmatch(d.name) or ((m := VERSION_DIR.fullmatch(d.name)) and int(m.group(1)) < int(current.group(1))))
     ]
+    older = sorted((d for d in stale if VERSION_DIR.fullmatch(d.name)), key=lambda d: -int(d.name[1:]))
+    for d in older:
+        carry_memory(d, root, translation_version)
     for d in stale:
         shutil.rmtree(d, ignore_errors=True)
     return len(stale)
+
+
+def carry_memory(old: Path, root: Path, translation_version: int) -> None:
+    for path in old.glob("*/result.json"):
+        target = root / path.parent.name / "result.json"
+        try:
+            data = path.read_bytes()
+            if target.exists() or json.loads(data).get("translation_version", UNSTAMPED_TRANSLATION_VERSION) != translation_version:
+                continue
+            read = path.stat().st_mtime
+            write_atomic(target, data)
+            os.utime(target, (read, read))
+        except (OSError, ValueError, AttributeError):
+            continue
 
 
 def last_read(page_dir: Path) -> float:

@@ -75,7 +75,8 @@ Never use sexual content that involves minors or characters who look like minors
 ## Keep the docs and cache in step
 
 - When behavior that `docs/contract.md` describes changes (the HTTP API, page states, site modes, adapters, reports), update `docs/contract.md` in the same change. Update `docs/sites.md` when an adapter changes.
-- When rendering or translation output changes, increase `PIPELINE_VERSION` in `server/yomikae/pipeline.py`. Pages cached under an older version are never served, and the server deletes them at startup.
+- When rendering or translation output changes, increase `PIPELINE_VERSION` in `server/yomikae/pipeline.py`. Pages cached under an older version are never served, and the server deletes them at startup. It first copies their `result.json` into the new version, so the line memory and auto names survive.
+- When translation output changes, such as the prompt, the parser or the honorific rules, also increase `TRANSLATION_VERSION`. Line memory from older translations is then dropped too, and every page is translated again.
 
 ## Benchmarks
 
