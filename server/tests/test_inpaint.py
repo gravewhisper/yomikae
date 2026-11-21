@@ -50,6 +50,7 @@ def texture(gray: np.ndarray) -> tuple[float, float]:
     return float(gray.mean()), float((gray > 230).mean())
 
 
+@pytest.mark.models
 @pytest.mark.parametrize("background", [hatching, screentone])
 def test_text_lettered_over_a_texture_is_replaced_by_that_texture(model, background):
     clean = background()

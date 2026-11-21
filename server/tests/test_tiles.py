@@ -31,6 +31,7 @@ def test_a_strip_is_covered_by_equal_overlapping_tiles_that_split_ownership(size
         assert o0 - w0 >= margin
 
 
+@pytest.mark.models
 def test_a_normal_page_gets_the_same_model_outputs_as_one_whole_image_pass():
     image = np.asarray(make_page(3)[0])
     detector = detect.load_session(DETECTOR_PATH)

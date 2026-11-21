@@ -34,6 +34,7 @@ def inside(bubble: ocr.Bubble, box: tuple[int, int, int, int]) -> bool:
     return box[0] <= x <= box[2] and box[1] <= y <= box[3]
 
 
+@pytest.mark.models
 def test_a_short_interjection_in_a_small_attached_lobe_is_read(detector, reader):
     img = Image.new("RGB", PAGE, "white")
     draw = ImageDraw.Draw(img)
@@ -50,6 +51,7 @@ def test_a_short_interjection_in_a_small_attached_lobe_is_read(detector, reader)
     assert [b.source for b in read if inside(b, lobe)] == ["あっ"], [b.source for b in read]
 
 
+@pytest.mark.models
 def test_a_short_sound_on_art_beside_a_bubble_is_still_skipped(detector, reader):
     img = Image.new("RGB", PAGE, "white")
     draw = ImageDraw.Draw(img)
@@ -67,6 +69,7 @@ def test_a_short_sound_on_art_beside_a_bubble_is_still_skipped(detector, reader)
     assert not [b.source for b in read if inside(b, sound)], [b.source for b in read]
 
 
+@pytest.mark.models
 def test_a_small_boxed_caption_over_hatching_is_read(detector, reader):
     img = Image.new("RGB", PAGE, "white")
     draw = ImageDraw.Draw(img)
@@ -82,6 +85,7 @@ def test_a_small_boxed_caption_over_hatching_is_read(detector, reader):
     assert any("今日は一人" in s for s in read), read
 
 
+@pytest.mark.models
 def test_a_two_lobe_bubble_with_a_long_tail_is_split_per_lobe(detector):
     img = Image.new("RGB", PAGE, "white")
     draw = ImageDraw.Draw(img)
@@ -116,6 +120,7 @@ def ringed(draw: ImageDraw.ImageDraw, shapes: list[tuple[int, int, int, int]]) -
         draw.ellipse((x0 + 4, y0 + 4, x1 - 4, y1 - 4), fill="white")
 
 
+@pytest.mark.models
 @pytest.mark.parametrize("tone", [170, 175, 190])
 def test_white_edged_columns_in_a_toned_bubble_stay_one_block(detector, tone):
     img = Image.new("RGB", PAGE, "white")
@@ -128,6 +133,7 @@ def test_white_edged_columns_in_a_toned_bubble_stay_one_block(detector, tone):
     assert boxes[0][0] < 400 and boxes[0][2] > 490, boxes
 
 
+@pytest.mark.models
 def test_three_touching_lobes_are_split_per_lobe(detector):
     img = Image.new("RGB", PAGE, "white")
     draw = ImageDraw.Draw(img)
@@ -142,6 +148,7 @@ def test_three_touching_lobes_are_split_per_lobe(detector):
     assert boxes[1][2] < 600 and boxes[2][0] > 600, boxes
 
 
+@pytest.mark.models
 def test_two_stacked_lobes_with_a_short_line_at_the_waist_are_split(detector):
     img = Image.new("RGB", PAGE, "white")
     draw = ImageDraw.Draw(img)

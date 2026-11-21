@@ -14,6 +14,30 @@ sys.path.insert(0, str(SERVER_DIR / "tools"))
 
 from make_test_page import make_page  # noqa: E402
 
+from yomikae.config import BUBBLE_MODEL_PATH, DETECTOR_PATH, LAMA_PATH  # noqa: E402
+
+MODEL_FILES = (DETECTOR_PATH, LAMA_PATH, BUBBLE_MODEL_PATH)
+
+
+class MissingModel:
+    def __init__(self, name: str):
+        self.name = name
+
+    def __getattr__(self, attr):
+        raise RuntimeError(f"the {self.name} model is not loaded because server/models is incomplete; mark this test with @pytest.mark.models")
+
+    def __call__(self, *args, **kwargs):
+        return self.__getattr__("__call__")
+
+
+def without_models(mp: pytest.MonkeyPatch) -> None:
+    from yomikae import pipeline
+
+    mp.setattr(pipeline.detect, "load_session", lambda path, device="cpu": MissingModel(Path(path).name))
+    mp.setattr(pipeline.ocr, "load_ocr", lambda device="cpu": MissingModel("manga-ocr"))
+    mp.setattr(pipeline.inpaint, "load_model", lambda device="cpu": MissingModel("LaMa"))
+    mp.setattr(pipeline.Engine, "warmup", lambda self: None)
+
 
 def png_bytes(img: Image.Image) -> bytes:
     buf = io.BytesIO()
@@ -31,6 +55,8 @@ def client(tmp_path_factory):
     mp.setenv("YOMIKAE_TRANSLATOR", "fake")
     mp.setenv("YOMIKAE_CACHE_DIR", str(tmp_path_factory.mktemp("cache")))
     mp.setenv("YOMIKAE_REPORTS_DIR", str(tmp_path_factory.mktemp("reports")))
+    if not all(path.exists() for path in MODEL_FILES):
+        without_models(mp)
     from yomikae.app import app
 
     with TestClient(app, base_url="http://127.0.0.1:7878", client=("127.0.0.1", 50000)) as c:

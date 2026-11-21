@@ -78,6 +78,7 @@ def test_a_web_preflight_is_refused(client, method):
     assert_forbidden(r)
 
 
+@pytest.mark.models
 @pytest.mark.parametrize("site", ["cross-site", "same-site"])
 def test_web_page_gets_without_an_origin_are_refused(client, translated, site):
     page = translated[0][3]
@@ -102,6 +103,7 @@ def test_a_request_from_another_machine_is_refused(client):
     assert_forbidden(remote.get("/v1/health"))
 
 
+@pytest.mark.models
 def test_the_extension_reaches_every_endpoint(client, translated):
     data, _, _, page = translated[0]
     ext = {"Origin": EXTENSION, "Sec-Fetch-Site": "none"}

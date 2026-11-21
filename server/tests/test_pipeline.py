@@ -38,6 +38,7 @@ def matched(truth, bubbles):
     return [(t, max(bubbles, key=lambda b: iou(b["box"], t["text_box"]))) for t in truth]
 
 
+@pytest.mark.models
 def test_detects_every_synthetic_bubble(translated):
     for _, _, truth, page in translated.values():
         truth = [t.__dict__ for t in truth]
@@ -47,6 +48,7 @@ def test_detects_every_synthetic_bubble(translated):
             assert b["vertical"] is True
 
 
+@pytest.mark.models
 def test_ocr_reads_the_drawn_text(translated):
     for _, _, truth, page in translated.values():
         for t, b in matched([t.__dict__ for t in truth], page["bubbles"]):
@@ -54,6 +56,7 @@ def test_ocr_reads_the_drawn_text(translated):
             assert b["translation"]
 
 
+@pytest.mark.models
 def test_original_text_is_removed_and_english_drawn(client, translated):
     for data, img, truth, page in translated.values():
         rendered = decode(client.get(page["rendered_url"]).content)
@@ -72,6 +75,7 @@ def test_original_text_is_removed_and_english_drawn(client, translated):
             assert (inner < 128).mean() > 0.01, f"no English drawn in bubble {t.text}"
 
 
+@pytest.mark.models
 def test_repost_is_served_from_cache(client, translated):
     data, _, _, first = translated[0]
     r = client.post("/v1/pages", files={"image": ("p.png", data, "image/png")})
@@ -83,6 +87,7 @@ def test_repost_is_served_from_cache(client, translated):
     assert again["timings_ms"]["total"] == 0
 
 
+@pytest.mark.models
 def test_cache_is_scoped_to_the_pipeline_version(client, translated):
     from yomikae.pipeline import PIPELINE_VERSION
 
@@ -92,6 +97,7 @@ def test_cache_is_scoped_to_the_pipeline_version(client, translated):
     assert not (root / page["page_id"]).exists()
 
 
+@pytest.mark.models
 def test_page_without_text_returns_unchanged_copy(client):
     blank = Image.new("RGB", (800, 1100), (255, 255, 255))
     r = client.post("/v1/pages", files={"image": ("b.png", png_bytes(blank), "image/png")})
@@ -111,6 +117,7 @@ def test_bad_image_error_shape(client):
     assert r.status_code == 400 and r.json()["error"] == "bad_image"
 
 
+@pytest.mark.models
 def test_unreachable_translator_yields_translator_unavailable(client):
     engine = client.app.state.engine
     original = engine.translator
@@ -130,6 +137,7 @@ def test_unreachable_translator_yields_translator_unavailable(client):
     assert r.status_code == 200 and r.json()["cached"] is False, "a translator outage must not be cached"
 
 
+@pytest.mark.models
 def test_translator_sees_earlier_pages_of_same_work(client):
     engine = client.app.state.engine
     original = engine.translator
@@ -162,6 +170,7 @@ def test_translator_sees_earlier_pages_of_same_work(client):
     assert all(line.translation.startswith("page line") for page in seen[3].pages for line in page)
 
 
+@pytest.mark.models
 def test_english_print_the_ocr_misreads_keeps_its_original_pixels(client):
     from yomikae.config import FONT_PATH
     from PIL import ImageDraw, ImageFont
@@ -204,6 +213,7 @@ def lm_studio_up() -> bool:
         return False
 
 
+@pytest.mark.models
 @pytest.mark.skipif(not lm_studio_up(), reason="OpenAI-compatible endpoint not reachable or YOMIKAE_OPENAI_MODEL not listed")
 def test_lm_studio_translates_a_page(client):
     engine = client.app.state.engine
@@ -240,6 +250,7 @@ def short_line_and_sfx_page() -> tuple[Image.Image, tuple[int, int, int, int], t
     return img, bubble, sfx
 
 
+@pytest.mark.models
 def test_short_line_in_a_bubble_is_translated_and_sfx_on_art_is_not(client):
     from yomikae import detect, ocr
 
@@ -295,6 +306,7 @@ def post_in_work(client, translator, seed, key, idx):
     return r.json()
 
 
+@pytest.mark.models
 def test_a_line_seen_earlier_in_the_work_keeps_its_translation(client):
     translator = Scripted(lambda call, lines, _: [f"call {call} line {i}" for i in range(len(lines))])
     first = post_in_work(client, translator, 206, "example.com/g/memory", 0)
@@ -309,6 +321,7 @@ def test_a_line_seen_earlier_in_the_work_keeps_its_translation(client):
         assert b["translation"] not in earlier.values(), b
 
 
+@pytest.mark.models
 def test_a_name_keeps_its_first_spelling_on_later_pages(client):
     def reply(call, lines, context):
         name = f"{next(iter(context.names))}-nee" if context.names else ("Nagisa-nee" if call == 1 else "Nagisaki-nee")
@@ -322,6 +335,7 @@ def test_a_name_keeps_its_first_spelling_on_later_pages(client):
         assert "Nagisa-nee" in b["translation"] and "Nagisaki" not in b["translation"], b
 
 
+@pytest.mark.models
 def test_context_from_far_away_pages_is_dropped_but_names_stay(client):
     translator = Scripted(lambda call, lines, _: [f"Yuki-chan said {call}.{i}" for i in range(len(lines))])
     post_in_work(client, translator, 212, "example.com/g/far", 0)
@@ -331,6 +345,7 @@ def test_context_from_far_away_pages_is_dropped_but_names_stay(client):
     assert "Yuki" in context.names
 
 
+@pytest.mark.models
 def test_an_echoed_line_is_retried_once_then_left_untouched(client):
     def reply(call, lines, _):
         return [line if line.startswith("それは") else f"English {i}" for i, line in enumerate(lines)]
@@ -350,6 +365,7 @@ def test_an_echoed_line_is_retried_once_then_left_untouched(client):
     assert np.abs(after[ey0:ey1, ex0:ex1] - before[ey0:ey1, ex0:ex1]).mean() < 1, "the echoed bubble was touched"
 
 
+@pytest.mark.models
 def test_a_misaligned_reply_is_retried_in_halves(client):
     import json
 
@@ -401,6 +417,7 @@ def post_page_with(client, translator, seed):
         engine.translator = original
 
 
+@pytest.mark.models
 def test_a_channel_error_from_lm_studio_is_resent_and_the_page_translates(client):
     translator, calls = lm_studio([(400, "Channel Error"), (200, None)])
     r = post_page_with(client, translator, 220)
@@ -409,6 +426,7 @@ def test_a_channel_error_from_lm_studio_is_resent_and_the_page_translates(client
     assert [b["translation"] for b in r.json()["bubbles"]] == [f"EN {b['source'].encode().hex()}" for b in r.json()["bubbles"]]
 
 
+@pytest.mark.models
 def test_a_channel_error_that_persists_fails_the_page_with_a_clear_error(client):
     translator, calls = lm_studio([(400, "Channel Error")])
     r = post_page_with(client, translator, 221)
@@ -419,6 +437,7 @@ def test_a_channel_error_that_persists_fails_the_page_with_a_clear_error(client)
     assert "Channel Error" in body["detail"] and "HTTPStatusError" not in body["detail"], body
 
 
+@pytest.mark.models
 def test_a_failed_fetch_inside_lm_studio_is_resent_and_the_page_translates(client):
     translator, calls = lm_studio([(400, "Engine protocol predict request failed: fetch failed"), (200, None)])
     r = post_page_with(client, translator, 223)
@@ -426,6 +445,7 @@ def test_a_failed_fetch_inside_lm_studio_is_resent_and_the_page_translates(clien
     assert len(calls) == 2
 
 
+@pytest.mark.models
 def test_a_request_over_the_context_size_is_not_resent(client):
     translator, calls = lm_studio([(400, "Engine protocol predict request returned 400: request (9001 tokens) exceeds the available context size (8192 tokens)")])
     r = post_page_with(client, translator, 224)
@@ -433,6 +453,7 @@ def test_a_request_over_the_context_size_is_not_resent(client):
     assert r.status_code == 500 and r.json()["error"] == "translator_error"
 
 
+@pytest.mark.models
 def test_another_400_from_the_translator_is_not_resent(client):
     translator, calls = lm_studio([(400, "'messages' field is required")])
     r = post_page_with(client, translator, 222)
@@ -441,6 +462,7 @@ def test_another_400_from_the_translator_is_not_resent(client):
     assert "'messages' field is required" in r.json()["detail"], r.text
 
 
+@pytest.mark.models
 def test_a_connection_closed_mid_reply_means_the_translator_is_unavailable(client):
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.RemoteProtocolError("peer closed connection without sending complete message body")
@@ -452,6 +474,7 @@ def test_a_connection_closed_mid_reply_means_the_translator_is_unavailable(clien
     assert "RemoteProtocolError" in r.json()["detail"]
 
 
+@pytest.mark.models
 def test_a_model_the_translator_does_not_know_fails_the_page_instead_of_waiting(client):
     translator, calls = lm_studio([(404, "model 'nope' not found")])
     r = post_page_with(client, translator, 226)
@@ -501,6 +524,7 @@ def reply_server(texts):
     return translator, calls
 
 
+@pytest.mark.models
 def test_json_syntax_leaked_into_a_reply_is_retried_not_drawn(client):
     def texts(calls, source):
         return 'The "Sensei" of "Schale."}, {' if len(calls) == 1 and source == calls[0][0] else english(source)
@@ -511,6 +535,7 @@ def test_json_syntax_leaked_into_a_reply_is_retried_not_drawn(client):
     assert [b["translation"] for b in page["bubbles"]] == [english(b["source"]) for b in page["bubbles"]]
 
 
+@pytest.mark.models
 @pytest.mark.parametrize("seed, fragment", [(216, "}, {"), (217, '",'), (218, "]"), (219, 'Wait", "No')])
 def test_a_line_that_only_ever_gets_json_syntax_back_is_left_blank(client, seed, fragment):
     translator, _ = reply_server(lambda calls, source: fragment if source == calls[0][0] else english(source))
@@ -520,6 +545,7 @@ def test_a_line_that_only_ever_gets_json_syntax_back_is_left_blank(client, seed,
     assert translations[1:] == [english(b["source"]) for b in page["bubbles"][1:]]
 
 
+@pytest.mark.models
 def test_a_page_whose_replies_were_never_readable_fails_and_is_not_cached(client):
     refusal = "I'm sorry, but I can't help with translating this page. " * 5
 
@@ -537,6 +563,7 @@ def test_a_page_whose_replies_were_never_readable_fails_and_is_not_cached(client
     assert len(translator.calls) > asked, "the second request did not ask the translator again"
 
 
+@pytest.mark.models
 def test_a_page_whose_lines_all_come_back_empty_on_purpose_is_saved(client):
     translator = Scripted(lambda call, lines, context: [""] * len(lines))
     r = post_page_with(client, translator, 228)
@@ -557,6 +584,7 @@ def strip(pages: int, seed: int) -> tuple[Image.Image, list[dict]]:
     return image, truth
 
 
+@pytest.mark.models
 def test_every_bubble_in_a_strip_taller_than_webp_allows_is_found_and_translated(client):
     import json
 
@@ -594,6 +622,7 @@ def test_every_bubble_in_a_strip_taller_than_webp_allows_is_found_and_translated
     assert client.get(page["rendered_url"].replace(".jpg", ".webp")).status_code == 404
 
 
+@pytest.mark.models
 def test_a_bubble_cut_by_a_tile_edge_is_found_once_and_whole(client):
     from make_test_page import FONT_PATH, draw_vertical_text
     from PIL import ImageDraw, ImageFont
@@ -628,6 +657,7 @@ class FullGpu(torch.nn.Module):
         raise torch.OutOfMemoryError("CUDA out of memory. Tried to allocate 114.00 MiB.")
 
 
+@pytest.mark.models
 def test_a_page_whose_inpainting_runs_out_of_gpu_memory_is_inpainted_on_the_cpu(client, monkeypatch):
     engine = client.app.state.engine
     full = FullGpu()
@@ -645,6 +675,7 @@ def test_a_page_whose_inpainting_runs_out_of_gpu_memory_is_inpainted_on_the_cpu(
         assert (out[y0:y1, x0:x1] < 128)[ink].mean() < 0.35, t.text
 
 
+@pytest.mark.models
 def test_every_page_runs_its_gpu_work_on_one_thread_so_gpu_memory_stays_flat(client, monkeypatch):
     import threading
     from concurrent.futures import ThreadPoolExecutor

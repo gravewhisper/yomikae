@@ -21,6 +21,7 @@ def post_report(client, data: bytes, name: str = "p.png", **extra):
     return client.post("/v1/reports", files={"image": (name, data, "application/octet-stream")}, data={**FIELDS, **extra})
 
 
+@pytest.mark.models
 def test_report_of_a_translated_page_saves_everything(client, translated):
     data, _, _, page = translated[0]
     r = post_report(client, data, note="bubble 2 reads wrong")
@@ -100,6 +101,7 @@ def test_areas_convert_fractions_to_original_pixels_and_snap_to_bubbles():
     assert reports.resolve_areas(areas[1:2], None, []) == [{"box": [0.1, 0.1, 0.3, 0.2], "bubble_index": None}]
 
 
+@pytest.mark.models
 def test_report_with_areas_writes_marked_png(client, translated):
     data, img, _, page = translated[1]
     w, h = page["width"], page["height"]
@@ -126,6 +128,7 @@ def test_report_with_areas_writes_marked_png(client, translated):
     assert (marked[inside] == original[inside]).all()
 
 
+@pytest.mark.models
 def test_report_without_areas_has_no_marked_png(client, translated):
     data = translated[2][0]
     meta = json.loads((reports_root(client) / post_report(client, data).json()["report_id"] / "report.json").read_text())
@@ -137,6 +140,7 @@ def test_malformed_areas_are_rejected(client):
     assert r.status_code == 400 and r.json()["error"] == "bad_request"
 
 
+@pytest.mark.models
 def test_truncated_original_with_areas_is_still_reported(client, translated):
     data = translated[0][0]
     cut = data[: len(data) // 2]

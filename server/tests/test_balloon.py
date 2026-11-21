@@ -54,6 +54,7 @@ def changed(rendered: np.ndarray, page: np.ndarray) -> np.ndarray:
     return np.abs(rendered.astype(int) - page.astype(int)).sum(2) > 0
 
 
+@pytest.mark.models
 def test_the_model_outlines_each_synthetic_balloon(segmenter):
     img, truth = make_page(0)
     rgb = np.asarray(img)
@@ -88,6 +89,7 @@ def test_a_see_through_box_is_set_inside_the_model_outline():
     assert not (marked & ~interior).any(), "no ink outside the oval"
 
 
+@pytest.mark.models
 def test_a_balloon_with_no_detected_text_block_is_found_and_translated(client, monkeypatch):
     img, truth = make_page(401)
     monkeypatch.setenv("YOMIKAE_BALLOON_DETECT", "1")
@@ -103,6 +105,7 @@ def test_a_balloon_with_no_detected_text_block_is_found_and_translated(client, m
         assert inside[0]["source"].replace(" ", "")[:3] == t.text[:3] and inside[0]["translation"]
 
 
+@pytest.mark.models
 def test_balloons_with_no_detected_text_block_stay_untouched_when_balloon_detection_is_off(client, monkeypatch):
     img, _ = make_page(402)
     monkeypatch.setattr(detect, "detect", lambda session, image: [])
@@ -112,6 +115,7 @@ def test_balloons_with_no_detected_text_block_stay_untouched_when_balloon_detect
     assert r.json()["bubbles"] == []
 
 
+@pytest.mark.models
 def test_two_touching_balloons_the_model_merged_keep_their_own_regions(reader):
     w, h = 1000, 900
     small, big = (180, 340, 360, 560), (340, 150, 860, 750)
@@ -140,6 +144,7 @@ def test_two_touching_balloons_the_model_merged_keep_their_own_regions(reader):
         assert not (marked & ~lobe).any(), f"{key} stays on its side of the shared outline"
 
 
+@pytest.mark.models
 def test_a_recovered_line_outside_every_balloon_must_read_cleanly_as_dialogue(reader):
     im = Image.new("RGB", (700, 700), (255, 255, 255))
     draw = ImageDraw.Draw(im)

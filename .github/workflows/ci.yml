@@ -53,6 +53,25 @@ jobs:
           if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then range="$AFTER -1"; else range="$BEFORE..$AFTER"; fi
           git log --format=%s $range | .github/scripts/check-commit-message.sh
 
+  server-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/pyproject.toml
+      - run: uv venv --python 3.12 .venv
+      - run: uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
+      - run: uv pip install --python .venv/bin/python -e '.[test]'
+      - run: .venv/bin/python -m pytest -q -m "not models"
+        env:
+          HF_HUB_OFFLINE: "1"
+
   server-lint:
     runs-on: ubuntu-latest
     steps:

@@ -40,3 +40,4 @@ packages = ["yomikae"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["models: needs the model files in server/models and the manga-ocr weights"]

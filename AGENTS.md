@@ -13,7 +13,7 @@ Rules for AI coding agents and human contributors to Yomikae. The [README](READM
 
 ## Set up
 
-Follow the README's install steps for the server venv and the three model files in `server/models/`. The server tests load every model, so they fail without those files. For the extension, run `pnpm install` in `extension/`.
+Follow the README's install steps for the server venv and the three model files in `server/models/`. Server tests marked `models` load the models, so they fail without those files. The other tests run without them. For the extension, run `pnpm install` in `extension/`.
 
 In a second checkout or a git worktree, link `server/.venv` and `server/models` to the main checkout's copies. If the main checkout has `server/fonts/animeace2_reg.ttf`, link it too, or the worktree letters dialogue in a different font. Git ignores all three links.
 
@@ -28,6 +28,8 @@ CUDA_VISIBLE_DEVICES= PYTHONPATH=$PWD .venv/bin/python -m pytest -q
 - `CUDA_VISIBLE_DEVICES=` hides the GPU, so the tests run on the CPU and do not compete with a running server or LLM for GPU memory. The suite takes about 6 to 7 minutes on an 8-core desktop CPU.
 - `PYTHONPATH=$PWD` makes Python import `yomikae` from this checkout. `pip install -e .` points the venv at the checkout it was installed from, so a shared venv in another checkout imports the wrong code without it.
 - The tests build synthetic pages with `tools/make_test_page.py` and use the `fake` translator. `test_lm_studio_translates_a_page` calls a real endpoint and skips when none answers.
+- The synthetic pages need Noto Sans CJK Bold (`noto-fonts-cjk` on Arch, `fonts-noto-cjk` on Debian and Ubuntu). Set `YOMIKAE_TEST_CJK_FONT` to the `.ttc` file if it is somewhere else.
+- `-m "not models"` runs only the tests that need no models, in about 15 seconds. CI runs this. Without all three model files in `server/models/`, the `client` fixture starts the app with placeholder models that raise when used, so a test that reaches a model must carry `@pytest.mark.models`.
 
 Extension checks, from `extension/`:
 

@@ -9,6 +9,9 @@ from yomikae import ocr
 from yomikae.config import FONTS_DIR
 from yomikae.model import Box, TextBlock
 
+pytestmark = pytest.mark.models
+
+
 SIZE = (900, 520)
 LOGO = ImageFont.truetype(str(FONTS_DIR / "Bangers-Regular.ttf"), 110)
 JAPANESE = ImageFont.truetype(FONT_PATH, 44)

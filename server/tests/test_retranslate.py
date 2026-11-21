@@ -6,6 +6,7 @@ import json
 from contextlib import contextmanager
 
 import numpy as np
+import pytest
 from conftest import decode, png_bytes
 
 from make_test_page import make_page
@@ -65,6 +66,7 @@ def region_change(before, after, box):
     return np.abs(after[y0:y1, x0:x1].astype(int) - before[y0:y1, x0:x1].astype(int)).mean()
 
 
+@pytest.mark.models
 def test_only_the_picked_bubbles_get_new_english_and_the_page_is_replaced(client):
     key = "example.com/g/retranslate"
     data = page(601)
@@ -103,6 +105,7 @@ def test_only_the_picked_bubbles_get_new_english_and_the_page_is_replaced(client
     assert not any("she is a girl".encode() in b for b in stored), "the hint was stored"
 
 
+@pytest.mark.models
 def test_a_retranslated_line_skips_recall_and_is_what_later_pages_recall(client):
     key = "example.com/g/retranslate-memory"
     texts = {t.text for t in make_page(650)[1]}
@@ -128,6 +131,7 @@ def test_a_retranslated_line_skips_recall_and_is_what_later_pages_recall(client)
     assert rebuilt.recall(key, [source]) == ["fixed 0"]
 
 
+@pytest.mark.models
 def test_names_sent_with_a_retranslate_are_stored_as_user_names_first(client):
     key = "example.com/g/retranslate-names"
     data = page(603)
@@ -141,6 +145,7 @@ def test_names_sent_with_a_retranslate_are_stored_as_user_names_first(client):
     assert names == [{"ja": "在藤", "en": "Arifuji", "reading": "", "source": "user", "kind": "name", "was": [], "guess": ""}]
 
 
+@pytest.mark.models
 def test_a_page_not_in_the_cache_is_translated_fully_first(client):
     key = "example.com/g/retranslate-cold"
     data = page(604)
@@ -154,6 +159,7 @@ def test_a_page_not_in_the_cache_is_translated_fully_first(client):
     assert [b["translation"] for b in body["bubbles"][1:]] == [f"call 1 line {i}" for i in range(1, len(body["bubbles"]))]
 
 
+@pytest.mark.models
 def test_retranslate_rejects_malformed_requests(client):
     data = page(601)
     good = {"context_key": "example.com/g/retranslate", "page_index": 0, "bubbles": [0]}
@@ -173,6 +179,7 @@ def test_retranslate_rejects_malformed_requests(client):
     assert retranslate(client, data, {**good, "hint": "x" * 300}).status_code == 200
 
 
+@pytest.mark.models
 def test_a_name_change_redoes_only_the_bubbles_that_use_it_when_the_page_is_viewed(client):
     key = "example.com/g/retranslate-stale"
     _, truth = make_page(605)
@@ -212,6 +219,7 @@ def test_a_name_change_redoes_only_the_bubbles_that_use_it_when_the_page_is_view
     assert respelled["updated"] is True, "a bubble that still holds a removed spelling must be redone"
 
 
+@pytest.mark.models
 def test_a_stale_page_is_served_from_the_cache_while_the_translator_is_down(client):
     key = "example.com/g/retranslate-offline"
     _, truth = make_page(641)
@@ -287,6 +295,7 @@ def test_an_old_spelling_of_a_renamed_name_still_marks_its_bubbles_stale():
     assert stale_bubbles(kept, [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]) == []
 
 
+@pytest.mark.models
 def test_renaming_an_auto_name_redoes_the_pages_that_used_it(client):
     key = "example.com/g/retranslate-auto"
     data = page(642)

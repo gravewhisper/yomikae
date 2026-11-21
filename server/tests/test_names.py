@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
+import pytest
+
 from yomikae.cache import ContextStore
 from yomikae.model import CastEntry, ContextLine
 from yomikae.pipeline import translate_page
@@ -165,6 +167,7 @@ def read_block(page, vertical, box=None):
     return bubble, box
 
 
+@pytest.mark.models
 def test_furigana_beside_a_kanji_name_is_read_and_kept_out_of_the_line():
     bubble, _ = read_block(ruby_page(["桜野さんは", "どこですか"], {0: [(0, 2, "さくらの")]}, True), True)
     assert "さくら" not in bubble.source, bubble.source
@@ -172,6 +175,7 @@ def test_furigana_beside_a_kanji_name_is_read_and_kept_out_of_the_line():
     assert read_block(ruby_page(["桜野さんは", "どこですか"], {}, True), True)[0].ruby == ()
 
 
+@pytest.mark.models
 def test_furigana_above_horizontal_text_is_read_and_two_plain_lines_are_not_ruby():
     bubble, box = read_block(ruby_page(["明日は桜野さん", "と会うよ"], {0: [(3, 2, "さくらの")]}, False), False)
     assert "さくら" not in bubble.source, bubble.source

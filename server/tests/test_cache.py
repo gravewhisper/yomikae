@@ -122,6 +122,7 @@ def test_delete_cache_clears_the_current_version_and_its_context(client, tmp_pat
     assert client.get(f"/v1/pages/{0:064x}/rendered.webp").status_code == 404
 
 
+@pytest.mark.models
 def test_a_new_page_triggers_eviction_after_the_response(client, synthetic_pages, tmp_path, monkeypatch):
     engine = client.app.state.engine
     cache = PageCache(tmp_path / f"v{PIPELINE_VERSION}", "fake")
@@ -148,6 +149,7 @@ def test_punctuation_and_one_character_lines_are_never_recalled():
     assert context.recall("work", ["？", "!?", "え", "はい"]) == [None, None, None, "Yes."]
 
 
+@pytest.mark.models
 def test_pages_of_one_work_keep_their_context_with_the_same_or_no_page_index(client, synthetic_pages, tmp_path, monkeypatch):
     from make_test_page import make_page
 
@@ -199,6 +201,7 @@ def rebuilt(cache: PageCache) -> ContextStore:
     return context
 
 
+@pytest.mark.models
 def test_a_server_with_another_translator_translates_a_cached_page_again(client, openai_server, monkeypatch):
     from make_test_page import make_page
 
@@ -215,6 +218,7 @@ def test_a_server_with_another_translator_translates_a_cached_page_again(client,
     assert asyncio.run(openai_server.process(data, "two translators", None))["cached"] is True
 
 
+@pytest.mark.models
 def test_a_page_cached_before_translators_were_recorded_counts_as_an_openai_page(client, openai_server):
     from make_test_page import make_page
 

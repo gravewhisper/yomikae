@@ -15,6 +15,9 @@ from yomikae.pipeline import PIPELINE_VERSION
 from yomikae.translate import TranslatorFailed
 
 
+pytestmark = pytest.mark.models
+
+
 class Recording:
     name = "recording"
 
