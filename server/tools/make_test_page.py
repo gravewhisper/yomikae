@@ -2,15 +2,39 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-FONT_PATH = "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc"
+CJK_FONT_PATHS = (
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+    "/usr/share/fonts/google-noto-sans-cjk-fonts/NotoSansCJK-Bold.ttc",
+)
 JP_FONT_INDEX = 0
+
+
+def find_cjk_font(env=os.environ) -> str:
+    if env.get("YOMIKAE_TEST_CJK_FONT"):
+        return env["YOMIKAE_TEST_CJK_FONT"]
+    for path in CJK_FONT_PATHS:
+        if Path(path).exists():
+            return path
+    try:
+        found = subprocess.run(["fc-match", "-f", "%{file}", "Noto Sans CJK JP:bold"], capture_output=True, text=True, check=False).stdout
+    except FileNotFoundError:
+        found = ""
+    if Path(found).name == "NotoSansCJK-Bold.ttc":
+        return found
+    raise FileNotFoundError("synthetic test pages need NotoSansCJK-Bold.ttc: install Noto Sans CJK (fonts-noto-cjk on Debian and Ubuntu) or set YOMIKAE_TEST_CJK_FONT")
+
+
+FONT_PATH = find_cjk_font()
 
 LINES = [
     "今日はいい天気だね",

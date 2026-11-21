@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from make_test_page import FONT_PATH
 from PIL import Image, ImageDraw, ImageFont
 
 from yomikae import ocr
@@ -10,7 +11,7 @@ from yomikae.model import Box, TextBlock
 
 SIZE = (900, 520)
 LOGO = ImageFont.truetype(str(FONTS_DIR / "Bangers-Regular.ttf"), 110)
-JAPANESE = ImageFont.truetype("/usr/share/fonts/noto-cjk/NotoSansCJK-Bold.ttc", 44)
+JAPANESE = ImageFont.truetype(FONT_PATH, 44)
 
 
 @pytest.fixture(scope="module")
