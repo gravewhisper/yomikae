@@ -10,8 +10,8 @@ import tempfile
 import time
 import unicodedata
 from collections.abc import Callable, Sequence
-from functools import cache
 from dataclasses import dataclass, field, replace
+from functools import cache
 from pathlib import Path
 from typing import Protocol
 

@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SERVER_DIR = Path(__file__).resolve().parent.parent
@@ -149,11 +149,11 @@ def git_dirty(path: Path) -> bool:
 
 
 async def run(args) -> None:
+    from PIL import Image
+
     import yomikae
     from yomikae.cache import ContextStore
     from yomikae.config import Settings
-    from PIL import Image
-
     from yomikae.model import Box, ContextLine
     from yomikae.pipeline import translate_page
     from yomikae.translate import TranslatorFailed, TranslatorUnavailable, make_translator, page_image
@@ -201,7 +201,7 @@ async def run(args) -> None:
         "chapter_starts": args.chapter_starts,
         "jobs": args.jobs,
         "blank_source_lines_dropped": dropped,
-        "started": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "started": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     meta["fingerprint"] = fingerprint(meta)
     twin = finished_twin(args.out_root, args.label, meta["fingerprint"], pages) if args.reuse and meta["fingerprint"] else None
@@ -285,7 +285,7 @@ async def run(args) -> None:
     learned = {series: [asdict(e) for e in store.saved_names(series)] for series, store in stores.items() if store.saved_names(series)}
     if learned:
         (out / "names.json").write_text(json.dumps(learned, ensure_ascii=False, indent=1))
-    meta["finished"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    meta["finished"] = datetime.now(UTC).isoformat(timespec="seconds")
     meta["wall_s_this_session"] = round(time.perf_counter() - started, 1)
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
 

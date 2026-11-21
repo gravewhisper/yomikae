@@ -134,7 +134,7 @@ def labeled(seed: int = 0, per_kind: int = 40) -> list[tuple[str, str, np.ndarra
 
 def main() -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from yomikae.typeset import BURST, points, pointed, spikes
+    from yomikae.typeset import BURST, pointed, points, spikes
 
     seeds = int(sys.argv[1]) if len(sys.argv) > 1 else 5
     rows = [(kind, spikes(mask), *points(mask), pointed(mask)) for seed in range(seeds) for kind, _, mask in labeled(seed)]

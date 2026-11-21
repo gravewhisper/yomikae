@@ -8,8 +8,8 @@ from contextlib import contextmanager
 import numpy as np
 import pytest
 from conftest import decode, png_bytes
-
 from make_test_page import make_page
+
 from yomikae.cache import ContextStore, PageCache
 from yomikae.model import CastEntry, ContextLine
 from yomikae.pipeline import stale_bubbles, translate_page
@@ -102,7 +102,7 @@ def test_only_the_picked_bubbles_get_new_english_and_the_page_is_replaced(client
     assert translator.calls[-1][1].hint == ""
     engine = client.app.state.engine
     stored = [p.read_bytes() for p in engine.settings.cache_dir.rglob("*") if p.is_file()]
-    assert not any("she is a girl".encode() in b for b in stored), "the hint was stored"
+    assert not any(b"she is a girl" in b for b in stored), "the hint was stored"
 
 
 @pytest.mark.models

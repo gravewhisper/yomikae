@@ -8,12 +8,11 @@ import time
 from dataclasses import replace
 
 import pytest
+from conftest import png_bytes
 
 from yomikae.cache import ContextStore, PageCache, prune_stale
 from yomikae.model import ContextLine
 from yomikae.pipeline import PIPELINE_VERSION, Engine
-
-from conftest import png_bytes
 
 LEGACY = "ab" * 32
 

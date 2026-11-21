@@ -6,14 +6,13 @@ from contextlib import suppress
 
 import pytest
 from conftest import png_bytes
+from make_test_page import make_page
 from PIL import Image
 
-from make_test_page import make_page
 from yomikae.cache import ContextStore, PageCache
 from yomikae.model import ContextLine
 from yomikae.pipeline import PIPELINE_VERSION
 from yomikae.translate import TranslatorFailed
-
 
 pytestmark = pytest.mark.models
 

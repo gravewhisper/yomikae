@@ -7,7 +7,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -18,8 +18,8 @@ from PIL import Image
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
-from .config import Settings, extension_ids
 from .cache import KINDS, SAVED_SOURCES, prune_stale
+from .config import Settings, extension_ids
 from .guard import RequestGuard
 from .model import CastEntry
 from .pipeline import FORMATS, PIPELINE_VERSION, TRANSLATION_VERSION, BadImage, Engine, decode_image
@@ -320,7 +320,7 @@ async def post_report(
     size = image_size(data)
     resolved = resolve_areas(picked, size, result["bubbles"] if result else [])
     original = f"original.{image_extension(data)}"
-    created = datetime.now(timezone.utc)
+    created = datetime.now(UTC)
     files = {original: data}
     if result is not None:
         try:

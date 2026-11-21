@@ -137,8 +137,8 @@ def overlay(cv2, Image, ImageDraw, rgb: np.ndarray, masks: list[np.ndarray | Non
 
 
 def sessions(models: list[Model], device: str):
-    import torch  # noqa: F401
     import onnxruntime as ort
+    import torch  # noqa: F401
 
     ort.preload_dlls()
     providers = ["CPUExecutionProvider"]

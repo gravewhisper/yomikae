@@ -6,7 +6,7 @@ import math
 import os
 import shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
@@ -93,7 +93,7 @@ def image_extension(data: bytes) -> str:
 
 
 def new_report_id(page_id: str, now: datetime | None = None) -> str:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     return f"{now.strftime('%Y%m%dT%H%M%S')}.{now.microsecond // 1000:03d}Z-{page_id[:12]}"
 
 

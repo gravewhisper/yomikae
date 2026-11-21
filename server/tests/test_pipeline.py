@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import io
 from dataclasses import replace
 
 import httpx
@@ -9,9 +8,9 @@ import numpy as np
 import pytest
 import torch
 from conftest import decode, png_bytes
+from make_test_page import make_page
 from PIL import Image
 
-from make_test_page import make_page
 from yomikae.config import Settings
 from yomikae.translate import Misaligned, OpenAICompatible
 
@@ -58,7 +57,7 @@ def test_ocr_reads_the_drawn_text(translated):
 
 @pytest.mark.models
 def test_original_text_is_removed_and_english_drawn(client, translated):
-    for data, img, truth, page in translated.values():
+    for _, img, truth, page in translated.values():
         rendered = decode(client.get(page["rendered_url"]).content)
         assert rendered.shape[:2] == (page["height"], page["width"])
         original = np.asarray(img.convert("L"))
@@ -172,8 +171,9 @@ def test_translator_sees_earlier_pages_of_same_work(client):
 
 @pytest.mark.models
 def test_english_print_the_ocr_misreads_keeps_its_original_pixels(client):
-    from yomikae.config import FONT_PATH
     from PIL import ImageDraw, ImageFont
+
+    from yomikae.config import FONT_PATH
 
     img, truth = make_page(5)
     draw = ImageDraw.Draw(img)

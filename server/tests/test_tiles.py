@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from make_test_page import make_page
+
 from yomikae import balloon, detect
 from yomikae.config import BUBBLE_MODEL_PATH, DETECTOR_PATH
 from yomikae.model import Box
@@ -25,9 +25,9 @@ def test_a_strip_is_covered_by_equal_overlapping_tiles_that_split_ownership(size
     assert len(cover) > 1 and len({w1 - w0 for w0, w1, _, _ in along}) == 1
     assert along[0][0] == along[0][2] == 0 and along[-1][1] == along[-1][3] == long
     margin = TILE_OVERLAP * short / 2 - 1
-    for (w0, w1, o0, o1), (_, _, n0, _) in zip(along, along[1:]):
+    for (_, w1, _, o1), (_, _, n0, _) in zip(along, along[1:]):
         assert o1 == n0 and w1 - o1 >= margin
-    for w0, w1, o0, o1 in along[1:]:
+    for w0, _, o0, _ in along[1:]:
         assert o0 - w0 >= margin
 
 

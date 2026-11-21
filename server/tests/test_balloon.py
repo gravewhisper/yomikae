@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-import cv2
 import numpy as np
 import pytest
 from conftest import png_bytes
-from PIL import Image, ImageDraw, ImageFont
-
 from make_test_page import FONT_PATH, make_page
+from PIL import Image, ImageDraw, ImageFont
 from test_typeset import caption_box
+
 from yomikae import balloon, detect, ocr, typeset
 from yomikae.config import BUBBLE_MODEL_PATH, FONTS_DIR
 from yomikae.model import Balloon, Box, Bubble, TextBlock

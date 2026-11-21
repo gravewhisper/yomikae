@@ -189,8 +189,9 @@ async def run(args) -> None:
     if args.device == "cpu":
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
     import cv2
-    import yomikae
     import torch
+
+    import yomikae
     from yomikae import detect, ocr, typeset
     from yomikae.config import Settings
     from yomikae.pipeline import Engine
@@ -349,7 +350,7 @@ def score(out: Path) -> None:
     lines.append(f"Commit `{meta['sha']}`, {auto['pages']} pages, device `{meta['device']}`, translator `{meta['translator']}`, dialogue font `{meta['dialogue_font']}`.")
     lines.append("")
     if rev:
-        lines += [f"## Problems per 100 bubbles", "", f"{rev['bubbles']} bubbles on {rev['pages_reviewed']} of {rev['pages_total']} reviewed pages. **Total: {rev['total_per_100']} per 100** ({rev['total']} problems).", "", "| Category | Count | Per 100 bubbles |", "| --- | ---: | ---: |"]
+        lines += ["## Problems per 100 bubbles", "", f"{rev['bubbles']} bubbles on {rev['pages_reviewed']} of {rev['pages_total']} reviewed pages. **Total: {rev['total_per_100']} per 100** ({rev['total']} problems).", "", "| Category | Count | Per 100 bubbles |", "| --- | ---: | ---: |"]
         lines += [f"| {c} | {rev['counts'][c]} | {rev['per_100'][c]} |" for c in CATEGORIES]
         lines += ["", "| Work | Bubbles | Problems | Per 100 |", "| --- | ---: | ---: | ---: |"]
         lines += [f"| {w} | {v['bubbles']} | {v['problems']} | {v['per_100']} |" for w, v in rev["by_work"].items()]

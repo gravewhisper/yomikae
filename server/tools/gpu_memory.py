@@ -127,10 +127,10 @@ def timed(fn, *args):
 
 
 def probe_onnx(gpu: Gpu, args) -> None:
+    import torch
+
     from yomikae import balloon, detect
     from yomikae.config import BUBBLE_MODEL_PATH, DETECTOR_PATH
-
-    import torch
 
     torch.zeros(1, device="cuda")
     gpu.snap("context")

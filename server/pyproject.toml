@@ -42,3 +42,15 @@ packages = ["yomikae"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["models: needs the model files in server/models and the manga-ocr weights"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 200
+
+[tool.ruff.lint]
+select = ["E9", "F", "I", "B", "UP"]
+ignore = ["B019", "B905"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["yomikae"]
+split-on-trailing-comma = false

@@ -6,7 +6,6 @@ import types
 from argparse import Namespace
 
 import pytest
-
 import translation_bench
 
 LINE = {"series": "a", "page_index": 1, "line_index": 0, "ja": "行くぞ", "hyp": "Let's go", "ref": "Let's go!"}
