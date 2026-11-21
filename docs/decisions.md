@@ -383,7 +383,7 @@ Since 2026-11-22 a refused page also costs fewer calls. Splitting used to go on 
 
 **Why.** On 2026-11-14 an audit found that the cache key was the image hash under the pipeline version and nothing else. A server started with another translator or model served the old translator's pages and reused its lines and names, and a run with `YOMIKAE_TRANSLATOR=fake` on the default cache folder left fake pages for the real translator to serve. With a second translator next to the local LLM, a work read under one would be served to the other.
 
-A page with no record was made before this change. The OpenAI-compatible translator is the default, `google_free` is a keyless translator with no context, and `fake` is for tests, so the server takes such a page for an `openai` page. That keeps the cache the reader already has. Raising PIPELINE_VERSION would delete every cached page, and counting such pages as absent would translate each of them again. The cost is that a page made by an earlier model, or by `fake` or `google_free`, before the record existed is still served by an `openai` translator. `DELETE /v1/cache` removes such pages.
+A page with no record was made before this change. The OpenAI-compatible translator is the default, the keyless `google_free` translator of that time had no context, and `fake` is for tests, so the server takes such a page for an `openai` page. That keeps the cache the reader already has. Raising PIPELINE_VERSION would delete every cached page, and counting such pages as absent would translate each of them again. The cost is that a page made by an earlier model, or by `fake` or `google_free`, before the record existed is still served by an `openai` translator. `DELETE /v1/cache` removes such pages.
 
 ## A version bump keeps the line memory
 
@@ -400,4 +400,24 @@ A page with no record was made before this change. The OpenAI-compatible transla
 **Why.** The reader has a Claude subscription and no API key, and `claude` signs in with the subscription. The text on a page is untrusted, so the command gets no tools and loads no settings, plugins, hooks or `CLAUDE.md`. Without `--tools ""`, a call asked to read a file could. With it, the model could only write a tool call into its reply, and that reply fails to parse and counts as unreadable. A refusal or a prose reply also counts as unreadable, so a page with no translated line fails with the reply's text instead of being saved.
 
 **Codex, added later the same day.** The Codex command line tool, `codex exec`, signs in with a ChatGPT plan, including the free plan. It was first left out because it read a local file when asked unless its shell tool was turned off, and each call cost about 14,000 tokens. It was added as `YOMIKAE_TRANSLATOR=codex` with the shell tool and 12 other features turned off, and the server's prompt passed as `model_instructions_file` in place of Codex's own. That cut a call to about 8,600 tokens. With that setup, two prompts that asked it to read a file in its folder got `CANNOT` and no file contents. Reasoning effort `none`, `low` and `medium` all came to about the same token count, so the default is `none`. A model left unset is recorded as `codex:default`, so a change of Codex's default model does not count as another translator.
+
+## The server finishes a page after the reader's request gives up
+
+**Decision.** When the extension stops waiting for a page after 180 seconds, the server keeps working on it, caches it, and keeps the work's turn until it is done. No route checks for a closed connection, and no deadline is passed from the extension to the translator calls. Recorded on 2026-11-22.
+
+**Why.** The page usually lands in the cache a little later, and the reader's Retry then gets it from the cache, or joins the run still in progress, without translating it again. Cancelling on disconnect would throw that work away and pay for it twice. A page reaches 180 seconds only through a hung translator call or a long chain of calls for unreadable lines, since a work runs at most two pages at once.
+
+**Not done.** A server deadline sent by the extension and passed to each translator call would bound a hung call. It needs changes on both sides and in the contract, and it is worth doing if hung calls show up in use.
+
+## One translator per server, with no fallback
+
+**Decision.** A server runs one translator. A page it refuses fails with the refusal, and no second translator is tried. Recorded on 2026-11-22.
+
+**Why.** A cached page belongs to the translator that made it, so a page made by a fallback would count as uncached for the main translator, be translated again on every view, and stay out of the line memory and names. A cloud fallback would also send text somewhere the reader did not choose. A failed page is not cached, so restarting the server with a local model and pressing Retry gets it translated, as `docs/translators.md` says.
+
+## `google_free` was removed
+
+**Decision.** The `google_free` translator was removed on 2026-11-22. It sent each line, with no key, to the endpoint Google's free web translator uses, one line at a time, with no context, no names and no tests. `YOMIKAE_TRANSLATOR=google_free` now fails at startup with the list of translators.
+
+**Why.** It is not a documented Google API, so it can change or be blocked without notice, and the docs did not warn that it sends text to Google. No cached page had been made with it.
 

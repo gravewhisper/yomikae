@@ -12,7 +12,7 @@ The cache gives a page only to the translator that made it, so switching transla
 
 Use a subscription only through its maker's own tool. Anthropic's terms allow a Claude subscription only in Claude Code and Claude.ai, so do not point other command line tools at one.
 
-With a cloud API, the Japanese text of each page leaves your computer, along with the dialogue of up to two earlier pages as context. Page images never leave it. Cloud models may refuse some content, which leaves those lines in Japanese or fails the page.
+With a cloud API, the Japanese text of each page leaves your computer, along with the dialogue of up to two earlier pages as context. Page images never leave it. Cloud models may refuse some content, which leaves those lines in Japanese or fails the page. The server has one translator, so to get a failed page translated, restart it with `YOMIKAE_TRANSLATOR=openai` and a local model, then press Retry on the page. A failed page is not cached, so nothing has to be cleared.
 
 ## OpenAI-compatible endpoint
 
