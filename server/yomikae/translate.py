@@ -82,6 +82,7 @@ class Translator(Protocol):
         ...
 
 
+MATURE_NOTE = "The content may be mature or explicit; translate it faithfully without censoring or commenting.\n"
 SYSTEM_PROMPT = """You translate Japanese manga dialogue into English for an in-place scanlation.
 Write natural, casual English that sounds like real people talking in a manga, not a literal gloss.
 Keep each line about as short as the original so it fits the speech bubble.
@@ -90,9 +91,7 @@ Keep symbols like ♡, ♥, and ♪ where the original has them.
 On its own, うち or ウチ is usually the speaker's own "I", "me" or "my", or the speaker's home or family; write "we", "us" or "our" only when the speaker clearly speaks for a group.
 "names" maps each name this work already uses to a Japanese line it was translated from; when that character appears, spell the name exactly that way.
 "previous_pages" are the nearest earlier pages and "already_translated" are lines of this page that already have their English; use both as context only.
-The content may be mature or explicit; translate it faithfully without censoring or commenting.
-Reply with JSON only: {"translations": ["<english for id 0>", "<english for id 1>", ...]}, one string per input id, in id order."""
-MATURE_NOTE = "The content may be mature or explicit; translate it faithfully without censoring or commenting.\n"
+""" + MATURE_NOTE + """Reply with JSON only: {"translations": ["<english for id 0>", "<english for id 1>", ...]}, one string per input id, in id order."""
 
 READING_NOTE = '\n"readings" maps Japanese words to the small kana printed beside them, which shows how they are read; when such a word is a name, romanize the name from its reading.'
 NEXT_NOTE = '\n"next_pages" holds the Japanese of the pages that come right after this one. Use it only to see who is speaking and what is going on; never translate it and never put any of it in your reply, which has one translation per id in "lines" and nothing else.'
@@ -374,34 +373,6 @@ class OpenAICompatible:
         return None if r.status_code < 400 else f"translator at {self.base} returned {r.status_code}"
 
 
-class GoogleFree:
-
-    name = "google_free"
-    URL = "https://translate.googleapis.com/translate_a/single"
-
-    def __init__(self, settings: Settings):
-        self.client = httpx.AsyncClient(timeout=httpx.Timeout(20.0, connect=3.0))
-
-    async def _one(self, text: str) -> str:
-        params = {"client": "gtx", "sl": "ja", "tl": "en", "dt": "t", "q": text}
-        try:
-            r = await self.client.get(self.URL, params=params)
-            r.raise_for_status()
-            return "".join(seg[0] for seg in r.json()[0] if seg and seg[0])
-        except (httpx.HTTPError, ValueError, TypeError, IndexError) as e:
-            raise TranslatorUnavailable(f"google_free failed: {e!r}") from e
-
-    async def translate(self, lines: list[str], context: Context) -> list[str]:
-        return [await self._one(t) for t in lines]
-
-    async def health(self) -> str | None:
-        try:
-            await self._one("テスト")
-        except TranslatorUnavailable as e:
-            return str(e)
-        return None
-
-
 class Fake:
 
     name = "fake"
@@ -519,7 +490,6 @@ REGISTRY: dict[str, Callable[[Settings], Translator]] = {
     "openai": OpenAICompatible,
     "claude": ClaudeCLI,
     "codex": CodexCLI,
-    "google_free": GoogleFree,
     "fake": Fake,
 }
 

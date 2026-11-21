@@ -53,7 +53,7 @@ flowchart LR
   BG -->|"POST /v1/pages (multipart)<br/>GET rendered.webp<br/>GET /v1/health"| Guard
   UI -.->|"GET/PUT /v1/names"| Guard
 
-  LLM["Translator backend<br/>LM Studio (OpenAI API), claude -p,<br/>codex exec, google_free, fake"]
+  LLM["Translator backend<br/>LM Studio (OpenAI API), claude -p,<br/>codex exec, fake"]
   Tr --> LLM
 ```
 
@@ -101,13 +101,13 @@ flowchart LR
 13. **Read the page on the GPU thread.** `read_page` runs on `self.gpu_thread`, a single-thread executor, inside `self.gpu()` (a lock that also empties the CUDA cache afterwards):
     - `detect.detect` (`detect.py:432`): comic-text-detector over the page, tiled for tall strips, then block splitting per bubble, merging and reading order.
     - `balloon.segment`: YOLO11 balloon masks.
-    - `ocr.read` (`ocr.py:166`): manga-ocr on each block, with filters for sound effects and low confidence. Rejected blocks come back as `unsure` and are reported as `skipped`.
+    - `ocr.read` (`ocr.py:168`): manga-ocr on each block, with filters for sound effects and low confidence. Rejected blocks come back as `unsure` and are reported as `skipped`.
     - `ruby.attach` (`ruby.py:234`): reads the furigana beside kanji names.
 14. **Translation and erasing run at the same time.** `_run` starts `_translate` as a task, then awaits `remove_text_anywhere`, which runs `inpaint.inpaint` (`inpaint.py:140`) on the GPU thread and falls back to a CPU LaMa on CUDA out-of-memory.
 15. **Translation waits for the earlier page.** `_translate` (`pipeline.py:343`) awaits `earlier`, so the work's previous page has stored its lines first, then calls `translate_page` (`pipeline.py:363`):
     - `ContextStore.recall` reuses translations of lines already seen in this work (exact or near match), unless a saved name in the line is spelled differently in the remembered English.
     - It builds a `Context`: up to 2 earlier pages from `store.before`, the `names` and `terms` maps from `store.cast`, the recalled lines, and furigana `readings` that are not already known.
-    - `translate_lines` (`translate.py:262`) calls `aligned`, which calls `OpenAICompatible.translate` once with every remaining line. The model must reply `{"translations": [...]}` with one string per line. A reply with the wrong count raises `Misaligned`, and `aligned` retries in halves, stopping when the replies for both halves hold no list of translations, as in a refusal. Lines that come back still in Japanese, with no words, or with a word cut across two lines are retried one at a time. Kin words lose their honorific.
+    - `translate_lines` (`translate.py:261`) calls `aligned`, which calls `OpenAICompatible.translate` once with every remaining line. The model must reply `{"translations": [...]}` with one string per line. A reply with the wrong count raises `Misaligned`, and `aligned` retries in halves, stopping when the replies for both halves hold no list of translations, as in a refusal. Lines that come back still in Japanese, with no words, or with a word cut across two lines are retried one at a time. Kin words lose their honorific.
     - `mend_stutters` turns a lone cut-off kana before the same sound into "D-" style stutters.
     - `store.learn_names` records new names spelled from furigana.
     - If no line got English and a reply was unreadable, it raises `TranslatorFailed`, and nothing is cached.
@@ -136,7 +136,7 @@ A second visit to the same page stops at step 5 if the service worker still has 
 | Translation unit | The whole page in one call, with 2 earlier pages, the name list and already-known lines as context. | One call per bubble; one call per chapter. | Context improves pronouns, tone and names, and one call is cheaper than many. A misaligned reply needs recovery (halving), and one bad page reply affects every line. |
 | Order within a work | Pages of one `context_key` translate one at a time in arrival order (`Engine.turn`); reading and erasing still overlap. | Fully parallel; order by `page_index`. | Each page sees the previous page's lines and names. Long series queue behind slow pages. |
 | What goes to the translator | OCR text only, never the page image. | Send the image to a vision model. | Works with small local text models and costs fewer tokens. The model cannot see who is speaking or what is drawn. |
-| Translator backends | A `Translator` protocol with OpenAI-compatible (LM Studio), `claude -p`, `codex exec`, `google_free` and `fake`. | One hard-wired backend. | Users choose between local and subscription models, and tests use `fake`. The CLIs cost a process start per call. |
+| Translator backends | A `Translator` protocol with OpenAI-compatible (LM Studio), `claude -p`, `codex exec` and `fake`. | One hard-wired backend. | Users choose between local and subscription models, and tests use `fake`. The CLIs cost a process start per call. |
 | Cache identity | The SHA-256 of the image bytes is the page id; the folder is versioned by `PIPELINE_VERSION`; each page is stamped with its translator. | Key by URL; per-stage versions. | The same image from any mirror or URL hits the cache, and stale renders are never served. Any change to rendering or translation throws away every cached render. The line memory survives unless `TRANSLATION_VERSION` changed too. |
 | Context store | In memory, rebuilt from cached `result.json` files at startup; only user and furigana names are saved on their own. | SQLite or another persistent store. | One source of truth (the cache) and no migrations. Startup and every lookup scale with the number of pages. |
 | GPU scheduling | One single-thread executor for all GPU stages, plus a lock that empties the CUDA cache; translation overlaps erasing. | A pool of GPU workers; batching across pages. | Predictable memory on one card shared with a local LLM. Throughput is one page at a time on the GPU. |

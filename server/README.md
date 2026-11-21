@@ -28,7 +28,7 @@ All configuration is environment variables. There is no settings UI.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `YOMIKAE_TRANSLATOR` | `openai` | `openai` (any OpenAI-compatible endpoint), `claude` (runs `claude -p` on the account it is signed in to), `codex` (runs `codex exec` on the ChatGPT account it is signed in to; see [docs/translators.md](../docs/translators.md)), `google_free` (keyless Google endpoint, no context), or `fake` (tests). The cache gives a page only to the translator that made it, so the server translates a page again when another translator made its cached copy. |
+| `YOMIKAE_TRANSLATOR` | `openai` | `openai` (any OpenAI-compatible endpoint), `claude` (runs `claude -p` on the account it is signed in to), `codex` (runs `codex exec` on the ChatGPT account it is signed in to; see [docs/translators.md](../docs/translators.md)), or `fake` (tests). The cache gives a page only to the translator that made it, so the server translates a page again when another translator made its cached copy. |
 | `YOMIKAE_OPENAI_BASE_URL` | `http://localhost:1234/v1` | LM Studio, Ollama (`http://localhost:11434/v1`), or Gemini's compat endpoint. |
 | `YOMIKAE_OPENAI_MODEL` | `google/gemma-4-12b` | Model name sent to the endpoint. Any OpenAI-compatible model works. The model is part of the translator's name, so the server translates a page again when another model made its cached copy. |
 | `YOMIKAE_OPENAI_API_KEY` | `lm-studio` | Bearer token. |
