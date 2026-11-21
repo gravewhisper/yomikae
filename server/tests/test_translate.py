@@ -220,3 +220,63 @@ def test_a_stutter_or_a_dash_before_a_new_sentence_is_not_a_cut_word():
     translator = Scripted(["W-", "Well...", "Wait -", "and then?"])
     assert run(translator, ["う", "うん", "待って", "それで？"]) == ["W-", "Well...", "Wait -", "and then?"]
     assert len(translator.calls) == 1
+
+
+class Refuses:
+    name = "refuses"
+
+    def __init__(self, refused):
+        self.refused = refused
+        self.calls = []
+
+    async def translate(self, lines, context):
+        from yomikae.translate import Misaligned
+
+        self.calls.append(lines)
+        if any(self.refused(line) for line in lines):
+            raise Misaligned("I'm sorry, but I can't help with translating this.")
+        return [f"en {line}" for line in lines]
+
+    async def health(self):
+        return None
+
+
+def test_a_page_refused_as_a_whole_is_asked_three_times_not_once_per_split():
+    import asyncio
+
+    from yomikae.translate import Context, translate_lines
+
+    translator = Refuses(lambda line: True)
+    unread = []
+    lines = [f"行{i}" for i in range(12)]
+    assert asyncio.run(translate_lines(translator, lines, Context(), unread)) == [""] * 12
+    assert unread
+    assert translator.calls == [lines, lines[:6], lines[6:]]
+
+
+def test_one_refused_line_is_still_found_and_the_rest_translated():
+    translator = Refuses(lambda line: line == "行7")
+    lines = [f"行{i}" for i in range(12)]
+    assert run(translator, lines) == [f"en {line}" if line != "行7" else "" for line in lines]
+
+
+def test_a_reply_that_miscounts_on_both_halves_is_still_split_until_it_fits():
+    import json
+
+    from yomikae.translate import Misaligned
+
+    class Miscounts:
+        name = "miscounts"
+        calls = []
+
+        async def translate(self, lines, context):
+            self.calls.append(lines)
+            if len(lines) > 2:
+                raise Misaligned(json.dumps({"translations": [f"en {line}" for line in lines[:-1]]}))
+            return [f"en {line}" for line in lines]
+
+        async def health(self):
+            return None
+
+    lines = [f"行{i}" for i in range(8)]
+    assert run(Miscounts(), lines) == [f"en {line}" for line in lines]
