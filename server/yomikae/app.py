@@ -265,10 +265,10 @@ async def retranslate(request: Request, page_id: str, image: Annotated[UploadFil
     cached = engine.cache.load(page_id)
     if cached is not None:
         check_bubbles(cached, picked)
-    for entry in ask["names"]:
-        engine.context.set_name(key, entry)
     if cached is None:
         check_bubbles(await engine.process(data, key, index), picked)
+    for entry in ask["names"]:
+        engine.context.set_name(key, entry)
     result = await engine.retranslate(page_id, data, key, index, picked, ask["hint"])
     schedule_eviction(request.app)
     return {k: v for k, v in result.items() if k not in INTERNAL_FIELDS}

@@ -305,3 +305,13 @@ def test_renaming_an_auto_name_redoes_the_pages_that_used_it(client):
         client.put("/v1/names", params={"context_key": key}, json={"names": [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]})
         redone = post(client, data, key, 0)
     assert first["bubbles"] and redone["updated"] is True
+
+
+@pytest.mark.models
+def test_a_retranslate_of_an_uncached_page_that_fails_validation_saves_no_names(client):
+    key = "example.com/g/retranslate-rejected"
+    data = page(605)
+    with using(client, Scripted(by_call)):
+        r = retranslate(client, data, {"context_key": key, "page_index": 0, "bubbles": [99], "names": [{"ja": "在藤", "en": "Arifuji", "kind": "name"}]})
+    assert r.status_code == 400, r.text
+    assert client.get("/v1/names", params={"context_key": key}).json()["names"] == []
