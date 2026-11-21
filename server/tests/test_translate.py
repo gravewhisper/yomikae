@@ -280,3 +280,25 @@ def test_a_reply_that_miscounts_on_both_halves_is_still_split_until_it_fits():
 
     lines = [f"行{i}" for i in range(8)]
     assert run(Miscounts(), lines) == [f"en {line}" for line in lines]
+
+
+class SlowResends(Scripted):
+    async def translate(self, lines, context):
+        import asyncio
+
+        if self.calls:
+            await asyncio.sleep(0.2)
+        return await super().translate(lines, context)
+
+
+def test_resends_stop_once_the_page_has_used_its_time():
+    import asyncio
+
+    from yomikae.translate import Context, translate_lines
+
+    lines = [f"行{i}" for i in range(10)]
+    translator = SlowResends(list(lines), **{line: [f"en {line}"] for line in lines})
+    out = asyncio.run(translate_lines(translator, lines, Context(), budget=0.3))
+    assert 2 <= len(translator.calls) <= 4
+    assert out[0] == "en 行0"
+    assert out[-1] == ""

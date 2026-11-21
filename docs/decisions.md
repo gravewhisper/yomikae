@@ -407,7 +407,9 @@ A page with no record was made before this change. The OpenAI-compatible transla
 
 **Why.** The page usually lands in the cache a little later, and the reader's Retry then gets it from the cache, or joins the run still in progress, without translating it again. Cancelling on disconnect would throw that work away and pay for it twice. A page reaches 180 seconds only through a hung translator call or a long chain of calls for unreadable lines, since a work runs at most two pages at once.
 
-**Not done.** A server deadline sent by the extension and passed to each translator call would bound a hung call. It needs changes on both sides and in the contract, and it is worth doing if hung calls show up in use.
+**Bounded since.** Each translator call already stops after 180 seconds. Since 2026-11-22 the chain of calls for unreadable lines is bounded too: a line is sent again on its own only while the page's translation is less than 120 seconds old (`RESEND_BUDGET` in `translate.py`). A page's translation therefore takes at most about 300 seconds, and usually ends within the extension's 180.
+
+**Not done.** A deadline sent by the extension and passed to each translator call would bound a single hung call more tightly. It needs changes on both sides and in the contract, and it is worth doing only if hung calls show up in use.
 
 ## One translator per server, with no fallback
 

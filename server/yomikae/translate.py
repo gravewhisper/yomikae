@@ -258,12 +258,16 @@ def plain_kin(text: str) -> str:
     return KIN_HONORIFIC.sub(r"\1", text)
 
 
-async def translate_lines(translator: Translator, lines: list[str], context: Context, unread: list[str] | None = None) -> list[str]:
+RESEND_BUDGET = 120.0
+
+
+async def translate_lines(translator: Translator, lines: list[str], context: Context, unread: list[str] | None = None, budget: float = RESEND_BUDGET) -> list[str]:
     unread = [] if unread is None else unread
+    deadline = time.monotonic() + budget
     out = await aligned(translator, lines, context, unread)
     redo = {i for i, (source, text) in enumerate(zip(lines, out)) if text and unusable(source, text)} | cut_words(out)
     for i in sorted(redo):
-        text = (await aligned(translator, [lines[i]], subset(context, [i]), unread))[0]
+        text = (await aligned(translator, [lines[i]], subset(context, [i]), unread))[0] if time.monotonic() < deadline else out[i]
         out[i] = "" if unusable(lines[i], text) else text
     return [plain_kin(text) for text in out]
 
