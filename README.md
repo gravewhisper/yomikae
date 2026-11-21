@@ -212,6 +212,7 @@ These are planned but not built yet:
 - [Speed and graphics memory](docs/performance.md) shows where a page's time goes and the settings that trade speed for memory.
 - [Troubleshooting](docs/troubleshooting.md) covers common problems and how to report a bad page.
 - [Measuring a change](docs/benchmarks.md) explains the two benchmark tools and how far to trust their numbers.
+- [Architecture](docs/architecture.md) walks through the extension and the server, follows one page from the browser to the server and back, and sums up the main design choices.
 - [Design decisions](docs/decisions.md) records why Yomikae works the way it does and what was tried and dropped.
 - [Credits and licenses](docs/credits.md) lists the code, models, fonts, and libraries Yomikae uses.
 

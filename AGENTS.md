@@ -7,6 +7,7 @@ Rules for AI coding agents and human contributors to Yomikae. The [README](READM
 - `server/` is the Python server. The pipeline is in `server/yomikae/`, the tests in `server/tests/`, and the scripts in `server/tools/`.
 - `extension/` is the Chrome extension. The source is in `extension/src/`, unit tests in `extension/test/`, and browser tests in `extension/tools/`. `extension/adapters/template.ts` is a starting point for a new site adapter.
 - `extension/adapters.local/` is ignored by git. The build compiles in any adapters it finds there or in the folder named by `YOMIKAE_ADAPTERS`.
+- `docs/architecture.md` is an onboarding guide: the components, one page traced end to end with file and line references, and the main design choices.
 - `docs/contract.md` is the contract between the extension and the server. `docs/sites.md` describes each site adapter, and `docs/adapters.md` explains how to write one.
 - `docs/decisions.md` records why lettering, shouts, honorifics, translation context, site modes, fonts, and GPU use work as they do, and what was tried and dropped. Read the matching entry before you change one of them.
 
