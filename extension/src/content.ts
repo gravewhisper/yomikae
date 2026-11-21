@@ -1,7 +1,7 @@
 import { adapterFor, type SiteMode } from './adapters';
 import type { SiteAdapter } from './adapter';
 import type { PageJob, Redo, TranslatedPage } from './contract';
-import { HINT_MAX, noAccessText, PORT_NAME, type Broadcast, type NameFix, type ReportArea, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
+import { fromBase64, HINT_MAX, noAccessText, PORT_NAME, type Broadcast, type NameFix, type ReportArea, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
 import { getSiteMode, siteForUrl, watchSiteMode, type Site } from './sites';
 import { loadWork, tabMode, watchWorkChoice, type TabMode, type Work } from './works';
 
@@ -119,7 +119,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       const url = job?.url ?? (first && tracked.get(first)?.originalSrc);
       if (!url) return;
       if (job?.state === 'ready' && msg.page.rendered_url === job.page.rendered_url && !msg.page.updated) return settle(msg.key, job.redo);
-      const bytes = Uint8Array.from(atob(msg.base64), (c) => c.charCodeAt(0));
+      const bytes = fromBase64(msg.base64);
       const renderedBlobUrl = URL.createObjectURL(new Blob([bytes], { type: msg.mime }));
       const pre = new Image();
       pre.src = renderedBlobUrl;

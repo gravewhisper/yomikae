@@ -1,6 +1,6 @@
 import { imageReferers } from './adapters';
 import { getServerUrl, MAX_IMAGE_BYTES, parseHealth, parseReportReceipt, parseServerError, parseTranslatedPage, type TranslatedPage } from './contract';
-import { noAccessText, PORT_NAME, type Broadcast, type ReportRequest, type RetranslateRequest, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
+import { noAccessText, PORT_NAME, toBase64, type Broadcast, type ReportRequest, type RetranslateRequest, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
 import { addImageHost, enableSite, reconcileSites, siteForUrl, sitesForGrants } from './sites';
 
 const MAX_IN_FLIGHT = 2;
@@ -460,12 +460,6 @@ async function report(port: chrome.runtime.Port, r: ReportRequest): Promise<void
   } catch (err) {
     send(port, { type: 'reported', key, outcome: { ok: false, error: err instanceof Error ? err.message : String(err) } });
   }
-}
-
-function toBase64(bytes: Uint8Array): string {
-  let s = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
 }
 
 chrome.runtime.onConnect.addListener((port) => {
