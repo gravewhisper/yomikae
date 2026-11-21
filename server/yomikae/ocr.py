@@ -41,8 +41,10 @@ def recognize(ocr, crop: Image.Image) -> tuple[str, float, int]:
 
     x = ocr._preprocess(crop.convert("L").convert("RGB"))[None].to(ocr.model.device)
     with torch.inference_mode():
-        ids = ocr.model.generate(x, max_length=300)
-        logits = ocr.model(pixel_values=x, decoder_input_ids=ids[:, :-1]).logits[0].float()
+        out = ocr.model.generate(x, max_length=300, output_scores=True, return_dict_in_generate=True)
+    ids = out.sequences
+    beams = out.beam_indices[0] if getattr(out, "beam_indices", None) is not None else torch.zeros(len(out.scores), dtype=torch.long)
+    logits = torch.stack([out.scores[step][beams[step]] for step in range(ids.shape[1] - 1)]).float()
     probs = torch.softmax(logits, -1).gather(1, ids[0, 1:, None])[:, 0]
     text = post_process(ocr.tokenizer.decode(ids[0], skip_special_tokens=True))
     return text, float(probs.mean()), len(probs)
