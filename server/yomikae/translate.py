@@ -120,7 +120,7 @@ FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 JSON_LEAK = re.compile(r'[{}]|"\s*,\s*"|^[\s\[\]",:]+$')
 
 
-def parse_translations(content: str, n: int) -> list[str] | None:
+def reply_items(content: str) -> list | None:
     m = FENCE.search(content)
     body = m.group(1) if m else content
     start = min((i for i in (body.find("{"), body.find("[")) if i >= 0), default=-1)
@@ -131,7 +131,12 @@ def parse_translations(content: str, n: int) -> list[str] | None:
     except json.JSONDecodeError:
         return None
     items = data.get("translations") if isinstance(data, dict) else data
-    if not isinstance(items, list):
+    return items if isinstance(items, list) else None
+
+
+def parse_translations(content: str, n: int) -> list[str] | None:
+    items = reply_items(content)
+    if items is None:
         return None
     out: dict[int, str] = {}
     for pos, item in enumerate(items):
@@ -219,16 +224,32 @@ def cut_words(out: list[str]) -> set[int]:
     return {j for i in range(len(out) - 1) if CUT_END.search(out[i]) and CUT_START.match(out[i + 1]) for j in (i, i + 1)}
 
 
-async def aligned(translator: Translator, lines: list[str], context: Context, unread: list[str]) -> list[str]:
+async def attempt(translator: Translator, lines: list[str], context: Context) -> list[str] | Misaligned:
     try:
         return await translator.translate(lines, context)
     except Misaligned as e:
-        if len(lines) == 1:
-            unread.append(str(e))
-            return [""]
-        mid = len(lines) // 2
-        first = await aligned(translator, lines[:mid], subset(context, range(mid)), unread)
-        return first + await aligned(translator, lines[mid:], subset(context, range(mid, len(lines))), unread)
+        return e
+
+
+async def aligned(translator: Translator, lines: list[str], context: Context, unread: list[str]) -> list[str]:
+    out = await attempt(translator, lines, context)
+    return out if isinstance(out, list) else await split(translator, lines, context, unread, out)
+
+
+async def split(translator: Translator, lines: list[str], context: Context, unread: list[str], error: Misaligned) -> list[str]:
+    if len(lines) == 1:
+        unread.append(str(error))
+        return [""]
+    mid = len(lines) // 2
+    parts = [(lines[:mid], subset(context, range(mid))), (lines[mid:], subset(context, range(mid, len(lines))))]
+    tries = [await attempt(translator, part, ctx) for part, ctx in parts]
+    if all(isinstance(t, Misaligned) and reply_items(str(t)) is None for t in tries):
+        unread.append(str(error))
+        return [""] * len(lines)
+    out: list[str] = []
+    for (part, ctx), t in zip(parts, tries):
+        out += t if isinstance(t, list) else await split(translator, part, ctx, unread, t)
+    return out
 
 
 KIN_HONORIFIC = re.compile(r"\b(brother|sister|bro|sis|mother|father|mom|mum|dad|grandpa|grandma|granny|grandmother|grandfather|uncle|aunt|auntie)-(?:sama|chan|san|kun|dono|tan)\b", re.I)

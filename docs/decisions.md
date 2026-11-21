@@ -236,7 +236,7 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 
 ## The translator replies with a list of strings
 
-**Decision.** The model replies with `{"translations": [...]}`, one string per line in the order the lines were sent. The lines it receives still carry ids. A reply with the wrong number of strings, or with JSON syntax such as `", "` inside a string, is retried in halves.
+**Decision.** The model replies with `{"translations": [...]}`, one string per line in the order the lines were sent. The lines it receives still carry ids. A reply with the wrong number of strings, or with JSON syntax such as `", "` inside a string, is retried in halves. When the replies for both halves of a split hold no list of translations at all, their lines are left blank without splitting further.
 
 **Why.** Writing the reply is most of the translate call, and the old reply, an object with an id and a text per line, spent about half its tokens on the ids and keys. On `translation_bench.py`, the list cut the translate time from a median of 2,322 to 2,528 ms per page to 1,358 to 1,383 ms, over three runs a side, with COMET and chrF within noise. The list also made about 10% more calls, which are counted in those times. Why the model misaligns more often with it was not measured. [performance.md](performance.md#translation-speed) has the numbers.
 
@@ -372,6 +372,8 @@ Through `Engine.process` on the reported page, 10 runs: before, 6 runs left the 
 **Why.** On 2026-11-14 an audit ran the engine with a translator whose replies never parsed. A page with 4 bubbles took 7 calls, came back with 4 blank lines and no error, and was cached, so the second request for it made no call. A model that refuses, or one that ignores `response_format`, would leave every page saved in Japanese with nothing on the chip to say why. The reply is in the error so the reader can tell a refusal from a broken reply format.
 
 The page answers 500 and not 503. The extension takes a 503 for an outage and sends the page again as soon as `/v1/health` answers, and health asks only whether the translator is reachable, so a 503 would resend the page in a loop. After a 500 the chip shows the error with **Retry**.
+
+Since 2026-11-22 a refused page also costs fewer calls. Splitting used to go on until every line had been asked alone, so a page of n lines that the translator refused as a whole took 2n−1 calls: 23 for 12 lines, about a minute of `claude -p` at the 2.2 s a call measured that day, spent again on every **Retry** because the page is not cached. Splitting finds the one line a model will not answer, but when the replies for both halves of a split hold no list of translations either, the refusal covers lines on both sides or comes from the context that every call carries, and smaller calls only repeat it. The split now stops there, so a page refused as a whole takes 3 calls. A reply that holds a list with the wrong number of strings, or with JSON syntax inside a string, still splits down to single lines, and one unreadable line among readable ones is still found and left blank. The cost is that lines in a split whose halves are both refused stay in Japanese even when some of them would have translated alone.
 
 **Tried and rejected.** Failing every page that has a line with no readable reply. It was not built. One line that only ever gets JSON syntax back among lines that translate is an old, tested case, and failing the page for it would withhold a page that is otherwise readable.
 
