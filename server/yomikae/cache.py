@@ -10,6 +10,7 @@ import threading
 import unicodedata
 from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
+from functools import lru_cache
 from pathlib import Path
 
 from .kana import HONORIFIC_KANA, romanize, sound
@@ -393,5 +394,6 @@ def edit_distance(a: str, b: str) -> int:
     return prev[-1]
 
 
+@lru_cache(maxsize=65536)
 def same_name(a: str, b: str) -> bool:
     return SequenceMatcher(None, a, b).ratio() >= NAME_RATIO
