@@ -86,10 +86,21 @@ def test_a_reply_in_prose_is_misaligned_and_carries_the_text(cli):
 
 def test_a_failed_run_fails_the_page_with_the_error(cli):
     translator, out = cli
-    (out / "stderr.txt").write_text("ERROR: You've hit your usage limit")
+    (out / "stderr.txt").write_text("ERROR: stream disconnected before completion")
     (out / "exit.txt").write_text("1")
-    with pytest.raises(TranslatorFailed, match="usage limit"):
+    with pytest.raises(TranslatorFailed, match="stream disconnected"):
         asyncio.run(translator.translate(["やあ"], Context()))
+    assert asyncio.run(translator.health()) is None
+
+
+@pytest.mark.parametrize("message", ["ERROR: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header", "ERROR: You've hit your usage limit. Try again later."])
+def test_a_signed_out_or_used_up_codex_makes_the_translator_unavailable_for_a_while(cli, message):
+    translator, out = cli
+    (out / "stderr.txt").write_text(message)
+    (out / "exit.txt").write_text("1")
+    with pytest.raises(TranslatorUnavailable, match="codex"):
+        asyncio.run(translator.translate(["やあ"], Context()))
+    assert message[7:30] in asyncio.run(translator.health())
 
 
 def test_a_missing_codex_command_makes_the_translator_unavailable(tmp_path):

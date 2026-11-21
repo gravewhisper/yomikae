@@ -151,7 +151,7 @@ Done. Pages turn into English as you read.
 
 **Next time**, just start the server again (and LM Studio, if you use it). The extension stays installed.
 
-> **A page failed?** Hover it to see why. With Claude or Codex, `claude failed` or `codex exited with` usually means you're signed out or out of usage. Run `claude` or `codex` to check, then press **Retry**. [docs/troubleshooting.md](docs/troubleshooting.md) covers the rest.
+> **A page failed or keeps waiting?** Hover it to see why. With Claude or Codex, `Not logged in` or a usage limit means you're signed out or out of usage. Run `claude` or `codex` to fix it. Waiting pages then continue on their own, and a failed page needs **Retry**. [docs/troubleshooting.md](docs/troubleshooting.md) covers the rest.
 
 ### Optional: the Anime Ace font
 

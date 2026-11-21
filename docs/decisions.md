@@ -417,6 +417,12 @@ A page with no record was made before this change. The OpenAI-compatible transla
 
 **Why.** A cached page belongs to the translator that made it, so a page made by a fallback would count as uncached for the main translator, be translated again on every view, and stay out of the line memory and names. A cloud fallback would also send text somewhere the reader did not choose. A failed page is not cached, so restarting the server with a local model and pressing Retry gets it translated, as `docs/translators.md` says.
 
+## A signed-out or used-up command line translator waits instead of failing
+
+**Decision.** Since 2026-11-22, when `claude` or `codex` says it is not logged in, has an invalid key, or hit a usage limit, the page gets `translator_unavailable` and `/v1/health` reports the message for 60 seconds (`OUTAGE_SECONDS` in `translate.py`). Other command errors still fail the page with `translator_error`. The patterns are `ACCOUNT_ERROR` in `translate.py`. The signed-out messages were taken from the real commands run with an empty config folder: `Not logged in · Please run /login` from `claude`, and `unexpected status 401 Unauthorized` from `codex`. The usage-limit wording was not reproduced.
+
+**Why.** Before, these errors failed every page one by one with the command's message, while health said the translator was fine. Now the extension shows its waiting state with the message, and the pages continue by themselves once the reader signs in. Health has to keep reporting the problem for a while, because it only checks that the command exists. Without that memory the extension would resend at once, get the same error and loop. With it, the extension's limit of four unavailable answers per page ends a page that never recovers in a few minutes.
+
 ## `google_free` was removed
 
 **Decision.** The `google_free` translator was removed on 2026-11-22. It sent each line, with no key, to the endpoint Google's free web translator uses, one line at a time, with no context, no names and no tests. `YOMIKAE_TRANSLATOR=google_free` now fails at startup with the list of translators.

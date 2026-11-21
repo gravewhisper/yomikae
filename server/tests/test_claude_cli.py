@@ -75,9 +75,10 @@ def test_a_reply_in_prose_is_misaligned_and_carries_the_text(cli):
 
 def test_a_failed_run_fails_the_page_without_making_the_translator_unavailable(cli):
     translator, out = cli
-    (out / "reply.txt").write_text(json.dumps([{"type": "result", "subtype": "error", "is_error": True, "result": "Not logged in"}]))
-    with pytest.raises(TranslatorFailed, match="Not logged in"):
+    (out / "reply.txt").write_text(json.dumps([{"type": "result", "subtype": "error", "is_error": True, "result": "API Error: 500 Internal server error"}]))
+    with pytest.raises(TranslatorFailed, match="500"):
         asyncio.run(translator.translate(["やあ"], Context()))
+    assert asyncio.run(translator.health()) is None
     (out / "reply.txt").write_text("")
     (out / "exit.txt").write_text("1")
     with pytest.raises(TranslatorFailed):
@@ -118,3 +119,18 @@ def test_claude_is_not_told_to_translate_without_censoring(cli):
     assert "censor" not in system
     assert "Japanese honorifics" in system
     assert "censor" in translate.SYSTEM_PROMPT
+
+
+@pytest.mark.parametrize("message", ["Not logged in · Please run /login", "Invalid API key · Please run /login", "Claude AI usage limit reached|1763800000", "You've hit your limit · resets 3pm"])
+def test_a_signed_out_or_used_up_claude_makes_the_translator_unavailable_for_a_while(cli, monkeypatch, message):
+    translator, out = cli
+    (out / "reply.txt").write_text(json.dumps([{"type": "result", "subtype": "success", "is_error": True, "result": message}]))
+    (out / "exit.txt").write_text("1")
+    with pytest.raises(TranslatorUnavailable, match="claude"):
+        asyncio.run(translator.translate(["やあ"], Context()))
+    assert message[:12] in asyncio.run(translator.health())
+    monkeypatch.setattr(translate, "OUTAGE_SECONDS", 0.0)
+    (out / "reply.txt").write_text(result_event(structured_output={"translations": ["Hi"]}))
+    (out / "exit.txt").unlink()
+    asyncio.run(translator.translate(["やあ"], Context()))
+    assert asyncio.run(translator.health()) is None

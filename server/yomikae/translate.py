@@ -4,6 +4,7 @@ import asyncio
 import base64
 import io
 import json
+import math
 import re
 import shutil
 import tempfile
@@ -409,14 +410,34 @@ async def run_command(command: str, args: list[str], stdin: str, cwd: str, timeo
     return proc.returncode, out, err
 
 
-def command_health(command: str) -> str | None:
-    return None if shutil.which(command) else f"translator command {command!r} not found"
+ACCOUNT_ERROR = re.compile(r"not logged in|please run /login|invalid api key|status 401|usage limit|hit your limit|limit reached", re.I)
+OUTAGE_SECONDS = 60.0
+
+
+class CommandAccount:
+    def __init__(self, command: str):
+        self.command = command
+        self.failed_at = -math.inf
+        self.detail = ""
+
+    def check(self, text: str) -> None:
+        lines = [line.strip() for line in text.splitlines() if ACCOUNT_ERROR.search(line)]
+        if lines:
+            self.failed_at = time.monotonic()
+            self.detail = f"{Path(self.command).name}: {lines[-1][:200]}"
+            raise TranslatorUnavailable(self.detail)
+
+    def health(self) -> str | None:
+        if time.monotonic() - self.failed_at < OUTAGE_SECONDS:
+            return self.detail
+        return None if shutil.which(self.command) else f"translator command {self.command!r} not found"
 
 
 class ClaudeCLI:
 
     def __init__(self, settings: Settings):
         self.command = settings.claude_command
+        self.account = CommandAccount(self.command)
         self.model = settings.claude_model
         self.effort = settings.claude_effort
         self.log_dir = settings.claude_log_dir
@@ -435,8 +456,10 @@ class ClaudeCLI:
             events = json.loads(out)
             result = next(e for e in reversed(events if isinstance(events, list) else [events]) if e.get("type") == "result")
         except (ValueError, StopIteration, AttributeError):
+            self.account.check((err or out).decode(errors="replace"))
             raise TranslatorFailed(f"{self.command} exited with {code}: {(err or out).decode(errors='replace')[-200:]}") from None
         if result.get("is_error"):
+            self.account.check(str(result.get("result")))
             raise TranslatorFailed(f"{self.command} failed: {str(result.get('result'))[:200]}")
         reply = json.dumps(result["structured_output"], ensure_ascii=False) if result.get("structured_output") else str(result.get("result") or "")
         parsed = parse_translations(reply, len(lines))
@@ -455,12 +478,13 @@ class ClaudeCLI:
         (self.log_dir / name).write_text(json.dumps(entry, ensure_ascii=False, indent=1))
 
     async def health(self) -> str | None:
-        return command_health(self.command)
+        return self.account.health()
 
 
 class CodexCLI:
     def __init__(self, settings: Settings):
         self.command = settings.codex_command
+        self.account = CommandAccount(self.command)
         self.model = settings.codex_model
         self.effort = settings.codex_effort
         self.name = f"codex:{self.model or 'default'}"
@@ -480,6 +504,7 @@ class CodexCLI:
             code, out, err = await run_command(self.command, args, user["content"], cwd)
             reply = (work / "reply.txt").read_text() if (work / "reply.txt").exists() else ""
         if code != 0:
+            self.account.check(err.decode(errors="replace"))
             raise TranslatorFailed(f"{self.command} exited with {code}: {err.decode(errors='replace').strip()[-200:]}")
         parsed = parse_translations(reply, len(lines))
         if parsed is None:
@@ -487,7 +512,7 @@ class CodexCLI:
         return parsed
 
     async def health(self) -> str | None:
-        return command_health(self.command)
+        return self.account.health()
 
 
 REGISTRY: dict[str, Callable[[Settings], Translator]] = {
