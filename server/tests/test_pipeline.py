@@ -676,6 +676,53 @@ def test_a_page_whose_inpainting_runs_out_of_gpu_memory_is_inpainted_on_the_cpu(
 
 
 @pytest.mark.models
+def test_a_page_whose_ocr_runs_out_of_gpu_memory_is_read_on_the_cpu(client, monkeypatch):
+    from yomikae import ocr
+
+    engine = client.app.state.engine
+    real = ocr.read
+    full = []
+
+    def read(reader, *args):
+        if reader is engine.ocr:
+            full.append(1)
+            raise torch.OutOfMemoryError("CUDA out of memory. Tried to allocate 64.00 MiB.")
+        return real(reader, *args)
+
+    monkeypatch.setattr(ocr, "read", read)
+    img, truth = make_page(231)
+    r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")})
+    assert r.status_code == 200, r.text
+    assert full
+    assert sorted(b["source"] for b in r.json()["bubbles"]) == sorted(t.text for t in truth)
+
+
+def test_two_pages_that_need_the_cpu_copy_of_a_model_at_once_load_it_once(monkeypatch):
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from yomikae import inpaint
+    from yomikae.pipeline import Engine
+
+    loads = []
+
+    def slow_load(device):
+        loads.append(device)
+        time.sleep(0.2)
+        return object()
+
+    monkeypatch.setattr(inpaint, "load_model", slow_load)
+    engine = Engine.__new__(Engine)
+    engine.cpu_lock = threading.Lock()
+    engine.cpu_models = {}
+    with ThreadPoolExecutor(4) as pool:
+        models = list(pool.map(lambda _: engine.cpu_model("lama"), range(4)))
+    assert loads == ["cpu"]
+    assert all(m is models[0] for m in models)
+
+
+@pytest.mark.models
 def test_every_page_runs_its_gpu_work_on_one_thread_so_gpu_memory_stays_flat(client, monkeypatch):
     import threading
     from concurrent.futures import ThreadPoolExecutor

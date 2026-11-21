@@ -10,7 +10,6 @@ from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from functools import cached_property
 from typing import TypeVar
 
 import numpy as np
@@ -142,6 +141,9 @@ class Timer:
             self.ms[stage] = self.ms.get(stage, 0) + round((time.perf_counter() - t) * 1000)
 
 
+CPU_LOADERS: dict[str, Callable[[], object]] = {"lama": lambda: inpaint.load_model("cpu"), "ocr": lambda: ocr.load_ocr("cpu")}
+
+
 class Engine:
     def __init__(self, settings: Settings):
         import torch
@@ -150,6 +152,8 @@ class Engine:
         self.device = "cuda" if torch.cuda.is_available() and not settings.low_vram else "cpu"
         self.gpu_name = torch.cuda.get_device_name(0) if self.device == "cuda" else "cpu"
         self.gpu_lock = threading.Lock()
+        self.cpu_lock = threading.Lock()
+        self.cpu_models: dict[str, object] = {}
         self.gpu_thread = ThreadPoolExecutor(1, thread_name_prefix="gpu")
         detect_device = settings.detect_device if self.device == "cuda" else "cpu"
         self.detector = detect.load_session(DETECTOR_PATH, detect_device)
@@ -165,9 +169,11 @@ class Engine:
         self.turns: dict[str, asyncio.Future[None]] = {}
         self.editing: dict[str, asyncio.Lock] = {}
 
-    @cached_property
-    def cpu_lama(self):
-        return inpaint.load_model("cpu")
+    def cpu_model(self, name: str):
+        with self.cpu_lock:
+            if name not in self.cpu_models:
+                self.cpu_models[name] = CPU_LOADERS[name]()
+            return self.cpu_models[name]
 
     @contextmanager
     def gpu(self) -> Iterator[None]:
@@ -265,32 +271,44 @@ class Engine:
         picked: set[int] = frozenset(),
         hint: str = "",
     ) -> dict:
+        import torch
+
         start = time.perf_counter()
         timer = Timer()
         with self.turn(context_key) as earlier:
             image = await asyncio.to_thread(decode_image, data)
 
-            def read_page() -> tuple[list[Bubble], list[Bubble]]:
+            def find_text() -> tuple[list, list]:
                 with self.gpu():
-                    blocks = timer.run("detect", detect.detect, self.detector, image)
-                    balloons = timer.run("balloons", balloon.segment, self.balloons, image)
-                    bubbles, unsure = timer.run("ocr", ocr.read, self.ocr, image, blocks, balloons)
-                    return timer.run("ocr", ruby.attach, self.ocr, image, bubbles), unsure
+                    return timer.run("detect", detect.detect, self.detector, image), timer.run("balloons", balloon.segment, self.balloons, image)
+
+            def read_text(reader, found: tuple[list, list]) -> tuple[list[Bubble], list[Bubble]]:
+                bubbles, unsure = timer.run("ocr", ocr.read, reader, image, *found)
+                return timer.run("ocr", ruby.attach, reader, image, bubbles), unsure
+
+            def read_text_on_gpu(found: tuple[list, list]) -> tuple[list[Bubble], list[Bubble]]:
+                with self.gpu():
+                    return read_text(self.ocr, found)
+
+            async def read_page() -> tuple[list[Bubble], list[Bubble]]:
+                found = await loop.run_in_executor(self.gpu_thread, find_text)
+                try:
+                    return await loop.run_in_executor(self.gpu_thread, read_text_on_gpu, found)
+                except torch.OutOfMemoryError:
+                    return await asyncio.to_thread(lambda: read_text(self.cpu_model("ocr"), found))
 
             def remove_text(bubbles: list[Bubble]) -> np.ndarray:
                 with self.gpu():
                     return timer.run("inpaint", inpaint.inpaint, self.lama, image, bubbles).image
 
             async def remove_text_anywhere(bubbles: list[Bubble]) -> np.ndarray:
-                import torch
-
                 try:
                     return await loop.run_in_executor(self.gpu_thread, remove_text, bubbles)
                 except torch.OutOfMemoryError:
-                    return (await asyncio.to_thread(timer.run, "inpaint", inpaint.inpaint, self.cpu_lama, image, bubbles)).image
+                    return await asyncio.to_thread(lambda: timer.run("inpaint", inpaint.inpaint, self.cpu_model("lama"), image, bubbles).image)
 
             loop = asyncio.get_running_loop()
-            bubbles, unsure = await loop.run_in_executor(self.gpu_thread, read_page)
+            bubbles, unsure = await read_page()
             matched = match_bubbles(base["bubbles"], bubbles) if base else [None] * len(bubbles)
             pinned = [base["bubbles"][j]["translation"] if j is not None and j not in picked else None for j in matched] if base else None
             fixed = [i for i, j in enumerate(matched) if j is not None and (j in picked or j in base.get("fixed", []))] if base else []
