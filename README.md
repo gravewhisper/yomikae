@@ -203,12 +203,14 @@ The server listens on `127.0.0.1` and answers only the Yomikae extension and too
 
 ## Status
 
-Yomikae translates Japanese into English only. It leaves sound effects drawn into the art untranslated on purpose.
+Yomikae translates Japanese into English, and Korean webtoons as an early preview. Choose Korean in the popup's Language menu, or let a page that declares `<html lang="ko">` pick it. It leaves sound effects drawn into the art untranslated on purpose.
+
+Korean finds and reads almost every line: on held-out webtoon pages it missed 1 of 80 dialogue lines and misread 1% of characters. Its English is weaker than Japanese with the local Gemma 12B model. A judge rated about 70% of lines fully right and 90% right or nearly right, where Gemma given perfectly typed Korean reaches about 92%. One misread syllable can turn a word into a name or another word, and a box that spans a caption and bubbles puts all of their English in one place.
 
 These are planned but not built yet:
 
 - A batch mode that translates a folder of images.
-- Korean and Chinese.
+- Chinese.
 
 ## More docs
 
