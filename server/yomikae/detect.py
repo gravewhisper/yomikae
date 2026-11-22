@@ -49,6 +49,29 @@ HEAD_COVER = 0.5
 GPU_MEM_LIMIT = 1536 * 2**20
 
 
+class ModelMissing(Exception):
+    pass
+
+
+class OutOfGpuMemory(Exception):
+    pass
+
+
+def out_of_memory(e: Exception) -> bool:
+    return "Failed to allocate memory" in str(e) or "out of memory" in str(e)
+
+
+def run_session(session, inputs: dict[str, np.ndarray]) -> list[np.ndarray]:
+    from onnxruntime.capi.onnxruntime_pybind11_state import Fail
+
+    try:
+        return session.run(None, inputs)
+    except Fail as e:
+        if out_of_memory(e):
+            raise OutOfGpuMemory(str(e)) from e
+        raise
+
+
 def load_session(path: Path, device: str = "cpu"):
     import onnxruntime as ort
 

@@ -12,7 +12,7 @@ from PIL import Image
 
 from .balloon import claims, unclaimed
 from .config import KEMOLATE_DIR
-from .detect import LIGHT, MASK_PAD_FRAC, load_session, reading_order
+from .detect import LIGHT, MASK_PAD_FRAC, ModelMissing, load_session, reading_order, run_session
 from .language import JAPANESE, Language
 from .model import Balloon, Box, Bubble, TextBlock
 from .typeset import find_region
@@ -61,14 +61,6 @@ def load_ocr(device: str = "cpu") -> Reader:
     return MangaReader(device)
 
 
-class ReaderMissing(Exception):
-    pass
-
-
-class ReaderOutOfMemory(Exception):
-    pass
-
-
 class KemolateReader:
     side = 224
     start, end = 2, 3
@@ -80,27 +72,17 @@ class KemolateReader:
         files = [folder / name for name in ("encoder_model.onnx", "decoder_model.onnx", "tokenizer.json")]
         missing = [f.name for f in files if not f.exists()]
         if missing:
-            raise ReaderMissing(f"the Korean reader needs {', '.join(missing)} in server/models/{folder.name}; download Kemolate OCR as the README says")
+            raise ModelMissing(f"the Korean reader needs {', '.join(missing)} in server/models/{folder.name}; download Kemolate OCR as the README says")
         self.encoder = load_session(files[0], device)
         self.decoder = load_session(files[1], device)
         self.tokenizer = Tokenizer.from_file(str(files[2]))
 
     def recognize(self, crop: Image.Image) -> tuple[str, float, int]:
-        from onnxruntime.capi.onnxruntime_pybind11_state import Fail
-
-        try:
-            return self.decode(crop)
-        except Fail as e:
-            if "Failed to allocate memory" in str(e):
-                raise ReaderOutOfMemory(str(e)) from e
-            raise
-
-    def decode(self, crop: Image.Image) -> tuple[str, float, int]:
         x = np.asarray(crop.convert("RGB").resize((self.side, self.side), Image.Resampling.BILINEAR), np.float32) / 255.0
-        hidden = self.encoder.run(None, {"pixel_values": ((x - 0.5) / 0.5).transpose(2, 0, 1)[None]})[0]
+        hidden = run_session(self.encoder, {"pixel_values": ((x - 0.5) / 0.5).transpose(2, 0, 1)[None]})[0]
         ids, probs = [self.start], []
         while len(ids) < self.max_tokens:
-            logits = self.decoder.run(None, {"input_ids": np.array([ids], np.int64), "encoder_hidden_states": hidden})[0][0, -1].astype(np.float64)
+            logits = run_session(self.decoder, {"input_ids": np.array([ids], np.int64), "encoder_hidden_states": hidden})[0][0, -1].astype(np.float64)
             step = np.exp(logits - logits.max())
             token = int(logits.argmax())
             probs.append(float(step[token] / step.sum()))

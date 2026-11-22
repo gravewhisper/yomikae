@@ -20,10 +20,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from . import __version__
 from .cache import KINDS, SAVED_SOURCES, prune_stale
 from .config import Settings, extension_ids
+from .detect import ModelMissing
 from .guard import RequestGuard
 from .language import DEFAULT, LANGUAGES, Language
 from .model import CastEntry
-from .ocr import ReaderMissing
 from .pipeline import FORMATS, PIPELINE_VERSION, TRANSLATION_VERSION, BadImage, Engine, decode_image, page_id_of
 from .reports import BadReport, image_extension, image_size, json_bytes, new_report_id, parse_areas, render_marked, resolve_areas, write_report
 from .translate import TranslatorFailed, TranslatorUnavailable
@@ -83,8 +83,8 @@ async def on_validation(_: Request, e: RequestValidationError):
     return error(400, "bad_request", f"invalid request: {e.errors()}")
 
 
-@app.exception_handler(ReaderMissing)
-async def on_reader_missing(_: Request, e: ReaderMissing):
+@app.exception_handler(ModelMissing)
+async def on_model_missing(_: Request, e: ModelMissing):
     return error(500, "reader_missing", str(e))
 
 

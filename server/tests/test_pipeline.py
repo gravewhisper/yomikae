@@ -682,7 +682,7 @@ def test_a_page_whose_ocr_runs_out_of_gpu_memory_is_read_on_the_cpu(client, monk
     full = []
 
     def read(reader, *args):
-        if reader is engine.ocr:
+        if reader is engine.ocr and not full:
             full.append(1)
             raise torch.OutOfMemoryError("CUDA out of memory. Tried to allocate 64.00 MiB.")
         return real(reader, *args)
@@ -712,10 +712,10 @@ def test_two_pages_that_need_the_cpu_copy_of_a_model_at_once_load_it_once(monkey
 
     monkeypatch.setattr(inpaint, "load_model", slow_load)
     engine = Engine.__new__(Engine)
-    engine.cpu_lock = threading.Lock()
-    engine.cpu_models = {}
+    engine.model_lock = threading.Lock()
+    engine.models = {}
     with ThreadPoolExecutor(4) as pool:
-        models = list(pool.map(lambda _: engine.cpu_model("lama"), range(4)))
+        models = list(pool.map(lambda _: engine.model("lama", "cpu"), range(4)))
     assert loads == ["cpu"]
     assert all(m is models[0] for m in models)
 

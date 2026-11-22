@@ -10,7 +10,7 @@ from conftest import png_bytes
 from make_test_page import FONT_PATH, KR_FONT_INDEX, make_korean_page, make_page
 from PIL import Image, ImageDraw, ImageFont
 
-from yomikae import ocr, pipeline
+from yomikae import detect, ocr, pipeline
 from yomikae.cache import ContextStore
 from yomikae.config import KEMOLATE_DIR
 from yomikae.language import JAPANESE, KOREAN, LANGUAGES
@@ -56,10 +56,10 @@ def test_a_korean_page_without_kemolate_answers_reader_missing_every_time(client
     engine = client.app.state.engine
 
     def missing(device):
-        raise ocr.ReaderMissing("the Korean reader needs encoder_model.onnx in server/models/kemolate-ocr")
+        raise detect.ModelMissing("the Korean reader needs encoder_model.onnx in server/models/kemolate-ocr")
 
-    monkeypatch.setitem(pipeline.READERS, "kemolate", missing)
-    monkeypatch.delitem(engine.readers, "kemolate", raising=False)
+    monkeypatch.setitem(pipeline.MODELS, "kemolate", missing)
+    monkeypatch.delitem(engine.models, ("kemolate", engine.device), raising=False)
     data = png_bytes(make_korean_page(5)[0])
     for _ in range(2):
         r = client.post("/v1/pages", files={"image": ("p.png", data, "image/png")}, data={"source_lang": "ko", "context_key": "w/missing"})
@@ -69,7 +69,7 @@ def test_a_korean_page_without_kemolate_answers_reader_missing_every_time(client
 
 
 def test_a_missing_kemolate_model_names_the_files_to_download(tmp_path):
-    with pytest.raises(ocr.ReaderMissing, match="encoder_model.onnx, decoder_model.onnx, tokenizer.json"):
+    with pytest.raises(detect.ModelMissing, match="encoder_model.onnx, decoder_model.onnx, tokenizer.json"):
         ocr.KemolateReader("cpu", tmp_path)
 
 
@@ -155,27 +155,32 @@ def test_a_narrow_korean_bubble_of_stacked_short_rows_is_read_as_horizontal_text
     assert [(b["source"], b["vertical"]) for b in r.json()["bubbles"]] == [("".join(rows), False)]
 
 
-class FullGpuSession:
-    def __init__(self):
+class FullGpuOnce:
+    def __init__(self, session):
+        self.session = session
         self.calls = 0
 
     def run(self, *args):
         from onnxruntime.capi.onnxruntime_pybind11_state import Fail
 
         self.calls += 1
-        raise Fail("Non-zero status code returned while running Add node. Failed to allocate memory for requested buffer of size 6662656")
+        if self.calls == 1:
+            raise Fail("Non-zero status code returned while running Add node. Failed to allocate memory for requested buffer of size 6662656")
+        return self.session.run(*args)
 
 
 @pytest.mark.models
 @pytest.mark.skipif(not (KEMOLATE_DIR / "encoder_model.onnx").exists(), reason="Kemolate OCR is not in server/models/kemolate-ocr")
-def test_a_korean_page_whose_reader_runs_out_of_gpu_memory_is_read_on_the_cpu(client, monkeypatch):
+def test_a_korean_page_whose_reader_runs_out_of_gpu_memory_is_read_again(client):
     engine = client.app.state.engine
-    gpu_reader = ocr.KemolateReader("cpu")
-    full = FullGpuSession()
-    monkeypatch.setattr(gpu_reader, "decoder", full)
-    monkeypatch.setitem(engine.readers, "kemolate", gpu_reader)
-    img, truth = make_korean_page(5)
-    r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")}, data={"source_lang": "ko"})
+    reader = engine.model("kemolate", engine.device)
+    full = FullGpuOnce(reader.decoder)
+    reader.decoder = full
+    try:
+        img, truth = make_korean_page(5)
+        r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")}, data={"source_lang": "ko"})
+    finally:
+        reader.decoder = full.session
     assert r.status_code == 200, r.text
-    assert full.calls >= 1
+    assert full.calls > 1
     assert sorted(b["source"] for b in r.json()["bubbles"]) == sorted(t.text.replace(" ", "") for t in truth)

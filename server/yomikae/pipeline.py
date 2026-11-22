@@ -146,8 +146,11 @@ class Timer:
             self.ms[stage] = self.ms.get(stage, 0) + round((time.perf_counter() - t) * 1000)
 
 
-READERS: dict[str, Callable[[str], ocr.Reader]] = {"manga-ocr": lambda device: ocr.load_ocr(device), "kemolate": lambda device: ocr.KemolateReader(device)}
-CPU_LOADERS: dict[str, Callable[[], object]] = {"lama": lambda: inpaint.load_model("cpu"), "manga-ocr": lambda: READERS["manga-ocr"]("cpu"), "kemolate": lambda: READERS["kemolate"]("cpu")}
+MODELS: dict[str, Callable[[str], object]] = {
+    "lama": lambda device: inpaint.load_model(device),
+    "manga-ocr": lambda device: ocr.load_ocr(device),
+    "kemolate": lambda device: ocr.KemolateReader(device),
+}
 
 
 class Engine:
@@ -158,15 +161,13 @@ class Engine:
         self.device = "cuda" if torch.cuda.is_available() and not settings.low_vram else "cpu"
         self.gpu_name = torch.cuda.get_device_name(0) if self.device == "cuda" else "cpu"
         self.gpu_lock = threading.Lock()
-        self.cpu_lock = threading.Lock()
-        self.cpu_models: dict[str, object] = {}
         self.gpu_thread = ThreadPoolExecutor(1, thread_name_prefix="gpu")
-        detect_device = settings.detect_device if self.device == "cuda" else "cpu"
-        self.detector = detect.load_session(DETECTOR_PATH, detect_device)
-        self.balloons = detect.load_session(BUBBLE_MODEL_PATH, detect_device)
+        self.detect_device = settings.detect_device if self.device == "cuda" else "cpu"
+        self.detector = detect.load_session(DETECTOR_PATH, self.detect_device)
+        self.balloons = detect.load_session(BUBBLE_MODEL_PATH, self.detect_device)
         self.ocr = ocr.load_ocr(self.device)
-        self.readers: dict[str, ocr.Reader] = {DEFAULT.reader: self.ocr}
-        self.reader_lock = threading.Lock()
+        self.models: dict[tuple[str, str], object] = {(DEFAULT.reader, self.device): self.ocr}
+        self.model_lock = threading.Lock()
         self.lama = inpaint.load_model(self.device)
         self.lettering = typeset.load_lettering(settings.case)
         self.translator = make_translator(settings)
@@ -177,17 +178,11 @@ class Engine:
         self.turns: dict[str, asyncio.Future[None]] = {}
         self.editing: dict[str, asyncio.Lock] = {}
 
-    def cpu_model(self, name: str):
-        with self.cpu_lock:
-            if name not in self.cpu_models:
-                self.cpu_models[name] = CPU_LOADERS[name]()
-            return self.cpu_models[name]
-
-    def reader(self, name: str) -> ocr.Reader:
-        with self.reader_lock:
-            if name not in self.readers:
-                self.readers[name] = READERS[name](self.device)
-            return self.readers[name]
+    def model(self, name: str, device: str):
+        with self.model_lock:
+            if (name, device) not in self.models:
+                self.models[name, device] = MODELS[name](device)
+            return self.models[name, device]
 
     @contextmanager
     def gpu(self) -> Iterator[None]:
@@ -306,12 +301,12 @@ class Engine:
                     return read_text(reader, found)
 
             async def read_page() -> tuple[list[Bubble], list[Bubble]]:
-                reader = await asyncio.to_thread(self.reader, language.reader)
+                reader = await asyncio.to_thread(self.model, language.reader, self.device)
                 found = await loop.run_in_executor(self.gpu_thread, find_text)
                 try:
                     return await loop.run_in_executor(self.gpu_thread, read_text_on_gpu, reader, found)
-                except (torch.OutOfMemoryError, ocr.ReaderOutOfMemory):
-                    return await asyncio.to_thread(lambda: read_text(self.cpu_model(language.reader), found))
+                except (torch.OutOfMemoryError, detect.OutOfGpuMemory):
+                    return await asyncio.to_thread(lambda: read_text(self.model(language.reader, "cpu"), found))
 
             def remove_text(bubbles: list[Bubble]) -> np.ndarray:
                 with self.gpu():
@@ -321,7 +316,7 @@ class Engine:
                 try:
                     return await loop.run_in_executor(self.gpu_thread, remove_text, bubbles)
                 except torch.OutOfMemoryError:
-                    return await asyncio.to_thread(lambda: timer.run("inpaint", inpaint.inpaint, self.cpu_model("lama"), image, bubbles).image)
+                    return await asyncio.to_thread(lambda: timer.run("inpaint", inpaint.inpaint, self.model("lama", "cpu"), image, bubbles).image)
 
             loop = asyncio.get_running_loop()
             bubbles, unsure = await read_page()
