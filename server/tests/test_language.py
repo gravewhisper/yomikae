@@ -60,9 +60,10 @@ def test_a_korean_page_without_its_models_answers_reader_missing_every_time(clie
     def missing(device):
         raise detect.ModelMissing(f"Korean pages need {file} in server/models")
 
-    monkeypatch.setitem(pipeline.MODELS, name, missing)
-    for device in {engine.device, engine.detect_device, "cpu"}:
-        monkeypatch.delitem(engine.models, (name, device), raising=False)
+    for model in ("paddle", "animetext"):
+        monkeypatch.setitem(pipeline.MODELS, model, missing if model == name else lambda device: object())
+        for device in {engine.device, engine.detect_device, "cpu"}:
+            monkeypatch.delitem(engine.models, (model, device), raising=False)
     data = png_bytes(make_korean_page(5)[0])
     for _ in range(2):
         r = client.post("/v1/pages", files={"image": ("p.png", data, "image/png")}, data={"source_lang": "ko", "context_key": "w/missing"})
