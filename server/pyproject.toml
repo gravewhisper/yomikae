@@ -25,14 +25,14 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8.3"]
 gpu = [
-  "torch>=2.11,<2.12",
+  "torch>=2.14.1,<2.15",
   "onnxruntime-gpu>=1.31,<1.32",
   "nvidia-cuda-runtime~=13.0; sys_platform == 'linux'",
   "nvidia-cublas~=13.0; sys_platform == 'linux'",
   "nvidia-cuda-nvrtc~=13.0; sys_platform == 'linux'",
 ]
 cpu = [
-  "torch>=2.11,<2.12",
+  "torch>=2.14.1,<2.15",
   "onnxruntime>=1.31,<1.32",
 ]
 bench = ["sacrebleu>=2.4"]
@@ -49,13 +49,13 @@ conflicts = [[{ extra = "gpu" }, { extra = "cpu" }]]
 
 [tool.uv.sources]
 torch = [
-  { index = "pytorch-cu128", extra = "gpu" },
+  { index = "pytorch-cu130", extra = "gpu" },
   { index = "pytorch-cpu", extra = "cpu" },
 ]
 
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
 
 [[tool.uv.index]]

@@ -48,7 +48,7 @@ Run each block as it is, in order.
 
 Pick the block that matches your computer.
 
-**With an NVIDIA GPU** (about 8 GB of disk):
+**With an NVIDIA GPU** (about 6 GB of disk, and an NVIDIA driver for CUDA 13, version 580 or newer):
 
 ```sh
 git clone https://github.com/gravewhisper/yomikae.git
