@@ -270,14 +270,21 @@ def check_bubbles(result: dict, picked: list[int]) -> None:
 
 
 @app.post("/v1/pages/{page_id}/retranslate")
-async def retranslate(request: Request, page_id: str, image: Annotated[UploadFile, File()], raw: Annotated[str, Form(alias="request")]):
+async def retranslate(
+    request: Request,
+    page_id: str,
+    image: Annotated[UploadFile, File()],
+    raw: Annotated[str, Form(alias="request")],
+    source_lang: Annotated[str | None, Form()] = None,
+):
     ask = parse_retranslate(raw)
+    stated = source_language(source_lang) if source_lang else None
     data = await image.read()
     if not data:
         raise BadImage("empty image")
     language = next((lang for lang in LANGUAGES.values() if page_id_of(data, lang) == page_id), None)
-    if language is None:
-        raise BadReport("page_id is not the page id of image")
+    if language is None or stated not in (None, language):
+        raise BadReport("page_id is not the page id of image" + (f" read as {stated.code}" if stated else ""))
     engine: Engine = request.app.state.engine
     key, index, picked = ask["context_key"], ask["page_index"], ask["bubbles"]
     cached = engine.cache.load(page_id)

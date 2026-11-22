@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 from conftest import png_bytes
-from make_test_page import make_korean_page, make_page
+from make_test_page import FONT_PATH, KR_FONT_INDEX, make_korean_page, make_page
+from PIL import Image, ImageDraw, ImageFont
 
-from yomikae import ocr
+from yomikae import ocr, pipeline
 from yomikae.cache import ContextStore
 from yomikae.config import KEMOLATE_DIR
 from yomikae.language import JAPANESE, KOREAN, LANGUAGES
@@ -24,6 +26,46 @@ def test_an_unknown_source_language_is_a_bad_request(client, path):
     assert r.status_code == 400, r.text
     assert r.json()["error"] == "bad_request"
     assert "source_lang" in r.json()["detail"]
+
+
+def test_a_report_without_source_lang_is_a_japanese_page_and_a_korean_report_is_another_page(client):
+    data = png_bytes(make_page(0)[0])
+    fields = {"page_url": "https://example.com/1", "image_url": "https://example.com/1.png"}
+    saved = {}
+    for lang in (None, "ko"):
+        r = client.post("/v1/reports", files={"image": ("p.png", data, "image/png")}, data=fields | ({"source_lang": lang} if lang else {}))
+        assert r.status_code == 200, r.text
+        saved[lang] = json.loads((Path(r.json()["path"]) / "report.json").read_text())
+    assert (saved[None]["source_lang"], saved[None]["page_id"]) == ("ja", hashlib.sha256(data).hexdigest())
+    assert (saved["ko"]["source_lang"], saved["ko"]["page_id"]) == ("ko", page_id_of(data, KOREAN))
+
+
+@pytest.mark.parametrize("lang", ["xx", "ko"])
+def test_a_retranslate_whose_source_lang_is_unknown_or_disagrees_with_the_page_id_is_a_bad_request(client, lang):
+    data = png_bytes(make_page(0)[0])
+    r = client.post(
+        f"/v1/pages/{page_id_of(data, JAPANESE)}/retranslate",
+        files={"image": ("p.png", data, "image/png")},
+        data={"request": json.dumps({"bubbles": [0]}), "source_lang": lang},
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["error"] == "bad_request"
+
+
+def test_a_korean_page_without_kemolate_answers_reader_missing_every_time(client, monkeypatch):
+    engine = client.app.state.engine
+
+    def missing(device):
+        raise ocr.ReaderMissing("the Korean reader needs encoder_model.onnx in server/models/kemolate-ocr")
+
+    monkeypatch.setitem(pipeline.READERS, "kemolate", missing)
+    monkeypatch.delitem(engine.readers, "kemolate", raising=False)
+    data = png_bytes(make_korean_page(5)[0])
+    for _ in range(2):
+        r = client.post("/v1/pages", files={"image": ("p.png", data, "image/png")}, data={"source_lang": "ko", "context_key": "w/missing"})
+        assert r.status_code == 500, r.text
+        assert r.json()["error"] == "reader_missing"
+        assert "encoder_model.onnx" in r.json()["detail"]
 
 
 def test_a_missing_kemolate_model_names_the_files_to_download(tmp_path):
@@ -96,3 +138,18 @@ def test_a_korean_page_is_read_horizontally_through_kemolate(client):
     assert page["page_id"] == page_id_of(data, KOREAN)
     assert sorted(b["source"] for b in page["bubbles"]) == sorted(t.text.replace(" ", "") for t in truth)
     assert not any(b["vertical"] for b in page["bubbles"])
+
+
+@pytest.mark.models
+@pytest.mark.skipif(not (KEMOLATE_DIR / "encoder_model.onnx").exists(), reason="Kemolate OCR is not in server/models/kemolate-ocr")
+def test_a_narrow_korean_bubble_of_stacked_short_rows_is_read_as_horizontal_text(client):
+    img = Image.new("RGB", (800, 900), "white")
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.truetype(FONT_PATH, 36, index=KR_FONT_INDEX)
+    rows = ["그게", "정말", "이야?"]
+    draw.ellipse((300, 250, 444, 532), outline="black", width=4)
+    for r, row in enumerate(rows):
+        draw.text((372, 328 + 54 * r), row, font=font, fill="black", anchor="mm")
+    r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")}, data={"source_lang": "ko"})
+    assert r.status_code == 200, r.text
+    assert [(b["source"], b["vertical"]) for b in r.json()["bubbles"]] == [("".join(rows), False)]
