@@ -1,9 +1,8 @@
 import { getDomain, getPublicSuffix } from 'tldts';
-import { adapterFor, isExtraOrigin, parseSiteMode, type SiteMode } from './adapters';
+import { adapterFor, isExtraOrigin } from './adapters';
 
 const SCRIPT_PREFIX = 'site:';
 const HOSTS_PREFIX = 'imageHosts:';
-const MODES_KEY = 'siteModes';
 const SEEDED_KEY = 'sitesSeeded';
 const SERVER_ORIGINS = ['http://127.0.0.1/*', 'http://localhost/*'];
 const SUFFIXES = { allowPrivateDomains: true };
@@ -83,32 +82,6 @@ async function revokeOrigins(site: Site): Promise<void> {
 export async function sitesForGrants(origins: string[]): Promise<Site[]> {
   const images = new Set((await storedImageHosts()).flat().map(imageOrigin));
   return origins.flatMap((o) => (SERVER_ORIGINS.includes(o) || isExtraOrigin(o) || images.has(o) ? [] : (siteForPattern(o) ?? [])));
-}
-
-const asModes = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {});
-
-async function storedModes(): Promise<Record<string, unknown>> {
-  return asModes((await chrome.storage.local.get(MODES_KEY))[MODES_KEY]);
-}
-
-const modeOf = (site: Site, modes: Record<string, unknown>): SiteMode => parseSiteMode(modes[site.label]) ?? adapterFor(site.label).defaultMode;
-
-export async function getSiteMode(site: Site): Promise<SiteMode> {
-  return modeOf(site, await storedModes());
-}
-
-export async function setSiteMode(site: Site, mode: SiteMode): Promise<void> {
-  await chrome.storage.local.set({ [MODES_KEY]: { ...(await storedModes()), [site.label]: mode } });
-}
-
-export function watchSiteMode(site: Site, onChange: (mode: SiteMode) => void): () => void {
-  const listener = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    const change = changes[MODES_KEY];
-    if (area !== 'local' || !change) return;
-    onChange(modeOf(site, asModes(change.newValue)));
-  };
-  chrome.storage.onChanged.addListener(listener);
-  return () => chrome.storage.onChanged.removeListener(listener);
 }
 
 export async function isSiteEnabled(site: Site): Promise<boolean> {

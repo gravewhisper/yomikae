@@ -26,6 +26,7 @@ await build({
   bundle: true,
   format: 'iife',
   target: 'chrome116',
+  minify: true,
   logLevel: 'warning',
   plugins: [localAdaptersPlugin],
 });

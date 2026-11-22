@@ -1,8 +1,9 @@
 import { adapterFor, type SiteMode } from './adapters';
 import type { SiteAdapter } from './adapter';
 import type { PageJob, Redo, TranslatedPage } from './contract';
-import { fromBase64, HINT_MAX, noAccessText, PORT_NAME, type Broadcast, type NameFix, type ReportArea, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
-import { getSiteMode, siteForUrl, watchSiteMode, type Site } from './sites';
+import { fromBase64, HINT_MAX, noAccessText, PORT_NAME, type Broadcast, type NameFix, type ReportArea, type SiteQuery, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
+import { getSiteMode, watchSiteMode } from './site-modes';
+import type { Site } from './sites';
 import { loadWork, tabMode, watchWorkChoice, type TabMode, type Work } from './works';
 
 type Layer = { el: HTMLElement; original: string; painted?: string; paintedUrl?: string };
@@ -31,9 +32,10 @@ const TAKEOVER = 'yomikae-takeover';
 const w = window as Window & { __yomikae?: true };
 if (!w.__yomikae) {
   w.__yomikae = true;
-  const site = siteForUrl(location.href);
   const adapter = adapterFor(location.hostname);
-  if (site) void Promise.all([getSiteMode(site), loadWork(adapter, location)]).then(([mode, work]) => start(site, adapter, mode, work));
+  void Promise.all([chrome.runtime.sendMessage<SiteQuery, Site | null>({ type: 'site' }), loadWork(adapter, location)]).then(async ([site, work]) => {
+    if (site) start(site, adapter, await getSiteMode(site), work);
+  });
 }
 
 function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialWork: Work | undefined): void {

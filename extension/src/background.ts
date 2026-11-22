@@ -1,7 +1,7 @@
 import { imageReferers } from './adapters';
 import { getServerUrl, MAX_IMAGE_BYTES, parseHealth, parseReportReceipt, parseServerError, parseTranslatedPage, type TranslatedPage } from './contract';
-import { noAccessText, PORT_NAME, toBase64, type Broadcast, type ReportRequest, type RetranslateRequest, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
-import { addImageHost, enableSite, reconcileSites, siteForUrl, sitesForGrants } from './sites';
+import { noAccessText, PORT_NAME, toBase64, type Broadcast, type ReportRequest, type SiteQuery, type RetranslateRequest, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
+import { addImageHost, enableSite, reconcileSites, siteForUrl, sitesForGrants, type Site } from './sites';
 
 const MAX_IN_FLIGHT = 2;
 const IMAGE_FIRST_BYTE_TIMEOUT_MS = 8_000;
@@ -482,8 +482,9 @@ chrome.runtime.onConnect.addListener((port) => {
   port.onDisconnect.addListener(() => detach(port));
 });
 
-chrome.runtime.onMessage.addListener((msg: Broadcast) => {
+chrome.runtime.onMessage.addListener((msg: Broadcast | SiteQuery, sender: chrome.runtime.MessageSender, reply: (site: Site | null) => void) => {
   if (msg.type === 'names') namesChanged(msg.contextKey);
+  if (msg.type === 'site') reply((sender.url && siteForUrl(sender.url)) || null);
 });
 
 chrome.runtime.onInstalled.addListener(({ reason }) => void reconcileSites(reason !== 'install'));

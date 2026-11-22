@@ -397,3 +397,15 @@ describe('retranslating and stale pages', () => {
     assert.equal(other.received.at(-1)?.type, 'ready');
   });
 });
+
+describe('site lookup', () => {
+  it('tells a content script which site its frame belongs to', async () => {
+    const { fake } = await worker();
+    const ask = fake.listeners.message as (msg: unknown, sender: { url?: string }, reply: (site: unknown) => void) => unknown;
+    const answers: unknown[] = [];
+    ask({ type: 'site' }, { url: 'https://reader.comic.example.co.uk/w/1' }, (site) => answers.push(site));
+    ask({ type: 'site' }, { url: 'chrome-extension://x/popup.html' }, (site) => answers.push(site));
+    ask({ type: 'site' }, {}, (site) => answers.push(site));
+    assert.deepEqual(answers, [{ id: 'site:example.co.uk', label: 'example.co.uk', pattern: '*://*.example.co.uk/*', origins: ['*://*.example.co.uk/*'] }, null, null]);
+  });
+});

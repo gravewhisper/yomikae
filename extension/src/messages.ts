@@ -58,6 +58,8 @@ export type ToContent =
 
 export type TabCommand = { type: 'disable' } | { type: 'access' } | { type: 'work' } | { type: 'context' };
 
+export type SiteQuery = { type: 'site' };
+
 export type Broadcast = { type: 'names'; contextKey: string } | { type: 'context'; contextKey: string | null };
 
 export function toBase64(bytes: Uint8Array): string {
