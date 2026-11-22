@@ -10,6 +10,7 @@ import pytest
 
 from yomikae import translate
 from yomikae.config import Settings
+from yomikae.language import JAPANESE
 from yomikae.model import ContextLine
 from yomikae.translate import Context, Misaligned, TranslatorFailed, TranslatorUnavailable, make_translator
 
@@ -118,7 +119,7 @@ def test_claude_is_not_told_to_translate_without_censoring(cli):
     system = argv[argv.index("--system-prompt") + 1]
     assert "censor" not in system
     assert "Japanese honorifics" in system
-    assert "censor" in translate.SYSTEM_PROMPT
+    assert "censor" in JAPANESE.prompt
 
 
 @pytest.mark.parametrize("message", ["Not logged in · Please run /login", "Invalid API key · Please run /login", "Claude AI usage limit reached|1763800000", "You've hit your limit · resets 3pm"])

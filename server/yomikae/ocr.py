@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from typing import Protocol
 
 import cv2
 import numpy as np
@@ -10,11 +11,11 @@ from PIL import Image
 
 from .balloon import claims, unclaimed
 from .detect import LIGHT, MASK_PAD_FRAC, reading_order
+from .language import JAPANESE, Language
 from .model import Balloon, Box, Bubble, TextBlock
 from .typeset import find_region
 
 OCR_PAD = 6
-JAPANESE = re.compile(r"[぀-ヿ㐀-鿿ｦ-ﾟ]")
 KATAKANA = re.compile(r"^[゠-ヿｦ-ﾟ]+$")
 KANA = re.compile(r"^[぀-ヿｦ-ﾟ]+$")
 LATIN = re.compile(r"[A-Za-z\uff21-\uff3a\uff41-\uff5a]")
@@ -29,36 +30,44 @@ STRICT_CONFIDENCE = 0.9
 CREDIT_MARKS = frozenset({"作", "画", "絵", "文", "著", "作画", "原作", "漫画", "原案", "脚本", "構成", "作・画", "企画", "監修", "協力"})
 
 
-def load_ocr(device: str = "cpu"):
-    from manga_ocr import MangaOcr
-
-    return MangaOcr(force_cpu=device == "cpu")
+class Reader(Protocol):
+    def recognize(self, crop: Image.Image) -> tuple[str, float, int]: ...
 
 
-def recognize(ocr, crop: Image.Image) -> tuple[str, float, int]:
-    import torch
-    from manga_ocr.ocr import post_process
+class MangaReader:
+    def __init__(self, device: str):
+        from manga_ocr import MangaOcr
 
-    x = ocr._preprocess(crop.convert("L").convert("RGB"))[None].to(ocr.model.device)
-    with torch.inference_mode():
-        out = ocr.model.generate(x, max_length=300, output_scores=True, return_dict_in_generate=True)
-    ids = out.sequences
-    beams = out.beam_indices[0] if getattr(out, "beam_indices", None) is not None else torch.zeros(len(out.scores), dtype=torch.long)
-    logits = torch.stack([out.scores[step][beams[step]] for step in range(ids.shape[1] - 1)]).float()
-    probs = torch.softmax(logits, -1).gather(1, ids[0, 1:, None])[:, 0]
-    text = post_process(ocr.tokenizer.decode(ids[0], skip_special_tokens=True))
-    return text, float(probs.mean()), len(probs)
+        self.ocr = MangaOcr(force_cpu=device == "cpu")
+
+    def recognize(self, crop: Image.Image) -> tuple[str, float, int]:
+        import torch
+        from manga_ocr.ocr import post_process
+
+        x = self.ocr._preprocess(crop.convert("L").convert("RGB"))[None].to(self.ocr.model.device)
+        with torch.inference_mode():
+            out = self.ocr.model.generate(x, max_length=300, output_scores=True, return_dict_in_generate=True)
+        ids = out.sequences
+        beams = out.beam_indices[0] if getattr(out, "beam_indices", None) is not None else torch.zeros(len(out.scores), dtype=torch.long)
+        logits = torch.stack([out.scores[step][beams[step]] for step in range(ids.shape[1] - 1)]).float()
+        probs = torch.softmax(logits, -1).gather(1, ids[0, 1:, None])[:, 0]
+        text = post_process(self.ocr.tokenizer.decode(ids[0], skip_special_tokens=True))
+        return text, float(probs.mean()), len(probs)
+
+
+def load_ocr(device: str = "cpu") -> Reader:
+    return MangaReader(device)
 
 
 def core_text(text: str) -> str:
     return "".join(ch for ch in text if unicodedata.category(ch)[0] in "LN" and ch not in "ー〜～")
 
 
-def is_japanese_text(text: str) -> bool:
+def is_source_text(text: str, language: Language = JAPANESE) -> bool:
     core = core_text(text)
-    if not core or not JAPANESE.search(core):
+    if not core or not language.letters.search(core):
         return False
-    return len(LATIN.findall(core)) <= len(JAPANESE.findall(core))
+    return len(LATIN.findall(core)) <= len(language.letters.findall(core))
 
 
 def looks_like_sfx(text: str) -> bool:
@@ -116,7 +125,7 @@ def line_bands(mask: np.ndarray, vertical: bool) -> list[tuple[int, int]]:
     return list(zip(np.flatnonzero(np.diff(on) == 1), np.flatnonzero(np.diff(on) == -1)))
 
 
-def without_foreign_edge_line(ocr, page: Image.Image, block: TextBlock) -> TextBlock:
+def without_foreign_edge_line(reader: Reader, page: Image.Image, block: TextBlock, language: Language) -> TextBlock:
     mb = block.mask_box
     mask = block.mask > 0
     bands = line_bands(mask, block.vertical)
@@ -132,8 +141,8 @@ def without_foreign_edge_line(ocr, page: Image.Image, block: TextBlock) -> TextB
         else:
             crop = Box(block.box.x0, mb.y0 + a0, block.box.x1, mb.y0 + a1)
         crop = crop.expand(OCR_PAD, page.width, page.height)
-        text, _, _ = recognize(ocr, page.crop((crop.x0, crop.y0, crop.x1, crop.y1)))
-        if is_japanese_text(text) or not LATIN.search(text):
+        text, _, _ = reader.recognize(page.crop((crop.x0, crop.y0, crop.x1, crop.y1)))
+        if is_source_text(text, language) or not LATIN.search(text):
             continue
         kept = mask.copy()
         cut = slice(None, bands[1][0]) if band == bands[0] else slice(bands[-2][1], None)
@@ -165,7 +174,7 @@ def balloon_text(gray: np.ndarray, balloon: Balloon) -> TextBlock | None:
     return TextBlock(box=box, vertical=box.h >= box.w, mask_box=mask_box, mask=full[mask_box.y0 : mask_box.y1, mask_box.x0 : mask_box.x1].copy())
 
 
-def read(ocr, image: np.ndarray, blocks: list[TextBlock], balloons: list[Balloon] = ()) -> tuple[list[Bubble], list[Bubble]]:
+def read(reader: Reader, image: np.ndarray, blocks: list[TextBlock], balloons: list[Balloon] = (), language: Language = JAPANESE) -> tuple[list[Bubble], list[Bubble]]:
     h, w = image.shape[:2]
     page = Image.fromarray(image)
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
@@ -176,15 +185,15 @@ def read(ocr, image: np.ndarray, blocks: list[TextBlock], balloons: list[Balloon
         block = balloon_text(gray, extra)
         if block is not None:
             found.append((block, extra, False, True))
-    order = {id(b): i for i, b in enumerate(reading_order([f[0] for f in found]))}
+    order = {id(b): i for i, b in enumerate(reading_order([f[0] for f in found], language.right_to_left))}
     bubbles, unsure = [], []
     for raw, home, shared, spotted in sorted(found, key=lambda f: order[id(f[0])]):
-        block = without_foreign_edge_line(ocr, page, raw)
+        block = without_foreign_edge_line(reader, page, raw, language)
         crop = block.box.expand(OCR_PAD, w, h)
-        text, confidence, tokens = recognize(ocr, page.crop((crop.x0, crop.y0, crop.x1, crop.y1)))
+        text, confidence, tokens = reader.recognize(page.crop((crop.x0, crop.y0, crop.x1, crop.y1)))
         text = text.strip()
         enclosed = home is not None
-        if not is_japanese_text(text) or (looks_like_sfx(text) and not enclosed and not in_bubble(gray, block) and not shares_bubble(gray, block, [b for b in blocks if b is not raw])):
+        if not is_source_text(text, language) or (looks_like_sfx(text) and not enclosed and not in_bubble(gray, block) and not shares_bubble(gray, block, [b for b in blocks if b is not raw])):
             continue
         if not enclosed and unicodedata.normalize("NFKC", text) in CREDIT_MARKS:
             continue

@@ -406,11 +406,11 @@ def uncovered_lines(prob: np.ndarray, seg: np.ndarray, boxes: list[tuple[float, 
     return out
 
 
-def reading_order(blocks: list[TextBlock]) -> list[TextBlock]:
+def reading_order(blocks: list[TextBlock], right_to_left: bool = True) -> list[TextBlock]:
     if not blocks:
         return blocks
     band = max(1, int(np.median([b.box.h for b in blocks])))
-    return sorted(blocks, key=lambda b: (b.box.y0 // band, -b.box.x1))
+    return sorted(blocks, key=lambda b: (b.box.y0 // band, -b.box.x1 if right_to_left else b.box.x0))
 
 
 def infer(session, image: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, int, int]:

@@ -201,8 +201,7 @@ def joined_base(first: str, second: str, source: str) -> str | None:
     return None
 
 
-def read_ruby(ocr, page: Image.Image, gray: np.ndarray, block: TextBlock, source: str) -> list[tuple[str, str]]:
-    from .ocr import recognize
+def read_ruby(reader, page: Image.Image, gray: np.ndarray, block: TextBlock, source: str) -> list[tuple[str, str]]:
 
     pairs: list[tuple[str, str, int, int, int]] = []
     failed: list[tuple[int, int, int]] = []
@@ -213,11 +212,11 @@ def read_ruby(ocr, page: Image.Image, gray: np.ndarray, block: TextBlock, source
         crop = page.crop((ruby.x0 - 1, ruby.y0 - 1, ruby.x1 + 1, ruby.y1 + 1))
         scale = max(1, round(RUBY_SIDE / max(1, ruby.w if block.vertical else ruby.h)))
         crop = crop.resize((crop.width * scale, crop.height * scale), Image.Resampling.LANCZOS)
-        reading, confidence, _ = recognize(ocr, padded(crop, RUBY_PAD * scale))
+        reading, confidence, _ = reader.recognize(padded(crop, RUBY_PAD * scale))
         kanji = ""
         if confidence >= MIN_CONFIDENCE and KANA_ONLY.fullmatch(reading):
             slice_box = (base.x0 - 2, base.y0, base.x1 + 2, base.y1) if block.vertical else (base.x0, base.y0 - 2, base.x1, base.y1 + 2)
-            kanji = kanji_in(recognize(ocr, padded(page.crop(slice_box), BASE_PAD))[0], source)
+            kanji = kanji_in(reader.recognize(padded(page.crop(slice_box), BASE_PAD))[0], source)
         if not kanji:
             failed.append((column, start, end))
             continue
@@ -231,7 +230,7 @@ def read_ruby(ocr, page: Image.Image, gray: np.ndarray, block: TextBlock, source
     return [(k, tidy(r)) for k, r, _, _, _ in whole if len(k) <= len(r) <= MAX_KANA_PER_KANJI * len(k)]
 
 
-def attach(ocr, image: np.ndarray, bubbles: list[Bubble]) -> list[Bubble]:
+def attach(reader, image: np.ndarray, bubbles: list[Bubble]) -> list[Bubble]:
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     page = Image.fromarray(image)
-    return [replace(b, ruby=tuple(read_ruby(ocr, page, gray, b.block, b.source))) for b in bubbles]
+    return [replace(b, ruby=tuple(read_ruby(reader, page, gray, b.block, b.source))) for b in bubbles]

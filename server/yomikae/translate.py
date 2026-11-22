@@ -21,6 +21,7 @@ import httpx
 from PIL import Image, ImageDraw, ImageFont
 
 from .config import Settings
+from .language import JAPANESE, MATURE_NOTE, Language
 from .model import Box, ContextLine
 
 
@@ -66,6 +67,7 @@ class Context:
     terms: dict[str, str] = field(default_factory=dict)
     hint: str = ""
     upcoming: list[list[str]] = field(default_factory=list)
+    language: Language = JAPANESE
 
 
 def subset(context: Context, indices: Sequence[int]) -> Context:
@@ -83,19 +85,8 @@ class Translator(Protocol):
         ...
 
 
-MATURE_NOTE = "The content may be mature or explicit; translate it faithfully without censoring or commenting.\n"
-SYSTEM_PROMPT = """You translate Japanese manga dialogue into English for an in-place scanlation.
-Write natural, casual English that sounds like real people talking in a manga, not a literal gloss.
-Keep each line about as short as the original so it fits the speech bubble.
-Keep Japanese honorifics, romanized and joined to the name with a hyphen (-san, -kun, -chan, -sama, -senpai, -sensei, -dono, -tan). Add an honorific only where the Japanese has one after that name; a bare name stays bare. Never turn them into Mr., Ms., or Teacher. For example, 田中さん is "Tanaka-san" and ゆき先輩 is "Yuki-senpai". Only names, honorifics, and family terms said with an honorific are romanized; translate everything else into English. Never attach a Japanese honorific to an English word: a family term with an honorific is romanized whole, or else translated into plain English with no honorific.
-Keep symbols like ♡, ♥, and ♪ where the original has them.
-On its own, うち or ウチ is usually the speaker's own "I", "me" or "my", or the speaker's home or family; write "we", "us" or "our" only when the speaker clearly speaks for a group.
-"names" maps each name this work already uses to a Japanese line it was translated from; when that character appears, spell the name exactly that way.
-"previous_pages" are the nearest earlier pages and "already_translated" are lines of this page that already have their English; use both as context only.
-""" + MATURE_NOTE + """Reply with JSON only: {"translations": ["<english for id 0>", "<english for id 1>", ...]}, one string per input id, in id order."""
-
 READING_NOTE = '\n"readings" maps Japanese words to the small kana printed beside them, which shows how they are read; when such a word is a name, romanize the name from its reading.'
-NEXT_NOTE = '\n"next_pages" holds the Japanese of the pages that come right after this one. Use it only to see who is speaking and what is going on; never translate it and never put any of it in your reply, which has one translation per id in "lines" and nothing else.'
+NEXT_NOTE = '\n"next_pages" holds the {} of the pages that come right after this one. Use it only to see who is speaking and what is going on; never translate it and never put any of it in your reply, which has one translation per id in "lines" and nothing else.'
 HINT_NOTE = '\n"hint" is a note from the reader about these lines; follow it.'
 TERMS_NOTE = '\n"terms" maps the techniques, places and things this work names, as "names" does for its characters; spell each name and term exactly as given.'
 PAGE_NOTE = "\nThe attached image is the page these lines come from; use it to see who says each line and to whom."
@@ -151,11 +142,8 @@ def parse_translations(content: str, n: int) -> list[str] | None:
     return [out[i] for i in range(n)]
 
 
-JAPANESE = re.compile(r"[\u3040-\u309f\u30a0-\u30fa\u3400-\u9fff\uff66-\uff9f]")
-
-
-def pairs(lines: list[ContextLine]) -> list[dict]:
-    return [{"ja": c.source, "en": c.translation} for c in lines]
+def pairs(lines: list[ContextLine], language: Language) -> list[dict]:
+    return [{language.code: c.source, "en": c.translation} for c in lines]
 
 
 def build_user_message(lines: list[str], context: Context) -> str:
@@ -164,8 +152,8 @@ def build_user_message(lines: list[str], context: Context) -> str:
         "terms": context.terms,
         "readings": context.readings,
         "hint": context.hint,
-        "previous_pages": [pairs(page) for page in context.pages],
-        "already_translated": pairs(context.done),
+        "previous_pages": [pairs(page, context.language) for page in context.pages],
+        "already_translated": pairs(context.done, context.language),
         "next_pages": context.upcoming,
         "lines": [{"id": i, "text": t} for i, t in enumerate(lines)],
     }
@@ -194,26 +182,26 @@ def image_part(page: PageImage) -> dict:
 
 def build_messages(lines: list[str], context: Context) -> list[dict]:
     user = build_user_message(lines, context)
-    system = SYSTEM_PROMPT + (TERMS_NOTE if context.terms else "") + (READING_NOTE if context.readings else "") + (HINT_NOTE if context.hint else "") + (NEXT_NOTE if context.upcoming else "")
+    system = context.language.prompt + (TERMS_NOTE if context.terms else "") + (READING_NOTE if context.readings else "") + (HINT_NOTE if context.hint else "") + (NEXT_NOTE.format(context.language.name) if context.upcoming else "")
     if context.page is None:
         return [{"role": "system", "content": system}, {"role": "user", "content": user}]
     note = TAGGED_NOTE if context.page.tagged else PAGE_NOTE
     return [{"role": "system", "content": system + note}, {"role": "user", "content": [image_part(context.page), {"type": "text", "text": user}]}]
 
 
-def untranslated(source: str, text: str) -> bool:
+def untranslated(source: str, text: str, language: Language = JAPANESE) -> bool:
     if unicodedata.normalize("NFKC", text).strip() == unicodedata.normalize("NFKC", source).strip():
         return True
-    return len(JAPANESE.findall(text)) > sum(ch.isascii() and ch.isalpha() for ch in text)
+    return len(language.leftover.findall(text)) > sum(ch.isascii() and ch.isalpha() for ch in text)
 
 
-def lost_words(source: str, text: str) -> bool:
-    has_words = any(ch not in "っッｯ" for ch in JAPANESE.findall(source))
+def lost_words(source: str, text: str, language: Language = JAPANESE) -> bool:
+    has_words = any(ch not in language.silent for ch in language.leftover.findall(source))
     return has_words and not any(unicodedata.category(ch)[0] == "L" for ch in unicodedata.normalize("NFKC", text))
 
 
-def unusable(source: str, text: str) -> bool:
-    return untranslated(source, text) or lost_words(source, text)
+def unusable(source: str, text: str, language: Language) -> bool:
+    return untranslated(source, text, language) or lost_words(source, text, language)
 
 
 CUT_END = re.compile(r"[A-Za-z]-\s*$")
@@ -267,10 +255,10 @@ async def translate_lines(translator: Translator, lines: list[str], context: Con
     unread = [] if unread is None else unread
     deadline = time.monotonic() + budget
     out = await aligned(translator, lines, context, unread)
-    redo = {i for i, (source, text) in enumerate(zip(lines, out)) if text and unusable(source, text)} | cut_words(out)
+    redo = {i for i, (source, text) in enumerate(zip(lines, out)) if text and unusable(source, text, context.language)} | cut_words(out)
     for i in sorted(redo):
         text = (await aligned(translator, [lines[i]], subset(context, [i]), unread))[0] if time.monotonic() < deadline else out[i]
-        out[i] = "" if unusable(lines[i], text) else text
+        out[i] = "" if unusable(lines[i], text, context.language) else text
     return [plain_kin(text) for text in out]
 
 

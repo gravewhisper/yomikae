@@ -215,7 +215,7 @@ class Engine:
         with self.gpu():
             detect.detect(self.detector, blank)
             balloon.segment(self.balloons, blank)
-            ocr.recognize(self.ocr, Image.fromarray(blank[780:1020, 580:700]))
+            self.ocr.recognize(Image.fromarray(blank[780:1020, 580:700]))
             for side in (128, 320, 512):
                 crop = np.full((side, side, 3), 255, np.uint8)
                 mask = np.zeros((side, side), np.uint8)

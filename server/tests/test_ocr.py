@@ -41,7 +41,7 @@ def test_a_latin_logo_above_japanese_lines_is_left_out_of_the_block(reader):
     bubbles, unsure = ocr.read(reader, np.asarray(page.convert("RGB")), [TextBlock(box, False, mask_box, seg)])
     logo_bottom = ink_box(np.asarray(logo) > 127).y1
     read = bubbles + unsure
-    assert len(read) == 1 and ocr.is_japanese_text(read[0].source), [b.source for b in read]
+    assert len(read) == 1 and ocr.is_source_text(read[0].source), [b.source for b in read]
     assert "attention" not in read[0].source.lower()
     assert read[0].block.box.y0 >= logo_bottom, f"block starts at y={read[0].block.box.y0}, inside the logo that ends at y={logo_bottom}"
     assert not (read[0].block.mask[: logo_bottom - mask_box.y0] > 0).any(), "the logo is still in the block's text mask"

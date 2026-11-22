@@ -4,7 +4,7 @@ from yomikae import detect
 from yomikae.config import Settings
 from yomikae.detect import drop_merged_blocks
 from yomikae.model import Box
-from yomikae.ocr import is_japanese_text, looks_like_sfx
+from yomikae.ocr import is_source_text, looks_like_sfx
 from yomikae.translate import parse_translations
 
 
@@ -23,11 +23,11 @@ def test_rejects_misaligned_output():
 
 def test_classifies_non_text_sfx_and_dialogue():
     for text in ["", "…", "！？", "ー", "OK♡", "ＲＯＳＴＯｎｉｔｈｅＩＮＴでＥＲＮＥＴ"]:
-        assert not is_japanese_text(text), text
+        assert not is_source_text(text), text
     for text in ["ドン", "パシャッ", "ドキドキッ", "あっ", "ふう～～", "けど", "は？", "モデル？"]:
-        assert is_japanese_text(text) and looks_like_sfx(text), text
+        assert is_source_text(text) and looks_like_sfx(text), text
     for text in ["そんで", "船に飾ってもいいかい？", "ミューズだ", "五条さんっ！", "素晴らしいよ…Ｍｒ．ゴジョー"]:
-        assert is_japanese_text(text) and not looks_like_sfx(text), text
+        assert is_source_text(text) and not looks_like_sfx(text), text
 
 
 def test_a_block_around_two_detected_lines_is_dropped_for_the_lines():
