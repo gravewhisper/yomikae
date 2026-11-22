@@ -45,7 +45,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   let workId = work?.id;
   let mode: TabMode = tabMode(siteMode, work);
   let langChoice = initialLang;
-  const resolvedLang = (): SourceLang => resolveSourceLang(langChoice, work?.language, document.documentElement.lang);
+  const resolvedLang = (): SourceLang => resolveSourceLang(langChoice, work?.language, adapter.interfaceLang ? '' : document.documentElement.lang);
   let sourceLang = resolvedLang();
   const resolvedMode = (): TabMode => (workId !== work?.id ? 'off' : tabMode(siteMode, work));
   const jobs = new Map<string, PageJob>();
@@ -157,9 +157,10 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   }
 
   async function makeWant(key: string, url: string, { position, pageIndex }: Place, img?: HTMLImageElement): Promise<Want> {
+    const lang = sourceLang;
     const priority = Math.abs(position - currentPos);
     const contextKey = adapter.contextKey(location, img, url);
-    return { key, url, candidates: await adapter.fetchCandidates(url), contextKey, sourceLang, pageIndex, position, priority };
+    return { key, url, candidates: await adapter.fetchCandidates(url), contextKey, sourceLang: lang, pageIndex, position, priority };
   }
 
   function keyOf(url: string): string {

@@ -12,6 +12,7 @@ export type SiteAdapter = {
   contextKey(loc: Location, img?: HTMLImageElement, url?: string): string;
   workId?(loc: Location): string | undefined;
   workLanguage?(loc: Location): Promise<string | undefined>;
+  interfaceLang?: boolean;
   pageKey(url: string): string;
   fetchCandidates(url: string): string[] | Promise<string[]>;
   isPage?(url: string): boolean;

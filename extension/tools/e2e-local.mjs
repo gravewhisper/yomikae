@@ -115,6 +115,7 @@ try {
   const mockStats = async () => (await fetch(`http://127.0.0.1:${MOCK_PORT}/mock/stats`)).json();
   const pickLang = (value) => popup.evaluate(`(() => { const s = document.getElementById('site-lang'); s.value = '${value}'; s.dispatchEvent(new Event('change')); })()`);
   check(results, await popup.evaluate(`!document.getElementById('site-lang').hidden && document.getElementById('site-lang').value === 'auto'`), 'the popup shows the language select set to detect');
+  await popup.screenshot(`${out}/local-0b-popup-on.png`);
   await pickLang('ko');
   await page.send('Page.bringToFront');
   let korean = await mockStats();

@@ -296,7 +296,7 @@ Each tab picks one source language, `ja` or `ko`, before it sends any page, and 
 
 1. The reader's choice for the site, stored in `chrome.storage.local` under its own key, `sourceLang:<site>`, with the value `"ja"` or `"ko"`. The popup's language select, shown under the site mode while the site is on, writes it. Its first option, **Language: detect from the page**, removes the key.
 2. The work's language from the adapter's `workLanguage`: `japanese` gives `ja` and `korean` gives `ko`. Any other name gives no answer.
-3. The page's `<html lang>`: a tag whose first part is `ja` or `ko`, in any case, such as `ko-KR`.
+3. The page's `<html lang>`: a tag whose first part is `ja` or `ko`, in any case, such as `ko-KR`. An adapter with `interfaceLang: true` skips this step, because its site sets `<html lang>` to the reader's interface language rather than the work's. x.com, twitter.com and pixiv.net do.
 4. `ja`.
 
 The content script prefixes each job key with the language, as in `ko:<page key>`, so the background worker's queue and render cache keep a page's Japanese and Korean renders apart. A retranslate computes the page id as the server does: the SHA-256 of the image bytes for `ja`, and of `ko`, a zero byte and the bytes for `ko`.

@@ -46,7 +46,7 @@ const wantVia = (popup, key, candidates) =>
       port.disconnect();
       resolve({ type: m.type, error: m.error, retryable: m.retryable, seconds: (Date.now() - t0) / 1000 });
     });
-    port.postMessage({ type: 'want', jobs: [{ key: ${JSON.stringify(key)}, url: ${JSON.stringify(candidates[0])}, candidates: ${JSON.stringify(candidates)}, contextKey: 'slow-test', pageIndex: 1, priority: 0 }] });
+    port.postMessage({ type: 'want', jobs: [{ key: ${JSON.stringify(key)}, url: ${JSON.stringify(candidates[0])}, candidates: ${JSON.stringify(candidates)}, contextKey: 'slow-test', sourceLang: 'ja', pageIndex: 1, priority: 0 }] });
   })`);
 
 try {

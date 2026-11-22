@@ -28,6 +28,7 @@ const xPhotoIndex = (img: Element) => {
 };
 
 const twitter: SiteAdapter = {
+  interfaceLang: true,
   matches: (host) => ['x.com', 'twitter.com'].some((d) => host === d || host.endsWith(`.${d}`)),
   defaultMode: 'on-demand',
   contextKey: (loc, img) => xStatus(loc.pathname) ?? (img && xTweetOf(img)) ?? defaultAdapter.contextKey(loc),
@@ -111,6 +112,7 @@ export function parsePxPages(v: unknown): PxPage[] | undefined {
 }
 
 const pixiv: SiteAdapter = {
+  interfaceLang: true,
   matches: (host) => host === 'pixiv.net' || host.endsWith('.pixiv.net'),
   defaultMode: 'on-demand',
   contextKey: (loc, _img, url) => {
