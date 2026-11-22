@@ -117,9 +117,12 @@ The evidence for Chinese and Korean into English is thin. WMT25 had no ja→en, 
 
 ### Reading Korean
 
-A page sent with `source_lang=ko` is read by [Kemolate OCR](https://huggingface.co/azeranex/kemolate-ocr) (CC BY-SA 4.0), an ONNX encoder and decoder of about 500 MB that the server runs with onnxruntime and tokenizers. The README pins revision `b80bfc71ea0b5a649f57aa720fd3375e8f4e8f62`, the one measured below, because the model card warns that `main` moves. The files go in `server/models/kemolate-ocr/`. Detection and erasing use the same models as Japanese.
+A page sent with `source_lang=ko` uses two models that Japanese pages do not:
 
-On 15 Korean webtoon slices with 37 lines, Kemolate read 35 lines exactly, with a character error rate of 1.1 to 1.8%. It drops the spaces between words. PaddleOCR's Korean model read 33 to 34 lines and kept few spaces, and hayai, a Japanese reader, wrote Japanese and Chinese characters into Korean lines. [decisions.md](decisions.md#korean-reads-through-kemolate-and-keeps-address-terms) has the details. The reader sits behind a `recognize(crop)` interface in `server/yomikae/ocr.py`, so PaddleOCR could replace it.
+- **AnimeText** finds the text lines. It is a YOLO12m detector trained on anime and comic text, run with onnxruntime at a 640 pixel input on tiles of the page. Its weights are GPL-3.0, so they are downloaded, never committed. The README takes them from [Library-Mutsumi/AnimeText_yolo](https://huggingface.co/Library-Mutsumi/AnimeText_yolo) at revision `e3a6e6b08b39e9bc9eeb7033f78c36689b351a24`, file `yolo12m_animetext/model.onnx`, an ungated mirror: the original deepghs repo asks for an access request. The file goes in `server/models/animetext_yolo12m.onnx`.
+- **PaddleOCR** reads them: the PP-OCRv6 small line detector and the PP-OCRv5 mobile Korean recognizer (Apache-2.0), run through rapidocr. The README takes them from RapidOCR's v3.10.0 release. They go in `server/models/paddleocr/`.
+
+comic-text-detector still gives the mask of the lettering, and erasing uses the same models as Japanese. On 40 dev webtoon pages with 88 dialogue lines and 25 captions, the pair read dialogue at a 2.0% character error rate, 75 of 88 lines exactly, and captions at 0.3%, 24 of 25. [decisions.md](decisions.md#korean-reads-through-animetext-and-paddleocr-and-keeps-address-terms) has the comparison with Kemolate OCR and comic-text-detector.
 
 OpenMantra is Japanese only, so choosing one model for all three languages needs a manhwa and manhua set with references, or an LLM-judge pass.
 

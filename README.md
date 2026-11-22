@@ -89,13 +89,13 @@ rm -rf best.pt .venv-export
 
 It ends with `export success`. A fourth model, for reading Japanese, downloads itself the first time the server starts.
 
-To translate Korean webtoons too, download Kemolate OCR, which reads Korean (about 500 MB, CC BY-SA 4.0). The server loads it with the first Korean page, and without it Korean pages fail with `reader_missing`:
+To translate Korean webtoons too, download AnimeText, which finds the Korean lines (80 MB, GPL-3.0), and PaddleOCR's Korean models, which read them (23 MB, Apache-2.0). The server loads them with the first Korean page, and without them Korean pages fail with `reader_missing`:
 
 ```sh
-mkdir -p models/kemolate-ocr
-for f in encoder_model.onnx decoder_model.onnx tokenizer.json; do
-  curl -L -o models/kemolate-ocr/$f https://huggingface.co/azeranex/kemolate-ocr/resolve/b80bfc71ea0b5a649f57aa720fd3375e8f4e8f62/$f
-done
+curl -L -o models/animetext_yolo12m.onnx https://huggingface.co/Library-Mutsumi/AnimeText_yolo/resolve/e3a6e6b08b39e9bc9eeb7033f78c36689b351a24/yolo12m_animetext/model.onnx
+mkdir -p models/paddleocr
+curl -L -o models/paddleocr/PP-OCRv6_det_small.onnx https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx
+curl -L -o models/paddleocr/korean_PP-OCRv5_rec_mobile.onnx https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv5/rec/korean_PP-OCRv5_rec_mobile.onnx
 ```
 
 ### 4. Start the server
