@@ -190,8 +190,8 @@ def run(translator, lines):
 
 
 def test_a_line_left_with_only_its_symbols_is_retried_alone():
-    translator = Scripted(["Riren-san is a", "perv", "♡"], **{"変態♡": ["Pervert♡"]})
-    assert run(translator, ["凛恋さんはたから", "作", "変態♡"]) == ["Riren-san is a", "perv", "Pervert♡"]
+    translator = Scripted(["Sumika-san is a", "perv", "♡"], **{"変態♡": ["Pervert♡"]})
+    assert run(translator, ["澄香さんのひみつ", "作", "変態♡"]) == ["Sumika-san is a", "perv", "Pervert♡"]
     assert translator.calls[1:] == [["変態♡"]]
 
 
@@ -211,8 +211,8 @@ def test_a_short_word_or_a_word_with_a_heart_needs_words_back():
 
 
 def test_a_word_cut_across_two_lines_asks_each_line_again_on_its_own():
-    translator = Scripted(["Riren-san is a", "per-", "verted♡"], **{"作": ["Story"], "変態♡": ["Pervert♡"]})
-    assert run(translator, ["凛恋さんはたから", "作", "変態♡"]) == ["Riren-san is a", "Story", "Pervert♡"]
+    translator = Scripted(["Sumika-san is a", "per-", "verted♡"], **{"作": ["Story"], "変態♡": ["Pervert♡"]})
+    assert run(translator, ["澄香さんのひみつ", "作", "変態♡"]) == ["Sumika-san is a", "Story", "Pervert♡"]
     assert translator.calls[1:] == [["作"], ["変態♡"]]
 
 

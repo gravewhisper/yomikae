@@ -151,12 +151,12 @@ try {
   await panel.waitFor(`![...document.querySelectorAll('.entry .en')].some(i => i.value === 'Kazune')`);
   await panel.evaluate(`[...document.querySelectorAll('.entry')].find(e => e.querySelector('.en').value === 'Gekko Style').querySelector('.flip').click()`);
   await panel.waitFor(`[...document.querySelectorAll('.group[data-kind="name"] .entry .en')].some(i => i.value === 'Gekko Style')`);
-  await panel.evaluate(`(() => { document.getElementById('add-ja').value = '凛恋'; document.getElementById('add-en').value = 'Rinren'; document.getElementById('add-reading').value = 'りんれん'; document.getElementById('add').requestSubmit(); })()`);
-  await panel.waitFor(`[...document.querySelectorAll('.entry .en')].some(i => i.value === 'Rinren')`);
+  await panel.evaluate(`(() => { document.getElementById('add-ja').value = '澄香'; document.getElementById('add-en').value = 'Sumire'; document.getElementById('add-reading').value = 'すみれ'; document.getElementById('add').requestSubmit(); })()`);
+  await panel.waitFor(`[...document.querySelectorAll('.entry .en')].some(i => i.value === 'Sumire')`);
   const names = (await (await fetch(`${MOCK}/v1/names?context_key=${encodeURIComponent(CONTEXT)}`)).json()).names;
   check(
     results,
-    JSON.stringify(names.map((n) => `${n.ja}:${n.en}:${n.source}:${n.kind}`)) === JSON.stringify(['在藤:Arifugi:user:name', '月光流:Gekko Style:user:name', '凛恋:Rinren:user:name']),
+    JSON.stringify(names.map((n) => `${n.ja}:${n.en}:${n.source}:${n.kind}`)) === JSON.stringify(['在藤:Arifugi:user:name', '月光流:Gekko Style:user:name', '澄香:Sumire:user:name']),
     'delete, flip and add reach the server',
     names,
   );

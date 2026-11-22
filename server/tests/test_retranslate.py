@@ -287,22 +287,22 @@ def test_replacing_a_cached_page_keeps_the_cache_size_exact(tmp_path):
 
 
 def test_an_old_spelling_of_a_renamed_name_still_marks_its_bubbles_stale():
-    bubbles = [{"source": "おい", "translation": "Hey, Riren-chan!"}, {"source": "行くぞ", "translation": "Let's go."}]
+    bubbles = [{"source": "おい", "translation": "Hey, Sumika-chan!"}, {"source": "行くぞ", "translation": "Let's go."}]
     page = {"context_key": "k", "bubbles": bubbles, "names_in_force": []}
-    assert stale_bubbles(page, [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]) == [0]
-    assert stale_bubbles(page, [{"ja": "", "en": "Rirenx"}]) == []
-    kept = {**page, "names_in_force": [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]}
-    assert stale_bubbles(kept, [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]) == []
+    assert stale_bubbles(page, [{"ja": "", "en": "Sumikax", "was": ["Sumika"]}]) == [0]
+    assert stale_bubbles(page, [{"ja": "", "en": "Sumikax"}]) == []
+    kept = {**page, "names_in_force": [{"ja": "", "en": "Sumikax", "was": ["Sumika"]}]}
+    assert stale_bubbles(kept, [{"ja": "", "en": "Sumikax", "was": ["Sumika"]}]) == []
 
 
 @pytest.mark.models
 def test_renaming_an_auto_name_redoes_the_pages_that_used_it(client):
     key = "example.com/g/retranslate-auto"
     data = page(642)
-    with using(client, Scripted(lambda call, lines, _: [f"Riren-chan, look {call}.{i}" for i in range(len(lines))])):
+    with using(client, Scripted(lambda call, lines, _: [f"Sumika-chan, look {call}.{i}" for i in range(len(lines))])):
         first = post(client, data, key, 0)
-        assert [n["en"] for n in client.get("/v1/names", params={"context_key": key}).json()["names"]] == ["Riren"]
-        client.put("/v1/names", params={"context_key": key}, json={"names": [{"ja": "", "en": "Rirenx", "was": ["Riren"]}]})
+        assert [n["en"] for n in client.get("/v1/names", params={"context_key": key}).json()["names"]] == ["Sumika"]
+        client.put("/v1/names", params={"context_key": key}, json={"names": [{"ja": "", "en": "Sumikax", "was": ["Sumika"]}]})
         redone = post(client, data, key, 0)
     assert first["bubbles"] and redone["updated"] is True
 

@@ -29,7 +29,7 @@ describe('pages and names', () => {
       names: [
         { ja: '在藤', en: 'Arifuji', reading: 'ありふじ', source: 'user', was: ['Zaito', 3] },
         { ja: '月光流', en: 'Gekko Style', reading: '', source: 'furigana', kind: 'term' },
-        { ja: '凛恋ちゃん', en: 'Riren', reading: '', source: 'auto', kind: 'name', was: [], guess: '凛恋' },
+        { ja: '澄香ちゃん', en: 'Sumika', reading: '', source: 'auto', kind: 'name', was: [], guess: '澄香' },
       ],
     });
     assert.deepEqual(cast, {
@@ -37,7 +37,7 @@ describe('pages and names', () => {
       names: [
         { ja: '在藤', en: 'Arifuji', reading: 'ありふじ', source: 'user', kind: 'name', was: ['Zaito'], guess: '' },
         { ja: '月光流', en: 'Gekko Style', reading: '', source: 'furigana', kind: 'term', was: [], guess: '' },
-        { ja: '凛恋ちゃん', en: 'Riren', reading: '', source: 'auto', kind: 'name', was: [], guess: '凛恋' },
+        { ja: '澄香ちゃん', en: 'Sumika', reading: '', source: 'auto', kind: 'name', was: [], guess: '澄香' },
       ],
     });
     assert.throws(() => parseCast({ context_key: 'k', names: [{ ja: '', en: 'X', source: 'guess' }] }));

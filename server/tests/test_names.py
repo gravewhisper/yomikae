@@ -40,13 +40,13 @@ def test_auto_names_reach_the_prompt_exactly_as_before():
 
 def test_a_user_name_hides_the_auto_spelling_it_corrects_and_is_never_overwritten(tmp_path):
     store = ContextStore(tmp_path)
-    store.add("g/1", "p1", 1, [ContextLine("凛恋さん、おはよう", "Morning, Riren-san."), ContextLine("ユキちゃん", "Yuki-chan!")])
-    store.set_name("g/1", CastEntry("凛恋", "Rinren", "りんれん", "user"))
-    store.learn_names("g/1", [CastEntry("凛恋", "Rinko", "りんこ", "furigana")])
+    store.add("g/1", "p1", 1, [ContextLine("澄香さん、おはよう", "Morning, Sumika-san."), ContextLine("ユキちゃん", "Yuki-chan!")])
+    store.set_name("g/1", CastEntry("澄香", "Sumire", "すみれ", "user"))
+    store.learn_names("g/1", [CastEntry("澄香", "Kiyoka", "きよか", "furigana")])
     cast = store.cast("g/1")
-    assert [(e.en, e.source) for e in cast] == [("Rinren", "user"), ("Yuki", "auto")]
+    assert [(e.en, e.source) for e in cast] == [("Sumire", "user"), ("Yuki", "auto")]
     reloaded = ContextStore(tmp_path)
-    assert [(e.ja, e.en, e.reading, e.source) for e in reloaded.saved_names("g/1")] == [("凛恋", "Rinren", "りんれん", "user")]
+    assert [(e.ja, e.en, e.reading, e.source) for e in reloaded.saved_names("g/1")] == [("澄香", "Sumire", "すみれ", "user")]
     assert reloaded.saved_names("g/2") == []
 
 
@@ -123,10 +123,10 @@ def test_a_saved_entry_without_a_kind_reads_as_a_name_and_the_users_kind_wins(tm
 def test_names_api_reads_and_replaces_one_works_list(client):
     key = "example.com/g/cast"
     assert client.get("/v1/names", params={"context_key": key}).json() == {"context_key": key, "names": []}
-    r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "凛恋", "en": "Rinren", "reading": "りんれん"})
+    r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "澄香", "en": "Sumire", "reading": "すみれ"})
     assert r.status_code == 200, r.text
-    assert r.json()["names"] == [{"ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name", "was": [], "guess": ""}]
-    r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "凛恋", "en": "Rin"})
+    assert r.json()["names"] == [{"ja": "澄香", "en": "Sumire", "reading": "すみれ", "source": "user", "kind": "name", "was": [], "guess": ""}]
+    r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "澄香", "en": "Rin"})
     assert [n["en"] for n in r.json()["names"]] == ["Rin"]
     body = {"names": [{"ja": "我愛羅", "en": "Gaara", "reading": "があら", "source": "furigana"}, {"ja": "", "en": "Yuki-chan", "source": "auto"}, {"ja": "渚", "en": "Nagisa"}]}
     r = client.put("/v1/names", params={"context_key": key}, json=body)
@@ -213,7 +213,7 @@ def test_an_auto_name_carries_the_japanese_right_before_its_honorific():
         ContextLine("レーナちゃん！", "Lena-chan!"),
         ContextLine("宏也落ち着け", "Hiroya-kun, calm down."),
         ContextLine("宏也くん", "Hiroya-kun!"),
-        ContextLine("美咲さまと凛恋さま", "Misaki-sama and Riren-sama."),
+        ContextLine("美咲さまと澄香さま", "Misaki-sama and Sumika-sama."),
         ContextLine("ねえ", "Hey, Kenta-kun."),
     ]
     store.add("g/1", "p1", 1, lines)
@@ -222,51 +222,51 @@ def test_an_auto_name_carries_the_japanese_right_before_its_honorific():
         "Yuki": ("おはようゆきちゃん", "ゆき"),
         "Lena": ("レーナちゃん！", "レーナ"),
         "Hiroya": ("宏也落ち着け", "宏也"),
-        "Misaki": ("美咲さまと凛恋さま", ""),
-        "Riren": ("美咲さまと凛恋さま", ""),
+        "Misaki": ("美咲さまと澄香さま", ""),
+        "Sumika": ("美咲さまと澄香さま", ""),
         "Kenta": ("ねえ", ""),
     }
 
 
 def test_an_auto_name_stays_hidden_once_its_character_is_saved_under_any_spelling(tmp_path):
     store = ContextStore(tmp_path)
-    store.add("g/1", "p1", 1, [ContextLine("凛恋ちゃん、おはよう", "Morning, Riren-chan."), ContextLine("ユキちゃんと凛恋ちゃん", "Yuki-chan and Riren-chan!")])
-    store.learn_names("g/1", [CastEntry("凛恋", "Riren", "りれん", "furigana")])
-    assert [(e.en, e.source) for e in store.cast("g/1")] == [("Riren", "furigana"), ("Yuki", "auto")]
-    store.save_names("g/1", [CastEntry("凛恋", "Lily", "りれん", "user")])
-    assert [(e.en, e.source, e.was) for e in store.cast("g/1")] == [("Lily", "user", ("Riren",)), ("Yuki", "auto", ())]
-    store.save_names("g/1", [CastEntry("凛恋", "Lilia", "りれん", "user")])
-    assert [(e.ja, e.en, e.was) for e in ContextStore(tmp_path).saved_names("g/1")] == [("凛恋", "Lilia", ("Riren", "Lily"))]
+    store.add("g/1", "p1", 1, [ContextLine("澄香ちゃん、おはよう", "Morning, Sumika-chan."), ContextLine("ユキちゃんと澄香ちゃん", "Yuki-chan and Sumika-chan!")])
+    store.learn_names("g/1", [CastEntry("澄香", "Sumika", "すみか", "furigana")])
+    assert [(e.en, e.source) for e in store.cast("g/1")] == [("Sumika", "furigana"), ("Yuki", "auto")]
+    store.save_names("g/1", [CastEntry("澄香", "Lily", "すみか", "user")])
+    assert [(e.en, e.source, e.was) for e in store.cast("g/1")] == [("Lily", "user", ("Sumika",)), ("Yuki", "auto", ())]
+    store.save_names("g/1", [CastEntry("澄香", "Lilia", "すみか", "user")])
+    assert [(e.ja, e.en, e.was) for e in ContextStore(tmp_path).saved_names("g/1")] == [("澄香", "Lilia", ("Sumika", "Lily"))]
     translator = Recorder(lambda lines: ["Hi."] * len(lines))
     asyncio.run(translate_page(translator, store, ["こんにちは"], "g/1", 2))
-    assert translator.contexts[0].names == {"Lilia": "凛恋", "Yuki": "ユキちゃんと凛恋ちゃん"}
+    assert translator.contexts[0].names == {"Lilia": "澄香", "Yuki": "ユキちゃんと澄香ちゃん"}
     for i in range(12):
-        store.save_names("g/1", [CastEntry("凛恋", f"Name{i}", "りれん", "user")])
+        store.save_names("g/1", [CastEntry("澄香", f"Name{i}", "すみか", "user")])
     assert store.saved_names("g/1")[0].was == tuple(f"Name{i}" for i in range(3, 11))
 
 
 def test_an_auto_name_whose_japanese_or_reading_matches_a_saved_name_is_hidden():
     store = ContextStore()
-    store.add("g/1", "p1", 1, [ContextLine("凛恋さま、どうぞ", "Here, Rinko-sama."), ContextLine("リレンちゃん！", "Riren-chan!")])
-    store.save_names("g/1", [CastEntry("凛恋", "Lily", "", "user")])
-    assert [(e.en, e.source) for e in store.cast("g/1")] == [("Lily", "user"), ("Riren", "auto")]
-    store.save_names("g/1", [CastEntry("在藤", "Arifuji", "りれん", "user")])
-    assert [(e.en, e.source) for e in store.cast("g/1")] == [("Arifuji", "user"), ("Rinko", "auto")]
+    store.add("g/1", "p1", 1, [ContextLine("澄香さま、どうぞ", "Here, Kiyoka-sama."), ContextLine("スミカちゃん！", "Sumika-chan!")])
+    store.save_names("g/1", [CastEntry("澄香", "Lily", "", "user")])
+    assert [(e.en, e.source) for e in store.cast("g/1")] == [("Lily", "user"), ("Sumika", "auto")]
+    store.save_names("g/1", [CastEntry("在藤", "Arifuji", "すみか", "user")])
+    assert [(e.en, e.source) for e in store.cast("g/1")] == [("Arifuji", "user"), ("Kiyoka", "auto")]
 
 
 def test_a_saved_name_without_japanese_keeps_its_old_spellings_and_blocks_a_twin_from_furigana(tmp_path):
     store = ContextStore(tmp_path)
-    store.add("g/1", "p1", 1, [ContextLine("おい", "Hey, Riren-chan.")])
-    store.save_names("g/1", [CastEntry("", "Rirenx", "", "user", was=("Riren",))])
-    store.learn_names("g/1", [CastEntry("凛恋", "Riren", "りれん", "furigana")])
-    assert [(e.ja, e.en, e.source, e.was) for e in store.cast("g/1")] == [("", "Rirenx", "user", ("Riren",))]
+    store.add("g/1", "p1", 1, [ContextLine("おい", "Hey, Sumika-chan.")])
+    store.save_names("g/1", [CastEntry("", "Sumikax", "", "user", was=("Sumika",))])
+    store.learn_names("g/1", [CastEntry("澄香", "Sumika", "すみか", "furigana")])
+    assert [(e.ja, e.en, e.source, e.was) for e in store.cast("g/1")] == [("", "Sumikax", "user", ("Sumika",))]
     store.names_path("g/2").write_text('{"names": [{"ja": "渚", "en": "Nagisa", "source": "user"}]}')
     assert store.saved_names("g/2")[0].was == ()
 
 
 def test_renaming_flipping_deleting_and_adding_never_shows_one_character_twice(client):
     key = "example.com/g/rename"
-    client.app.state.engine.context.add(key, "rename-1", 1, [ContextLine("凛恋ちゃん、おはよう", "Morning, Riren-chan."), ContextLine("ユキちゃん！", "Yuki-chan!")])
+    client.app.state.engine.context.add(key, "rename-1", 1, [ContextLine("澄香ちゃん、おはよう", "Morning, Sumika-chan."), ContextLine("ユキちゃん！", "Yuki-chan!")])
 
     def put(rows):
         r = client.put("/v1/names", params={"context_key": key}, json={"names": rows})
@@ -274,13 +274,13 @@ def test_renaming_flipping_deleting_and_adding_never_shows_one_character_twice(c
         return [(n["source"], n["guess"] if n["source"] == "auto" else n["ja"], n["en"], n["kind"], n["was"]) for n in r.json()["names"]]
 
     yuki = ("auto", "ユキ", "Yuki", "name", [])
-    assert put([]) == [("auto", "凛恋", "Riren", "name", []), yuki]
-    assert put([{"ja": "凛恋", "en": "Rirenx", "source": "user", "was": ["Riren"]}]) == [("user", "凛恋", "Rirenx", "name", ["Riren"]), yuki]
-    client.app.state.engine.context.learn_names(key, [CastEntry("凛恋", "Riren", "りれん", "furigana")])
-    assert put([{"ja": "凛恋", "en": "Lily", "reading": "りれん"}]) == [("user", "凛恋", "Lily", "name", ["Riren", "Rirenx"]), yuki]
-    assert put([{"ja": "凛恋", "en": "Lily", "kind": "term"}]) == [("user", "凛恋", "Lily", "term", ["Riren", "Rirenx"]), yuki]
-    assert put([{"ja": "凛恋", "en": "Lily", "kind": "term"}, {"ja": "", "en": "Riren"}]) == [("user", "凛恋", "Riren", "name", ["Rirenx", "Lily"]), yuki]
+    assert put([]) == [("auto", "澄香", "Sumika", "name", []), yuki]
+    assert put([{"ja": "澄香", "en": "Sumikax", "source": "user", "was": ["Sumika"]}]) == [("user", "澄香", "Sumikax", "name", ["Sumika"]), yuki]
+    client.app.state.engine.context.learn_names(key, [CastEntry("澄香", "Sumika", "すみか", "furigana")])
+    assert put([{"ja": "澄香", "en": "Lily", "reading": "すみか"}]) == [("user", "澄香", "Lily", "name", ["Sumika", "Sumikax"]), yuki]
+    assert put([{"ja": "澄香", "en": "Lily", "kind": "term"}]) == [("user", "澄香", "Lily", "term", ["Sumika", "Sumikax"]), yuki]
+    assert put([{"ja": "澄香", "en": "Lily", "kind": "term"}, {"ja": "", "en": "Sumika"}]) == [("user", "澄香", "Sumika", "name", ["Sumikax", "Lily"]), yuki]
     r = client.put("/v1/names/entry", params={"context_key": key}, json={"ja": "", "en": "Lily"})
-    assert [(n["ja"], n["en"], n["was"]) for n in r.json()["names"] if n["source"] == "user"] == [("凛恋", "Lily", ["Rirenx", "Riren"])]
-    assert put([]) == [("auto", "凛恋", "Riren", "name", []), yuki]
+    assert [(n["ja"], n["en"], n["was"]) for n in r.json()["names"] if n["source"] == "user"] == [("澄香", "Lily", ["Sumikax", "Sumika"])]
+    assert put([]) == [("auto", "澄香", "Sumika", "name", []), yuki]
     assert client.put("/v1/names", params={"context_key": key}, json={"names": [{"en": "A", "was": "B"}]}).status_code == 400

@@ -5,7 +5,7 @@ import type { Name } from '../src/contract.ts';
 
 const user: Name = { ja: '在藤', en: 'Zaito', reading: '', source: 'user', kind: 'name', was: [], guess: '' };
 const furigana: Name = { ja: '和音', en: 'Kazune', reading: 'かずね', source: 'furigana', kind: 'name', was: [], guess: '' };
-const auto: Name = { ja: '凛恋ちゃん、おはよう', en: 'Riren', reading: '', source: 'auto', kind: 'name', was: [], guess: '凛恋' };
+const auto: Name = { ja: '澄香ちゃん、おはよう', en: 'Sumika', reading: '', source: 'auto', kind: 'name', was: [], guess: '澄香' };
 const names = [user, furigana, auto];
 
 describe('cast sheet edits', () => {
@@ -21,16 +21,16 @@ describe('cast sheet edits', () => {
   });
 
   it('saves an edited auto name under the Japanese the server found in its line', () => {
-    const rirenx: Name = { ja: '凛恋', en: 'Rirenx', reading: '', source: 'user', kind: 'name', was: ['Riren'], guess: '' };
-    assert.deepEqual(applyEdit(names, { type: 'spell', entry: auto, en: 'Rirenx' }), [user, furigana, rirenx]);
-    assert.deepEqual(applyEdit(names, { type: 'flip', entry: auto }).at(-1), { ...rirenx, en: 'Riren', kind: 'term', was: [] });
+    const sumikax: Name = { ja: '澄香', en: 'Sumikax', reading: '', source: 'user', kind: 'name', was: ['Sumika'], guess: '' };
+    assert.deepEqual(applyEdit(names, { type: 'spell', entry: auto, en: 'Sumikax' }), [user, furigana, sumikax]);
+    assert.deepEqual(applyEdit(names, { type: 'flip', entry: auto }).at(-1), { ...sumikax, en: 'Sumika', kind: 'term', was: [] });
     const unknown = { ...auto, guess: '' };
-    assert.deepEqual(applyEdit([unknown], { type: 'spell', entry: unknown, en: 'Rirenx' }), [{ ...rirenx, ja: '' }]);
+    assert.deepEqual(applyEdit([unknown], { type: 'spell', entry: unknown, en: 'Sumikax' }), [{ ...sumikax, ja: '' }]);
   });
 
   it('renames the saved entry an auto name belongs to instead of adding a second one', () => {
-    const saved: Name = { ja: '凛恋', en: 'Riren', reading: 'りれん', source: 'furigana', kind: 'name', was: [], guess: '' };
-    assert.deepEqual(applyEdit([saved, auto], { type: 'spell', entry: auto, en: 'Lily' }), [{ ...saved, en: 'Lily', source: 'user', was: ['Riren'] }]);
+    const saved: Name = { ja: '澄香', en: 'Sumika', reading: 'すみか', source: 'furigana', kind: 'name', was: [], guess: '' };
+    assert.deepEqual(applyEdit([saved, auto], { type: 'spell', entry: auto, en: 'Lily' }), [{ ...saved, en: 'Lily', source: 'user', was: ['Sumika'] }]);
     assert.deepEqual(applyEdit([saved, auto], { type: 'flip', entry: auto }), [{ ...saved, source: 'user', kind: 'term' }]);
   });
 

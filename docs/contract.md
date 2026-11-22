@@ -127,7 +127,7 @@ Clears the current pipeline version's cache, including the pages that other tran
 Each work, as grouped by `context_key`, has a name list that the translator follows so a character's name, or a technique's, is spelled the same on every page. A `Name` is:
 
 ```json
-{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name", "was": ["Riren"], "guess": "" }
+{ "ja": "澄香", "en": "Sumire", "reading": "すみれ", "source": "user", "kind": "name", "was": ["Sumika"], "guess": "" }
 ```
 
 | Field | Meaning |
@@ -143,7 +143,7 @@ Each work, as grouped by `context_key`, has a name list that the translator foll
 - `auto` names come from earlier translations of the work: an English name joined to an honorific, such as `Yuki-chan`, in its most used spelling. They are rebuilt from the cache, are never stored, and leave with their pages.
 - `furigana` names come from the small kana printed beside a kanji name, right of vertical text or above horizontal text. When the translation of a line spells that reading in English, the kanji, the reading and that spelling are kept. A name of one kanji is kept only when an honorific follows it in the Japanese, on this page or an earlier one, and that line's English spells the reading with the same honorific.
 - `auto` names are always `name`. A `furigana` name gets its `kind` from the line it was learned from: `term` when the Japanese ends in a technique or place suffix such as 術, 眼 or 流, or when the English puts "the", "a" or a possessive word before it or quotes it; `name` when an honorific follows it or the English addresses it or uses it with 's; `name` when neither side wins. The translator gets `name` entries in the `names` map and `term` entries in a `terms` map.
-- An `auto` name's `guess` is read from the lines it came from: the run of kanji, katakana or hiragana right before the honorific kana that gave its English honorific, for example 凛恋 in 凛恋ちゃん for `Riren-chan`. A kana run counts when its romanization sounds like the English name, and then only the part that does. Otherwise one kanji run wins, or failing that one katakana run, and two different runs before the same honorific on the same line give `""`.
+- An `auto` name's `guess` is read from the lines it came from: the run of kanji, katakana or hiragana right before the honorific kana that gave its English honorific, for example 澄香 in 澄香ちゃん for `Sumika-chan`. A kana run counts when its romanization sounds like the English name, and then only the part that does. Otherwise one kanji run wins, or failing that one katakana run, and two different runs before the same honorific on the same line give `""`.
 - `user` names are what the reader typed, including their `kind`. A `user` name always wins: it is never overwritten, and a `furigana` name with the same `ja` is hidden.
 - Two stored names are the same character when both have a `ja` and it is the same, or, when either `ja` is empty, when they share a spelling among their `en` and `was`. The stored list never holds the same character twice: a name stored over another one of the same character replaces it, keeps the other's `ja` and `reading` when its own are empty, and adds the other's `en` and `was` to its `was`. Between a `user` and a `furigana` name the `user` one wins; otherwise the later one does. A `furigana` name is not learned while a stored name is the same character.
 - An `auto` name is hidden while a stored name is the same character: when the stored name's `ja` is the `auto` name's `guess`, when its `reading` romanizes to the `auto` spelling, or when its `en` or any of its `was` is close to the `auto` spelling (at least 0.8 similar). So an `auto` spelling the reader replaced never comes back.
@@ -156,7 +156,7 @@ Each work, as grouped by `context_key`, has a name list that the translator foll
 Response `200 application/json`, the work's names, `user` first, then `furigana`, then `auto`:
 
 ```json
-{ "context_key": "example.com/g/12345", "names": [{ "ja": "凛恋", "en": "Rinren", "reading": "りんれん", "source": "user", "kind": "name", "was": ["Riren"], "guess": "" }] }
+{ "context_key": "example.com/g/12345", "names": [{ "ja": "澄香", "en": "Sumire", "reading": "すみれ", "source": "user", "kind": "name", "was": ["Sumika"], "guess": "" }] }
 ```
 
 #### `PUT /v1/names/entry?context_key=<key>`
