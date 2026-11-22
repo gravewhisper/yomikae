@@ -9,16 +9,14 @@ import numpy as np
 from . import lama
 from .config import LAMA_PATH
 from .detect import column_width
-from .model import Bubble
+from .model import Box, Bubble
 
 LAMA_MAX_SIDE = 1024
 FLAT_STD = 8.0
 INK_DEV = 32
 MAX_CROSSINGS = 4
 MAX_OUTLINE = 0.15
-DILATION_OFFSET = 20
-SNAP_FRAC = 0.15
-CRF_SCALE = 2 / 3
+MASK_SCALE = 2 / 3
 
 
 Fill = Literal["flat", "textured"]
@@ -34,23 +32,6 @@ def load_model(device: str):
     return lama.load(LAMA_PATH, device)
 
 
-def crf_refine(rgb: np.ndarray, raw: np.ndarray) -> np.ndarray:
-    import pydensecrf.densecrf as dcrf
-    from pydensecrf.utils import unary_from_softmax
-
-    h, w = raw.shape
-    ph, pw = (-h) % 8, (-w) % 8
-    rgb = np.pad(rgb, ((0, ph), (0, pw), (0, 0)), mode="edge")
-    raw = np.pad(raw, ((0, ph), (0, pw)))
-    prob = np.stack([255 - raw, raw]).astype(np.float32) / 255.0
-    d = dcrf.DenseCRF2D(w + pw, h + ph, 2)
-    d.setUnaryEnergy(np.ascontiguousarray(unary_from_softmax(prob.reshape(2, -1))))
-    d.addPairwiseGaussian(sxy=1, compat=3, kernel=dcrf.DIAG_KERNEL, normalization=dcrf.NO_NORMALIZATION)
-    d.addPairwiseBilateral(sxy=23, srgb=7, rgbim=np.ascontiguousarray(rgb), compat=20, kernel=dcrf.DIAG_KERNEL, normalization=dcrf.NO_NORMALIZATION)
-    q = np.array(d.inference(5))
-    return (q.argmax(0).reshape(raw.shape)[:h, :w] * 255).astype(np.uint8)
-
-
 def glyph_size(seg: np.ndarray, vertical: bool, cells: int) -> int:
     ys, xs = np.nonzero(seg)
     bw, bh = int(xs.max() - xs.min() + 1), int(ys.max() - ys.min() + 1)
@@ -58,34 +39,49 @@ def glyph_size(seg: np.ndarray, vertical: bool, cells: int) -> int:
 
 
 def block_mask(image: np.ndarray, bubble: Bubble, core: np.ndarray, out: np.ndarray) -> None:
-    h, w = out.shape
+    from pydensecrf import densecrf
+    from pydensecrf.utils import unary_from_softmax
+
     block = bubble.block
-    mb = block.mask_box
-    seg = (block.mask > 0).astype(np.uint8)
-    if not seg.any():
-        return
-    text_size = glyph_size(seg > 0, block.vertical, len("".join(bubble.source.split())))
+    seg = block.mask > 0
     ys, xs = np.nonzero(seg)
-    grow = int(text_size * 0.1)
-    x0, y0 = max(0, mb.x0 + int(xs.min()) - grow), max(0, mb.y0 + int(ys.min()) - grow)
-    x1, y1 = min(w, mb.x0 + int(xs.max()) + 1 + grow), min(h, mb.y0 + int(ys.max()) + 1 + grow)
-    raw = np.zeros((y1 - y0, x1 - x0), np.uint8)
-    sx0, sy0, sx1, sy1 = max(x0, mb.x0), max(y0, mb.y0), min(x1, mb.x1), min(y1, mb.y1)
-    raw[sy0 - y0 : sy1 - y0, sx0 - x0 : sx1 - x0] = 255 * seg[sy0 - mb.y0 : sy1 - mb.y0, sx0 - mb.x0 : sx1 - mb.x0]
-    small = (max(1, round((x1 - x0) * CRF_SCALE)), max(1, round((y1 - y0) * CRF_SCALE)))
-    raw_s = np.where(cv2.resize(raw, small, interpolation=cv2.INTER_LINEAR) > 0, 255, 0).astype(np.uint8)
-    rgb_s = cv2.resize(image[y0:y1, x0:x1], small, interpolation=cv2.INTER_LINEAR)
-    snap = 2 * max(2, round(text_size * CRF_SCALE * SNAP_FRAC)) + 1
-    near = cv2.dilate(raw_s, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (snap, snap)))
-    refined = cv2.resize(crf_refine(cv2.bilateralFilter(rgb_s, 17, 80, 80), raw_s) & near, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR)
-    text = np.where((refined > 0) | (raw > 0), 255, 0).astype(np.uint8)
-    core[y0:y1, x0:x1] |= text
-    dilate = max((int((text_size * CRF_SCALE + DILATION_OFFSET) * 0.3) // 2) * 2 + 1, 3)
-    reach = round((dilate // 2) / CRF_SCALE)
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1, 2 * reach + 1))
-    grown = cv2.dilate(np.pad(text, reach), kernel)
-    cx0, cy0, cx1, cy1 = max(0, x0 - reach), max(0, y0 - reach), min(w, x1 + reach), min(h, y1 + reach)
-    out[cy0:cy1, cx0:cx1] |= grown[cy0 - y0 + reach : cy1 - y0 + reach, cx0 - x0 + reach : cx1 - x0 + reach]
+    if not len(ys):
+        return
+    h, w = image.shape[:2]
+    mb = block.mask_box
+    g = glyph_size(seg, block.vertical, sum(not ch.isspace() for ch in bubble.source))
+    win = Box(int(xs.min()) + mb.x0, int(ys.min()) + mb.y0, int(xs.max()) + 1 + mb.x0, int(ys.max()) + 1 + mb.y0).expand(int(0.1 * g), w, h)
+    raw = np.zeros((win.h, win.w), np.uint8)
+    raw[ys + mb.y0 - win.y0, xs + mb.x0 - win.x0] = 255
+
+    size = (max(1, round(win.w * MASK_SCALE)), max(1, round(win.h * MASK_SCALE)))
+    small = np.where(cv2.resize(raw, size, interpolation=cv2.INTER_LINEAR) > 0, 255, 0).astype(np.uint8)
+    crop = cv2.resize(image[win.y0 : win.y1, win.x0 : win.x1], size, interpolation=cv2.INTER_LINEAR)
+    crop = cv2.bilateralFilter(crop, 17, 80, 80)
+
+    sh, sw = small.shape
+    ph, pw = (-sh) % 8, (-sw) % 8
+    rgb = np.ascontiguousarray(np.pad(crop, ((0, ph), (0, pw), (0, 0)), mode="edge"))
+    m = np.pad(small, ((0, ph), (0, pw))).astype(np.float32) / 255.0
+    crf = densecrf.DenseCRF2D(sw + pw, sh + ph, 2)
+    crf.setUnaryEnergy(unary_from_softmax(np.stack([1 - m, m]).astype(np.float32)))
+    crf.addPairwiseGaussian(sxy=1, compat=3, kernel=densecrf.DIAG_KERNEL, normalization=densecrf.NO_NORMALIZATION)
+    crf.addPairwiseBilateral(sxy=23, srgb=7, rgbim=rgb, compat=20, kernel=densecrf.DIAG_KERNEL, normalization=densecrf.NO_NORMALIZATION)
+    labels = np.argmax(np.array(crf.inference(5)), 0).reshape(sh + ph, sw + pw)[:sh, :sw]
+    refined = np.where(labels == 1, 255, 0).astype(np.uint8)
+
+    near = 2 * max(2, round(g * MASK_SCALE * 0.15)) + 1
+    refined &= cv2.dilate(small, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (near, near)))
+    back = cv2.resize(refined, (win.w, win.h), interpolation=cv2.INTER_LINEAR)
+    tight = np.where((back > 0) | (raw > 0), 255, 0).astype(np.uint8)
+    core[win.y0 : win.y1, win.x0 : win.x1] |= tight
+
+    k = max(3, (int((g * MASK_SCALE + 20) * 0.3) // 2) * 2 + 1)
+    r = round((k // 2) / MASK_SCALE)
+    grown = cv2.dilate(np.pad(tight, r), cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+    reach = win.expand(r, w, h)
+    oy, ox = reach.y0 - win.y0 + r, reach.x0 - win.x0 + r
+    out[reach.y0 : reach.y1, reach.x0 : reach.x1] |= grown[oy : oy + reach.h, ox : ox + reach.w]
 
 
 def text_mask(image: np.ndarray, bubbles: list[Bubble]) -> tuple[np.ndarray, np.ndarray]:

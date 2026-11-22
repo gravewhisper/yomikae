@@ -224,31 +224,32 @@ def cut_words(out: list[str]) -> set[int]:
     return {j for i in range(len(out) - 1) if CUT_END.search(out[i]) and CUT_START.match(out[i + 1]) for j in (i, i + 1)}
 
 
-async def attempt(translator: Translator, lines: list[str], context: Context) -> list[str] | Misaligned:
+async def aligned(translator: Translator, lines: list[str], context: Context, unread: list[str]) -> list[str]:
     try:
         return await translator.translate(lines, context)
-    except Misaligned as e:
-        return e
+    except Misaligned as error:
+        return await realign(translator, lines, context, unread, error)
 
 
-async def aligned(translator: Translator, lines: list[str], context: Context, unread: list[str]) -> list[str]:
-    out = await attempt(translator, lines, context)
-    return out if isinstance(out, list) else await split(translator, lines, context, unread, out)
-
-
-async def split(translator: Translator, lines: list[str], context: Context, unread: list[str], error: Misaligned) -> list[str]:
+async def realign(translator: Translator, lines: list[str], context: Context, unread: list[str], error: Misaligned) -> list[str]:
     if len(lines) == 1:
         unread.append(str(error))
         return [""]
     mid = len(lines) // 2
-    parts = [(lines[:mid], subset(context, range(mid))), (lines[mid:], subset(context, range(mid, len(lines))))]
-    tries = [await attempt(translator, part, ctx) for part, ctx in parts]
-    if all(isinstance(t, Misaligned) and reply_items(str(t)) is None for t in tries):
+    halves = []
+    for indices in (range(mid), range(mid, len(lines))):
+        part, part_context = [lines[i] for i in indices], subset(context, indices)
+        try:
+            result: list[str] | Misaligned = await translator.translate(part, part_context)
+        except Misaligned as e:
+            result = e
+        halves.append((part, part_context, result))
+    if all(isinstance(result, Misaligned) and reply_items(str(result)) is None for _, _, result in halves):
         unread.append(str(error))
         return [""] * len(lines)
     out: list[str] = []
-    for (part, ctx), t in zip(parts, tries):
-        out += t if isinstance(t, list) else await split(translator, part, ctx, unread, t)
+    for part, part_context, result in halves:
+        out += await realign(translator, part, part_context, unread, result) if isinstance(result, Misaligned) else result
     return out
 
 

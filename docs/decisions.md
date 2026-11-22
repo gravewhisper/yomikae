@@ -310,11 +310,21 @@ The same pages took 1.4 to 4.6 s on a quiet CPU in [performance.md](performance.
 
 **Why.** The extension does nothing without the server and an LLM running on your own computer. A store build would also contain only the adapters in this repo, while a local build compiles in your own.
 
-## GPL-3.0-only
+## MIT License
 
-**Decision.** Yomikae is licensed GPL-3.0-only.
+**Decision.** Since 2026-11-22 Yomikae is licensed under the MIT License.
 
-**Why.** Parts of the server are ported from manga-image-translator, whose `pyproject.toml` declares GPL-3.0-only. [server/README.md](../server/README.md#credits) names each ported file.
+**Why.** MIT lets anyone reuse the code, including in projects under other licenses. Six parts of the server had been ported from manga-image-translator, under that project's license, and were replaced as below. Every other line had one author, who could relicense it.
+
+**How the ported code was replaced.**
+
+- `lama.py` was ported again from the original LaMa repository, advimman/lama, which is Apache-2.0. It keeps the module names so the `lama_large_512px.ckpt` keys still load, and its output tensors are identical to the old port's on the CPU and the GPU. Its Apache notice is at the top of the file and the license is in `server/licenses/`.
+- The other five were rewritten clean room. One agent, who had read the ported code, wrote a description of what each one does, with its numeric settings and no code. A second agent, who never saw the ported code, the git history, or manga-image-translator, wrote the new code from that description alone. The five are the text mask refinement and its growth in `inpaint.block_mask`, `detect.uncovered_lines`, the inverted detection pass in `detect.detect`, `translate.aligned`, and the source-size floor in `typeset`.
+
+**Known limits.**
+
+- The numeric settings of the CRF refinement, the mask growth, and the line recovery are still manga-image-translator's values. Settings like these are parameters, not expression, and no development page set was at hand to tune new ones.
+- The models are not covered by this license. They are downloaded at install and are not in the repo. comic-text-detector is GPL-3.0, and the balloon segmenter was trained on non-commercial data. [credits.md](credits.md) lists each.
 
 ## Anime Ace when you have it, Shantell Sans otherwise
 

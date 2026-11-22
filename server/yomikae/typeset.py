@@ -44,8 +44,8 @@ NOTCHES = 2
 OUTLINE_RING = 3
 OUTLINE_INK = 0.3
 HYPHEN_FLOOR = 0.75
-SOURCE_SCALE = 0.8
 SOURCE_CAP = 64
+SOURCE_SHARE = 0.8
 CAPS_PITCH = 1.45
 LIGHT = 200
 MIN_LIGHT = 0.3
@@ -732,7 +732,7 @@ class Piece:
     source: int
 
     def lifted(self, size: int) -> int:
-        return max(size, min(self.largest[1].size, self.source))
+        return max(size, min(self.source, self.largest[1].size))
 
     def refit(self, cap: int, floor: int = MIN_SIZE) -> tuple[Region, Layout]:
         return fit_bubble(self.text, (self.largest[0], self.regions[1]), self.style, cap, floor, self.names)
@@ -759,7 +759,7 @@ def typeset(lettering: Lettering, inpainted: np.ndarray, bubbles: list[Bubble]) 
         shout = glyph if is_shout(bubble, glyph, regions[0].burst) else None
         style = lettering.shout if shout else lettering.dialogue
         text = style.display(bubble.translation)
-        source = min(SOURCE_CAP, round(px * SOURCE_SCALE))
+        source = min(SOURCE_CAP, round(px * SOURCE_SHARE))
         top = max(round(MAX_SIZE * (SHOUT_GLYPH_CAP if shout else 1 + BAND)), source)
         names = lining.names(bubble.translation)
         largest = fit_bubble(text, regions, style, top, names=names)

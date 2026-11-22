@@ -2,7 +2,7 @@
 
 # Yomikae
 
-[![license: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Chrome: MV3 extension](https://img.shields.io/badge/Chrome-MV3%20extension-4285F4?logo=googlechrome&logoColor=white)
 ![Python: 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
@@ -222,7 +222,7 @@ These are planned but not built yet:
 
 ## License
 
-Yomikae is licensed under GPL-3.0-only, see [LICENSE](LICENSE). Parts of the server are ported from manga-image-translator under the same license. The demo images are CC BY-NC 4.0, like the OpenMantra dataset they come from. [docs/credits.md](docs/credits.md) has the details.
+Yomikae is licensed under the MIT License, see [LICENSE](LICENSE). The LaMa inpainting network in `server/yomikae/lama.py` is adapted from advimman/lama under Apache-2.0. The demo images are CC BY-NC 4.0, like the OpenMantra dataset they come from. [docs/credits.md](docs/credits.md) has the details.
 
 ## Disclaimer
 

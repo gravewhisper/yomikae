@@ -1,7 +1,7 @@
 {
   "name": "yomikae-extension",
   "private": true,
-  "license": "GPL-3.0-only",
+  "license": "MIT",
   "type": "module",
   "imports": {
     "#adapter": "./src/adapter.ts"

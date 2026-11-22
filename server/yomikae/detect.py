@@ -364,18 +364,19 @@ def join_split_lines(boxes: list[Box], lines: np.ndarray) -> list[Box]:
 
 def uncovered_lines(prob: np.ndarray, seg: np.ndarray, boxes: list[tuple[float, float, float, float]], weak: np.ndarray) -> list[tuple[int, int, int, int]]:
     h, w = prob.shape
-    weak = weak.reshape(-1, 4)
-    covered = np.zeros(prob.shape, bool)
+    covered = np.zeros((h, w), bool)
     for x0, y0, x1, y1 in boxes:
         covered[max(0, int(y0)) : int(y1) + 1, max(0, int(x0)) : int(x1) + 1] = True
     n, labels, stats, _ = cv2.connectedComponentsWithStats((prob > LINE_THRESH).astype(np.uint8), connectivity=8)
+    hidden = np.bincount(labels[covered], minlength=n)
+    mass = np.bincount(labels.ravel(), weights=prob.ravel(), minlength=n)
     parts = []
     for i in range(1, n):
-        x, y, cw, ch, area = (int(v) for v in stats[i])
-        if area < LINE_MIN_PIXELS or covered[labels == i].mean() >= 0.5:
+        x, y, cw, ch, count = (int(v) for v in stats[i])
+        if count < LINE_MIN_PIXELS or 2 * hidden[i] >= count:
             continue
-        grow = round(cw * ch * LINE_UNCLIP / (2 * (cw + ch)))
-        parts.append((Box(x, y, x + cw, y + ch).expand(grow, w, h), area, float(prob[labels == i].sum()), min(cw, ch)))
+        d = round(cw * ch * LINE_UNCLIP / (2 * (cw + ch)))
+        parts.append((Box(x, y, x + cw, y + ch).expand(d, w, h), count, float(mass[i]), min(cw, ch)))
     group = list(range(len(parts)))
 
     def root(p: int) -> int:
@@ -385,15 +386,20 @@ def uncovered_lines(prob: np.ndarray, seg: np.ndarray, boxes: list[tuple[float, 
 
     for i, (a, _, _, ta) in enumerate(parts):
         for j, (b, _, _, tb) in enumerate(parts[:i]):
-            reach = min(ta, tb)
-            if a.x0 - reach < b.x1 and b.x0 - reach < a.x1 and a.y0 - reach < b.y1 and b.y0 - reach < a.y1:
-                group[root(i)] = root(j)
+            t = min(ta, tb)
+            if a.x0 - t < b.x1 and b.x0 - t < a.x1 and a.y0 - t < b.y1 and b.y0 - t < a.y1:
+                ra, rb = root(i), root(j)
+                group[max(ra, rb)] = min(ra, rb)
+    members: dict[int, list[int]] = {}
+    for i in range(len(parts)):
+        members.setdefault(root(i), []).append(i)
+    weak = weak.reshape(-1, 4)
     out = []
-    for g in {root(i) for i in range(len(parts))}:
-        members = [p for i, p in enumerate(parts) if root(i) == g]
-        box = Box(min(m[0].x0 for m in members), min(m[0].y0 for m in members), max(m[0].x1 for m in members), max(m[0].y1 for m in members))
-        area = sum(m[1] for m in members)
-        score = sum(m[2] for m in members) / area
+    for first in sorted(members):
+        group_parts = [parts[i] for i in members[first]]
+        box = Box(min(p[0].x0 for p in group_parts), min(p[0].y0 for p in group_parts), max(p[0].x1 for p in group_parts), max(p[0].y1 for p in group_parts))
+        area = sum(p[1] for p in group_parts)
+        score = sum(p[2] for p in group_parts) / area
         support = float(seg[box.y0 : box.y1, box.x0 : box.x1].mean())
         if area >= LINE_GROUP_PIXELS and score >= LINE_SCORE and support >= LINE_SEG_SUPPORT and (share_inside(box, weak) >= LINE_IN_BLOCK).any():
             out.append((box.x0, box.y0, box.x1, box.y1))
@@ -434,25 +440,25 @@ def detect(session, image: np.ndarray) -> list[TextBlock]:
     blk, seg, det, r, nw, nh = infer(session, image)
     inv_blk, inv_seg, inv_det, _, _, _ = infer(session, 255 - image)
     seg, lines = seg > SEG_THRESH, det > LINE_THRESH
+    inv_seg, inv_lines = inv_seg > SEG_THRESH, inv_det > LINE_THRESH
 
     xyxy, _ = decode_blocks(blk)
     found = [xyxy, np.array(uncovered_lines(det, seg, xyxy.tolist(), candidates(blk, LINE_BLOCK_FLOOR)), np.float32).reshape(-1, 4)]
     gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
     small = cv2.resize(gray, (nw, nh), interpolation=cv2.INTER_AREA)
-    inv_text = (inv_seg > SEG_THRESH).astype(np.uint8)
-    _, inv_labels, inv_stats, _ = cv2.connectedComponentsWithStats(inv_text, connectivity=8)
+    _, inv_labels, inv_stats, _ = cv2.connectedComponentsWithStats(inv_seg.astype(np.uint8), connectivity=8)
     for x0, y0, x1, y1 in decode_blocks(inv_blk)[0]:
         box = Box(int(max(0, x0)), int(max(0, y0)), int(min(nw, x1)), int(min(nh, y1)))
-        if not box.w or not box.h or (small[box.y0 : box.y1, box.x0 : box.x1] < 128).mean() < INVERTED_DARK:
+        if box.w <= 0 or box.h <= 0 or (small[box.y0 : box.y1, box.x0 : box.x1] < 128).mean() < INVERTED_DARK:
             continue
-        if len(xyxy) and (iou(box, xyxy) > INVERTED_IOU).any():
+        if len(xyxy) and iou(box, xyxy).max() > INVERTED_IOU:
             continue
-        for i in set(np.unique(inv_labels[box.y0 : box.y1, box.x0 : box.x1])) - {0}:
-            cx, cy, cw, ch, _ = (int(v) for v in inv_stats[i])
-            box = Box(min(box.x0, cx), min(box.y0, cy), max(box.x1, cx + cw), max(box.y1, cy + ch))
+        touched = np.unique(inv_labels[box.y0 : box.y1, box.x0 : box.x1])
+        st = inv_stats[touched[touched > 0]]
+        box = Box(int(st[:, 0].min(initial=box.x0)), int(st[:, 1].min(initial=box.y0)), int((st[:, 0] + st[:, 2]).max(initial=box.x1)), int((st[:, 1] + st[:, 3]).max(initial=box.y1)))
         found.append(np.array([box.as_list()], np.float32))
-        seg[box.y0 : box.y1, box.x0 : box.x1] |= inv_seg[box.y0 : box.y1, box.x0 : box.x1] > SEG_THRESH
-        lines[box.y0 : box.y1, box.x0 : box.x1] |= inv_det[box.y0 : box.y1, box.x0 : box.x1] > LINE_THRESH
+        seg[box.y0 : box.y1, box.x0 : box.x1] |= inv_seg[box.y0 : box.y1, box.x0 : box.x1]
+        lines[box.y0 : box.y1, box.x0 : box.x1] |= inv_lines[box.y0 : box.y1, box.x0 : box.x1]
 
     seg_mask = cv2.resize(seg.astype(np.uint8) * 255, (w, h), interpolation=cv2.INTER_NEAREST)
     line_map = cv2.resize(lines.astype(np.uint8), (w, h), interpolation=cv2.INTER_NEAREST)

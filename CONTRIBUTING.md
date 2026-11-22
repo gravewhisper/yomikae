@@ -68,4 +68,4 @@ These come from [AGENTS.md](AGENTS.md), and pull requests that break them can't 
 
 ## License
 
-Yomikae is licensed under GPL-3.0-only. By sending a pull request, you agree that your contribution is licensed the same way.
+Yomikae is licensed under the MIT License. By sending a pull request, you agree that your contribution is licensed the same way.

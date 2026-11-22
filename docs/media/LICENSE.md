@@ -8,4 +8,4 @@ Changes were made. The Japanese text was machine-translated into English, remove
 
 ## icon.png
 
-`icon.png` and `extension/static/icons/` are original artwork made for this project and licensed with the code under GPL-3.0-only. The 読 glyph is drawn with Noto Sans CJK (SIL Open Font License).
+`icon.png` and `extension/static/icons/` are original artwork made for this project and licensed with the code under the MIT License. The 読 glyph is drawn with Noto Sans CJK (SIL Open Font License).
