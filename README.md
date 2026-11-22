@@ -53,9 +53,7 @@ Pick the block that matches your computer.
 ```sh
 git clone https://github.com/gravewhisper/yomikae.git
 cd yomikae/server
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cu128
-uv pip install --python .venv/bin/python -e '.[gpu,test]'
+uv sync --locked --python 3.12 --extra gpu --extra test
 ```
 
 **Without one** (about 2 GB of disk, Claude or Codex only):
@@ -63,9 +61,7 @@ uv pip install --python .venv/bin/python -e '.[gpu,test]'
 ```sh
 git clone https://github.com/gravewhisper/yomikae.git
 cd yomikae/server
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
-uv pip install --python .venv/bin/python -e '.[test]'
+uv sync --locked --python 3.12 --extra cpu --extra test
 ```
 
 Stay in `yomikae/server` for steps 3 to 5.

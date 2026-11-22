@@ -5,8 +5,6 @@ description = "Local server that translates Japanese manga pages to English in p
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
-  "torch>=2.11,<2.12",
-  "onnxruntime-gpu>=1.31,<1.32",
   "manga-ocr>=0.1.14,<0.2",
   "transformers>=5.20,<5.21",
   "fugashi>=1.3",
@@ -26,9 +24,15 @@ dependencies = [
 [project.optional-dependencies]
 test = ["pytest>=8.3"]
 gpu = [
+  "torch>=2.11,<2.12",
+  "onnxruntime-gpu>=1.31,<1.32",
   "nvidia-cuda-runtime~=13.0; sys_platform == 'linux'",
   "nvidia-cublas~=13.0; sys_platform == 'linux'",
   "nvidia-cuda-nvrtc~=13.0; sys_platform == 'linux'",
+]
+cpu = [
+  "torch>=2.11,<2.12",
+  "onnxruntime>=1.31,<1.32",
 ]
 bench = ["sacrebleu>=2.4"]
 
@@ -38,6 +42,25 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["yomikae"]
+
+[tool.uv]
+conflicts = [[{ extra = "gpu" }, { extra = "cpu" }]]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu128", extra = "gpu" },
+  { index = "pytorch-cpu", extra = "cpu" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

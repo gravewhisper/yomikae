@@ -54,15 +54,13 @@ All configuration is environment variables. There is no settings UI.
 
 ## Install
 
-From `server/` in a fresh clone, create the venv and install the server with [uv](https://docs.astral.sh/uv/):
+From `server/` in a fresh clone, create `.venv` and install the server with [uv](https://docs.astral.sh/uv/). It installs the versions pinned in `uv.lock`:
 
 ```sh
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cu128
-uv pip install --python .venv/bin/python -e '.[gpu,test]'
+uv sync --locked --python 3.12 --extra gpu --extra test
 ```
 
-With no NVIDIA GPU, install `torch` from `https://download.pytorch.org/whl/cpu` and leave out the `gpu` extra, then run with `YOMIKAE_LOW_VRAM=1`.
+The `gpu` extra takes CUDA 12.8 `torch` and `onnxruntime-gpu`. With no NVIDIA GPU, use `--extra cpu` instead, which takes CPU `torch` and `onnxruntime`, then run with `YOMIKAE_LOW_VRAM=1`. The two extras cannot be installed together. After you change a dependency in `pyproject.toml`, run `uv lock` and commit `uv.lock` with it.
 
 `pydensecrf` is built from source from a pinned git commit, so the install needs `git` and a C++ compiler. Add the `bench` extra, as in `-e '.[test,bench]'`, to install `sacrebleu` for `tools/translation_bench.py`.
 

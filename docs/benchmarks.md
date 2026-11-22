@@ -60,7 +60,7 @@ OpenMantra is by Ryota Hinami, Shonosuke Ishiwatari, Kazuhiko Yasuda, and Yusuke
 The bench needs the server's `bench` extra, which installs `sacrebleu`, and COMET in a second venv at `server/.venv-comet`. Set them up once, from `server/`:
 
 ```sh
-uv pip install --python .venv/bin/python -e '.[bench]'
+uv sync --locked --extra gpu --extra test --extra bench
 uv venv --python 3.12 .venv-comet
 uv pip install --python .venv-comet/bin/python unbabel-comet
 ```

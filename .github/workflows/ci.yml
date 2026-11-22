@@ -65,10 +65,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-          cache-dependency-glob: server/pyproject.toml
-      - run: uv venv --python 3.12 .venv
-      - run: uv pip install --python .venv/bin/python torch --index-url https://download.pytorch.org/whl/cpu
-      - run: uv pip install --python .venv/bin/python -e '.[test]'
+          cache-dependency-glob: server/uv.lock
+      - run: uv sync --locked --python 3.12 --extra cpu --extra test
       - run: .venv/bin/python -m pytest -q -m "not models"
         env:
           HF_HUB_OFFLINE: "1"
