@@ -129,6 +129,18 @@ An honorific is added only where the Japanese has one. Gemma used to add one to 
 
 **Tried and rejected.** Naming kinship terms in the prompt. With "keep terms like お兄ちゃん as Onii-chan", Gemma 4 12B and Hy-MT2 7B both wrote Onii-chan, big brother, for お姉ちゃん, big sister: on boureisougi, Gemma did so on 7 to 14 lines per run over 3 runs. Naming お姉ちゃん as Onee-chan too stopped that, but then Gemma wrote Suzume-san for ツバメさん, her sister, in 5 of 6 runs. With no kinship example, both mistakes were gone in 3 of 3 runs, and お姉ちゃん reads as big sister.
 
+## Korean reads through Kemolate and keeps address terms
+
+**Decision.** A page sent with `source_lang=ko` is read by Kemolate OCR, every text block is treated as horizontal and read left to right, and the translator gets a Korean prompt. Each language is one `Language` record in `server/yomikae/language.py`: its letters, reading direction, whether its text can run vertically, its OCR reader, whether it has furigana, and its prompt. The pipeline reads those fields and never branches on a language code, and the Japanese record reproduces the old behavior byte for byte.
+
+**Why Kemolate.** On 15 Korean webtoon slices with 37 lines, Kemolate read 35 of 37 lines exactly, with a character error rate of 1.1 to 1.8%. PaddleOCR's Korean model read 33 to 34 and kept few spaces. hayai wrote Japanese and Chinese characters into Korean lines. comic-text-detector missed 2 of the 37 lines, so detection stays as it is. Kemolate drops the spaces between words, so the prompt tells the translator that the Korean usually has none.
+
+**Why horizontal.** comic-text-detector calls a narrow Korean bubble of short stacked lines vertical. On synthetic bubbles of 3 or 4 short lines, it did so for 8 of 9. Korean webtoons print dialogue horizontally, so the Korean record turns vertical blocks off in detection and in text recovered from an empty balloon.
+
+**Address terms.** The English keeps Korean address terms romanized, as words of their own: hyung, noona, oppa, unnie, sunbae, hoobae, ahjussi, and ahjumma. The suffixes -ssi and -nim join the name or title with a hyphen (Minjun-ssi, Sajang-nim) and never become Mr., Ms., Sir, or Boss. This follows the Japanese honorifics entry above: it keeps how characters address each other, in the spelling scanlation readers know. Other family words, including 할머니 and 할아버지, become plain English (Grandma, Grandpa), the same rule as Japanese family words without an honorific. Names are romanized in Revised Romanization, in the order the Korean gives them. The prompt asks the English to keep the gap between casual speech and polite speech.
+
+**Not done.** The Japanese filters for sound effects, credits, and stuttered names look for kana, kanji, or Japanese honorifics, so they never fire on Hangul, and no Korean versions were written. Name learning leans on Japanese honorifics and furigana in the same way and has not been checked on Korean pages. Names set by hand reach the Korean prompt as they reach the Japanese one. The Korean prompt has no reading note, because Korean has no furigana. The Korean prompt has not been measured against a reference, because no Korean set with English references exists here yet.
+
 ## A whole page goes to the translator in one call
 
 **Decision.** The translator gets every line of a page in one call. The call also carries up to 2 earlier pages of the same work, taken only from the 5 pages before this one, the work's name list (see the names entry below), and the lines of this page that already have a translation. A line that matches a line already translated in the same work reuses that translation and is not sent.

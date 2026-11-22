@@ -115,6 +115,12 @@ The evidence for Chinese and Korean into English is thin. WMT25 had no ja→en, 
 - **Korean.** No ko→en number was found for any model under 16 GB. The Korean-native small models (EXAONE-4.0-1.2B, kanana-2-3b, HyperCLOVAX-SEED) have no translation evidence and non-standard licenses.
 - **Japanese-only models.** The shisa, Sugoi, and VNTL models won't help with manhwa or manhua.
 
+### Reading Korean
+
+A page sent with `source_lang=ko` is read by [Kemolate OCR](https://huggingface.co/azeranex/kemolate-ocr) (CC BY-SA 4.0), an ONNX encoder and decoder of about 500 MB that the server runs with onnxruntime and tokenizers. The README pins revision `b80bfc71ea0b5a649f57aa720fd3375e8f4e8f62`, the one measured below, because the model card warns that `main` moves. The files go in `server/models/kemolate-ocr/`. Detection and erasing use the same models as Japanese.
+
+On 15 Korean webtoon slices with 37 lines, Kemolate read 35 lines exactly, with a character error rate of 1.1 to 1.8%. It drops the spaces between words. PaddleOCR's Korean model read 33 to 34 lines and kept few spaces, and hayai, a Japanese reader, wrote Japanese and Chinese characters into Korean lines. [decisions.md](decisions.md#korean-reads-through-kemolate-and-keeps-address-terms) has the details. The reader sits behind a `recognize(crop)` interface in `server/yomikae/ocr.py`, so PaddleOCR could replace it.
+
 OpenMantra is Japanese only, so choosing one model for all three languages needs a manhwa and manhua set with references, or an LLM-judge pass.
 
 ## Measured on our benchmark

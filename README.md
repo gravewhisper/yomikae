@@ -89,6 +89,15 @@ rm -rf best.pt .venv-export
 
 It ends with `export success`. A fourth model, for reading Japanese, downloads itself the first time the server starts.
 
+To translate Korean webtoons too, download Kemolate OCR, which reads Korean (about 500 MB, CC BY-SA 4.0). The server loads it with the first Korean page, and without it Korean pages fail with `reader_missing`:
+
+```sh
+mkdir -p models/kemolate-ocr
+for f in encoder_model.onnx decoder_model.onnx tokenizer.json; do
+  curl -L -o models/kemolate-ocr/$f https://huggingface.co/azeranex/kemolate-ocr/resolve/b80bfc71ea0b5a649f57aa720fd3375e8f4e8f62/$f
+done
+```
+
 ### 4. Start the server
 
 Pick the line for your translator and computer:
