@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import secrets
 import time
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -98,8 +99,9 @@ async def on_http(_: Request, e: StarletteHTTPException):
 
 @app.exception_handler(Exception)
 async def on_internal(_: Request, e: Exception):
-    log.exception("internal error")
-    return error(500, "internal", repr(e))
+    request_id = secrets.token_hex(4)
+    log.exception("internal error %s", request_id)
+    return error(500, "internal", f"internal error, see the server log for {request_id}")
 
 
 @app.get("/v1/health")

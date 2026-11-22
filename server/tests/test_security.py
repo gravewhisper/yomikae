@@ -240,3 +240,22 @@ def test_a_huge_page_index_is_a_bad_request_not_a_crash(client):
     r = client.post(f"/v1/pages/{hashlib.sha256(data).hexdigest()}/retranslate", files={"image": ("p.png", data, "image/png")}, data={"request": json.dumps(ask)})
     assert r.status_code == 400, r.text
     assert r.json()["error"] == "bad_request"
+
+
+def test_an_internal_error_hides_the_exception_from_the_client(client, monkeypatch, caplog):
+    class Broken:
+        name = "broken"
+
+        async def health(self):
+            raise RuntimeError("/home/someone/models/secret.onnx")
+
+    monkeypatch.setattr(client.app.state.engine, "translator", Broken())
+    quiet = TestClient(client.app, base_url="http://127.0.0.1:7878", client=("127.0.0.1", 50000), raise_server_exceptions=False)
+    r = quiet.get("/v1/health")
+    assert r.status_code == 500
+    body = r.json()
+    assert body["error"] == "internal"
+    assert "secret" not in body["detail"] and "RuntimeError" not in body["detail"]
+    request_id = body["detail"].rsplit(" ", 1)[-1]
+    assert any(request_id in record.getMessage() and record.exc_info for record in caplog.records)
+
