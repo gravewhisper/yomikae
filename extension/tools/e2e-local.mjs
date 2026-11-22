@@ -112,6 +112,32 @@ try {
   const reset = await page.evaluate(`(async () => { window.resetSrc(0); const sync = document.querySelectorAll('img.page')[0].getAttribute('src'); await new Promise(r => requestAnimationFrame(r)); return { sync, beforePaint: document.querySelectorAll('img.page')[0].src.startsWith('blob:') }; })()`);
   check(results, reset.beforePaint, 'framework src reset is re-applied before the next frame', reset);
 
+  const mockStats = async () => (await fetch(`http://127.0.0.1:${MOCK_PORT}/mock/stats`)).json();
+  const pickLang = (value) => popup.evaluate(`(() => { const s = document.getElementById('site-lang'); s.value = '${value}'; s.dispatchEvent(new Event('change')); })()`);
+  check(results, await popup.evaluate(`!document.getElementById('site-lang').hidden && document.getElementById('site-lang').value === 'auto'`), 'the popup shows the language select set to detect');
+  await pickLang('ko');
+  await page.send('Page.bringToFront');
+  let korean = await mockStats();
+  for (let i = 0; i < 100 && !(korean.byLang.ko ?? []).length; i++) korean = (await sleep(200), await mockStats());
+  await page.waitFor(`document.querySelectorAll('img.page')[0].src.startsWith('blob:')`, 20000);
+  check(results, (korean.byLang.ko ?? []).includes(`127.0.0.1:${SITE_PORT}`), 'choosing Korean in the popup translates the open tab again with source_lang=ko', korean.byLang);
+  check(results, (await sw.evaluate(`chrome.storage.local.get('sourceLang:127.0.0.1')`))['sourceLang:127.0.0.1'] === 'ko', 'the language choice is stored per site');
+  await pickLang('auto');
+  await sleep(300);
+  check(results, Object.keys(await sw.evaluate(`chrome.storage.local.get('sourceLang:127.0.0.1')`)).length === 0, 'choosing detect removes the stored choice');
+  await page.waitFor(`document.querySelectorAll('img.page')[0].src.startsWith('blob:')`, 20000);
+
+  const koTarget = await openTab(CDP_PORT, `${SITE}ko`);
+  const koPage = await attach(koTarget);
+  await koPage.send('Page.enable');
+  await koPage.waitFor(`document.querySelectorAll('img.page').length > 0 && document.querySelectorAll('img.page')[0].src.startsWith('blob:')`, 20000);
+  const koStats = await mockStats();
+  const koContext = `127.0.0.1:${SITE_PORT}/ko`;
+  check(results, (koStats.byLang.ko ?? []).includes(koContext) && !(koStats.byLang.ja ?? []).includes(koContext), 'a page with <html lang="ko"> is posted with source_lang=ko', koStats.byLang);
+  await koPage.screenshot(`${out}/local-3b-korean.png`);
+  koPage.close();
+  await page.send('Page.bringToFront');
+
   await page.evaluate(`document.getElementById('spa').scrollIntoView()`);
   await page.waitFor(`document.getElementById('spa').src.startsWith('blob:')`, 20000);
   const spaKnown = await page.evaluate(`(async () => { window.spaGo(3); await new Promise(r => requestAnimationFrame(r)); return document.getElementById('spa').src.startsWith('blob:'); })()`);

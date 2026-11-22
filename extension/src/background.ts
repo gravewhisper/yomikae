@@ -1,6 +1,7 @@
 import { imageReferers } from './adapters';
 import { getServerUrl, MAX_IMAGE_BYTES, parseHealth, parseReportReceipt, parseServerError, parseTranslatedPage, type TranslatedPage } from './contract';
 import { noAccessText, PORT_NAME, toBase64, type Broadcast, type ReportRequest, type SiteQuery, type RetranslateRequest, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
+import { DEFAULT_SOURCE_LANG, type SourceLang } from './languages';
 import { addImageHost, enableSite, reconcileSites, siteForUrl, sitesForGrants, type Site } from './sites';
 
 const MAX_IN_FLIGHT = 2;
@@ -379,6 +380,7 @@ async function translate(image: Blob, w: Want): Promise<Ready> {
   const form = new FormData();
   form.append('image', image, 'page');
   form.append('context_key', w.contextKey);
+  form.append('source_lang', w.sourceLang);
   if (w.pageIndex !== undefined) form.append('page_index', String(w.pageIndex));
   return readyFrom(server, await postToServer(server, '/v1/pages', form, TRANSLATE_TIMEOUT_MS), w.contextKey);
 }
@@ -402,8 +404,9 @@ async function readyFrom(server: string, res: Response, contextKey: string): Pro
   return { page, mime: rendered.headers.get('content-type') ?? 'image/webp', base64: toBase64(bytes), contextKey };
 }
 
-async function pageId(image: Blob): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', await image.arrayBuffer()));
+async function pageId(image: Blob, lang: SourceLang): Promise<string> {
+  const bytes = await (lang === DEFAULT_SOURCE_LANG ? image : new Blob([`${lang}\0`, image])).arrayBuffer();
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
@@ -413,7 +416,7 @@ function namesChanged(contextKey: string): void {
 }
 
 async function retranslate(port: chrome.runtime.Port, r: RetranslateRequest): Promise<void> {
-  const { key, contextKey, pageIndex } = r.want;
+  const { key, contextKey, pageIndex, sourceLang } = r.want;
   const refusal = localRefusal(port, r.want.candidates);
   if (refusal) return send(port, { type: 'retranslated', key, outcome: { ok: false, error: refusal } });
   try {
@@ -423,7 +426,8 @@ async function retranslate(port: chrome.runtime.Port, r: RetranslateRequest): Pr
     const form = new FormData();
     form.append('image', image, 'page');
     form.append('request', JSON.stringify({ context_key: contextKey, page_index: pageIndex, bubbles: r.bubbles, hint: r.hint, names: r.names }));
-    const res = await postToServer(server, `/v1/pages/${await pageId(image)}/retranslate`, form, TRANSLATE_TIMEOUT_MS);
+    form.append('source_lang', sourceLang);
+    const res = await postToServer(server, `/v1/pages/${await pageId(image, sourceLang)}/retranslate`, form, TRANSLATE_TIMEOUT_MS);
     const ready = await readyFrom(server, res, contextKey);
     if (r.names.length) {
       namesChanged(contextKey);
@@ -449,6 +453,7 @@ async function report(port: chrome.runtime.Port, r: ReportRequest): Promise<void
     form.append('page_url', r.pageUrl);
     form.append('image_url', r.imageUrl);
     form.append('context_key', r.want.contextKey);
+    form.append('source_lang', r.want.sourceLang);
     if (r.want.pageIndex !== undefined) form.append('page_index', String(r.want.pageIndex));
     form.append('note', r.note);
     form.append('job_state', r.jobState);

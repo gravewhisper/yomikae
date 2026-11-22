@@ -7,7 +7,8 @@ const TRANSLATOR_DOWN = process.env.MOCK_TRANSLATOR_DOWN === '1';
 const INTERNAL_PAGE = process.env.MOCK_INTERNAL_PAGE;
 const pages = new Map();
 const works = new Map();
-const stats = { posts: 0, cacheHits: 0, updated: 0, byContext: {}, requests: [], retranslates: [], namePuts: 0, refused: [] };
+const stats = { posts: 0, cacheHits: 0, updated: 0, byContext: {}, byLang: {}, requests: [], retranslates: [], namePuts: 0, refused: [] };
+const SOURCE_LANGS = ['ja', 'ko'];
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const LOOPBACK_CLIENTS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const NAME_JA = '在藤';
@@ -159,6 +160,10 @@ ${bubbles}
 
 const badRequest = (res, detail) => json(res, 400, { error: 'bad_request', detail });
 
+const sourceLang = (fields) => fields.source_lang?.toString() ?? 'ja';
+
+const pageIdOf = (image, lang) => createHash('sha256').update(lang === 'ja' ? image : Buffer.concat([Buffer.from(`${lang}\0`), image])).digest('hex');
+
 function refusal(req) {
   if (!LOOPBACK_CLIENTS.has(req.socket.remoteAddress)) return `requests must come from this computer, not ${req.socket.remoteAddress}`;
   const host = req.headers.host ?? '';
@@ -229,7 +234,9 @@ const server = createServer(async (req, res) => {
     const image = fields.image;
     const size = image && imageSize(image);
     if (!size) return json(res, 400, { error: 'bad_image', detail: 'could not read image size' });
-    if (createHash('sha256').update(image).digest('hex') !== retranslate[1]) return badRequest(res, 'page_id does not match the image');
+    const lang = sourceLang(fields);
+    if (!SOURCE_LANGS.includes(lang)) return badRequest(res, `unknown source_lang ${lang}`);
+    if (pageIdOf(image, lang) !== retranslate[1]) return badRequest(res, 'page_id does not match the image');
     let request;
     try {
       request = JSON.parse(fields.request?.toString() ?? '');
@@ -264,14 +271,17 @@ const server = createServer(async (req, res) => {
     const image = fields.image;
     const size = image && imageSize(image);
     if (!size) return json(res, 400, { error: 'bad_image', detail: 'could not read image size' });
+    const lang = sourceLang(fields);
+    if (!SOURCE_LANGS.includes(lang)) return badRequest(res, `unknown source_lang ${lang}`);
     if (TRANSLATOR_DOWN) return json(res, 503, { error: 'translator_unavailable', detail: 'mock translator down' });
-    const pageId = createHash('sha256').update(image).digest('hex');
+    const pageId = pageIdOf(image, lang);
     const contextKey = fields.context_key?.toString() ?? '';
     const pageIndex = fields.page_index ? Number(fields.page_index.toString()) : svgPage(image);
     if (String(pageIndex) === INTERNAL_PAGE) return json(res, 500, { error: 'internal', detail: 'mock internal error' });
     stats.posts++;
     stats.requests.push(`page ${pageIndex}`);
     (stats.byContext[contextKey] ??= []).push(pageIndex);
+    (stats.byLang[lang] ??= []).push(contextKey);
     const w = work(contextKey);
     let page = pages.get(pageId);
     const cached = !!page;

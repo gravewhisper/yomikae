@@ -1,4 +1,5 @@
 import type { NameKind, TranslatedPage } from './contract';
+import type { SourceLang } from './languages';
 
 export const PORT_NAME = 'yomikae';
 
@@ -9,6 +10,7 @@ export type Want = {
   url: string;
   candidates: string[];
   contextKey: string;
+  sourceLang: SourceLang;
   pageIndex?: number;
   position: number;
   priority: number;

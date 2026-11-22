@@ -1,6 +1,7 @@
 import { getServerUrl, parseHealth } from './contract';
 import type { TabCommand } from './messages';
 import { parseSiteMode } from './adapters';
+import { getSourceLangChoice, parseSourceLang, setSourceLangChoice } from './languages';
 import { getSiteMode, setSiteMode } from './site-modes';
 import { disableSite, enableSite, siteAccess, siteForPattern, siteForUrl, type Site, type SiteAccess } from './sites';
 import { parseWork, setWorkChoice, workChoice, type Work, type WorkChoice } from './works';
@@ -52,6 +53,7 @@ async function showSite(): Promise<void> {
   }
   const toggle = $<HTMLInputElement>('site-toggle');
   const mode = $<HTMLSelectElement>('site-mode');
+  const lang = $<HTMLSelectElement>('site-lang');
   $('site-name').textContent = site.label;
   const workToggle = $<HTMLInputElement>('work-toggle');
   let access = await siteAccess(site);
@@ -59,6 +61,7 @@ async function showSite(): Promise<void> {
   const render = () => {
     toggle.checked = access.state !== 'off';
     mode.hidden = !toggle.checked;
+    lang.hidden = !toggle.checked;
     showAccess(access);
     showWork(toggle.checked ? work : undefined);
     $('open-cast').hidden = !toggle.checked;
@@ -76,6 +79,7 @@ async function showSite(): Promise<void> {
     void setWorkChoice(changed, choice);
   };
   mode.value = await getSiteMode(site);
+  lang.value = (await getSourceLangChoice(site)) ?? 'auto';
   render();
   $('site').hidden = false;
   toggle.addEventListener('change', () => void onToggle(toggle, site, tab.id!).then(refresh));
@@ -91,6 +95,7 @@ async function showSite(): Promise<void> {
     const picked = parseSiteMode(mode.value);
     if (picked) void setSiteMode(site, picked);
   });
+  lang.addEventListener('change', () => void setSourceLangChoice(site, parseSourceLang(lang.value)));
 }
 
 async function tabWork(tabId: number): Promise<Work | undefined> {

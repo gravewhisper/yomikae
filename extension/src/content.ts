@@ -2,6 +2,7 @@ import { adapterFor, type SiteMode } from './adapters';
 import type { SiteAdapter } from './adapter';
 import type { PageJob, Redo, TranslatedPage } from './contract';
 import { fromBase64, HINT_MAX, noAccessText, PORT_NAME, type Broadcast, type NameFix, type ReportArea, type SiteQuery, type TabCommand, type ToBackground, type ToContent, type Want } from './messages';
+import { getSourceLangChoice, resolveSourceLang, watchSourceLangChoice, type SourceLang } from './languages';
 import { getSiteMode, watchSiteMode } from './site-modes';
 import type { Site } from './sites';
 import { loadWork, tabMode, watchWorkChoice, type TabMode, type Work } from './works';
@@ -34,15 +35,18 @@ if (!w.__yomikae) {
   w.__yomikae = true;
   const adapter = adapterFor(location.hostname);
   void Promise.all([chrome.runtime.sendMessage<SiteQuery, Site | null>({ type: 'site' }), loadWork(adapter, location)]).then(async ([site, work]) => {
-    if (site) start(site, adapter, await getSiteMode(site), work);
+    if (site) start(site, adapter, await getSiteMode(site), work, await getSourceLangChoice(site));
   });
 }
 
-function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialWork: Work | undefined): void {
+function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialWork: Work | undefined, initialLang: SourceLang | undefined): void {
   let siteMode = initialMode;
   let work = initialWork;
   let workId = work?.id;
   let mode: TabMode = tabMode(siteMode, work);
+  let langChoice = initialLang;
+  const resolvedLang = (): SourceLang => resolveSourceLang(langChoice, work?.language, document.documentElement.lang);
+  let sourceLang = resolvedLang();
   const resolvedMode = (): TabMode => (workId !== work?.id ? 'off' : tabMode(siteMode, work));
   const jobs = new Map<string, PageJob>();
   const wants = new Map<string, Want>();
@@ -60,7 +64,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
 
   const chips = createChips({ retry, translate, openPick, pickPoint, pickRect, submit: submitPick });
   const say = debugLog();
-  say('start', { site: site.id, mode, work, url: location.href });
+  say('start', { site: site.id, mode, work, sourceLang, url: location.href });
 
   function post(msg: ToBackground): void {
     if (!alive) return;
@@ -155,7 +159,11 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   async function makeWant(key: string, url: string, { position, pageIndex }: Place, img?: HTMLImageElement): Promise<Want> {
     const priority = Math.abs(position - currentPos);
     const contextKey = adapter.contextKey(location, img, url);
-    return { key, url, candidates: await adapter.fetchCandidates(url), contextKey, pageIndex, position, priority };
+    return { key, url, candidates: await adapter.fetchCandidates(url), contextKey, sourceLang, pageIndex, position, priority };
+  }
+
+  function keyOf(url: string): string {
+    return `${sourceLang}:${adapter.pageKey(url)}`;
   }
 
   function request(key: string, url: string, place: Place, img?: HTMLImageElement): void {
@@ -398,7 +406,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     if (known && img.isConnected && !elementsByKey.get(known.key)?.has(img)) link(img, known.key);
     const src = img.getAttribute('src') ? img.src : img.currentSrc;
     if (!src || src.startsWith('blob:') || src.startsWith('data:')) return;
-    const key = adapter.pageKey(src);
+    const key = keyOf(src);
     const t = tracked.get(img);
     if (t?.key === key) {
       showTranslated(img, false);
@@ -421,7 +429,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
   function layerOf(img: HTMLImageElement, t: Tracked): Layer | undefined {
     if (t.layer?.el.parentElement === img.parentElement) return t.layer;
     const el = [...(img.parentElement?.children ?? [])].find(
-      (c): c is HTMLElement => c !== img && c instanceof HTMLElement && cssUrls(getComputedStyle(c).backgroundImage).some((u) => adapter.pageKey(u) === t.key),
+      (c): c is HTMLElement => c !== img && c instanceof HTMLElement && cssUrls(getComputedStyle(c).backgroundImage).some((u) => keyOf(u) === t.key),
     );
     t.layer = el && { el, original: el.style.backgroundImage };
     return t.layer;
@@ -548,6 +556,25 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     pick = undefined;
   }
 
+  function setSourceLang(next: SourceLang): void {
+    if (next === sourceLang || !alive) return;
+    const had = [...elementsByKey].flatMap(([key, set]) => (jobs.has(key) ? [...set] : []));
+    sourceLang = next;
+    stopWork();
+    for (const job of jobs.values()) if (job.state === 'ready') URL.revokeObjectURL(job.renderedBlobUrl);
+    jobs.clear();
+    wants.clear();
+    fellBack.clear();
+    document.querySelectorAll('img').forEach(scan);
+    for (const img of had) {
+      const t = tracked.get(img);
+      if (t && !jobs.has(t.key)) request(t.key, t.originalSrc, placeOf(img), img);
+    }
+    current = undefined;
+    updateCurrent();
+    chips.render();
+  }
+
   function syncWork(): void {
     const id = adapter.workId?.(location);
     if (id === workId || !alive) return;
@@ -555,6 +582,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     work = undefined;
     unwatchWork();
     unwatchWork = () => undefined;
+    if (!id) setSourceLang(resolvedLang());
     setMode(resolvedMode());
     if (id) void loadWork(adapter, location).then(applyWork);
   }
@@ -567,6 +595,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
       work = { ...work, choice };
       setMode(resolvedMode());
     });
+    setSourceLang(resolvedLang());
     setMode(resolvedMode());
   }
 
@@ -581,7 +610,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     if (!t || !adapter.prefetch) return;
     const upcoming = await adapter.prefetch(t.originalSrc, location, img);
     for (const u of upcoming) {
-      const key = adapter.pageKey(u.url);
+      const key = keyOf(u.url);
       if (alive && !jobs.has(key)) request(key, u.url, { position: u.pageIndex, pageIndex: u.pageIndex }, img);
     }
   }
@@ -682,6 +711,10 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     siteMode = next;
     setMode(resolvedMode());
   });
+  const unwatchLang = watchSourceLangChoice(site, (choice) => {
+    langChoice = choice;
+    setSourceLang(resolvedLang());
+  });
   let unwatchWork: () => void = () => undefined;
   if (work) applyWork(work);
   document.dispatchEvent(new Event(TAKEOVER));
@@ -706,6 +739,7 @@ function start(site: Site, adapter: SiteAdapter, initialMode: SiteMode, initialW
     try {
       chrome.runtime.onMessage.removeListener(onCommand);
       unwatchMode();
+      unwatchLang();
       unwatchWork();
       port?.disconnect();
     } catch {}

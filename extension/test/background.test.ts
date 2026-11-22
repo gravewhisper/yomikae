@@ -44,7 +44,7 @@ async function worker(granted: string[] = []) {
 
 const states = (received: ToContent[]) => received.map((m) => (m.type === 'progress' ? m.state : m.type));
 const image = () => new Response(new Uint8Array([1]), { headers: { 'content-type': 'image/png' } });
-const want = (url: string): Want => ({ key: url, url, candidates: [url], contextKey: 'c', pageIndex: 1, position: 1, priority: 0 });
+const want = (url: string): Want => ({ key: url, url, candidates: [url], contextKey: 'c', sourceLang: 'ja', pageIndex: 1, position: 1, priority: 0 });
 
 describe('image fetching', () => {
   it('refuses images on this computer for a page on the web', async () => {
@@ -285,6 +285,39 @@ describe('page order', () => {
   });
 });
 
+describe('source language', () => {
+  it('posts each page with the language its tab resolved, Japanese included', async () => {
+    const { connect, requests } = await worker(['https://img.example/*']);
+    const tab = connect('https://reader.example/chapter/1');
+    tab.send({ type: 'want', jobs: [want('https://img.example/1.png'), { ...want('https://img.example/2.png'), key: 'ko:2', sourceLang: 'ko', position: 2, priority: 1 }] });
+    await tick();
+    requests[0]?.resolve(image());
+    await tick();
+    requests[1]?.resolve(image());
+    await tick();
+    const [ja, ko] = [requests[2], requests[3]].map((r) => r?.init?.body as FormData);
+    assert.equal(ja?.get('source_lang'), 'ja');
+    assert.equal(ko?.get('source_lang'), 'ko');
+  });
+
+  it('retranslates and reports a Korean page under its Korean page id', async () => {
+    const { connect, requests, requested } = await worker(['https://img.example/*']);
+    const tab = connect('https://reader.example/chapter/1');
+    const page = { ...want('https://img.example/1.png'), sourceLang: 'ko' as const };
+    tab.send({ type: 'retranslate', request: { want: page, bubbles: [0], hint: '', names: [] } });
+    await tick();
+    requests[0]?.resolve(image());
+    await tick();
+    const sha = Buffer.from(await crypto.subtle.digest('SHA-256', new Uint8Array([...Buffer.from('ko\0'), 1]))).toString('hex');
+    assert.equal(requested()[1], `http://127.0.0.1:7878/v1/pages/${sha}/retranslate`);
+    assert.equal((requests[1]?.init?.body as FormData).get('source_lang'), 'ko');
+    tab.send({ type: 'report', report: { want: page, pageUrl: 'https://reader.example/chapter/1', imageUrl: page.url, note: '', jobState: 'ready', jobError: null, areas: [] } });
+    await tick();
+    assert.equal(requested()[2], 'http://127.0.0.1:7878/v1/reports');
+    assert.equal((requests[2]?.init?.body as FormData).get('source_lang'), 'ko');
+  });
+});
+
 const pageJson = (renderedUrl: string, cached = false) =>
   new Response(JSON.stringify({ page_id: 'p', width: 10, height: 10, rendered_url: renderedUrl, bubbles: [{ box: [0, 0, 5, 5], source: 'あ', translation: 'A', vertical: true }], timings_ms: {}, cached }), {
     headers: { 'content-type': 'application/json' },
@@ -319,6 +352,7 @@ describe('retranslating and stale pages', () => {
     const form = requests[3]?.init?.body as FormData;
     assert.deepEqual(new Uint8Array(await (form.get('image') as Blob).arrayBuffer()), new Uint8Array([1]));
     assert.deepEqual(JSON.parse(String(form.get('request'))), { context_key: 'c', page_index: 1, bubbles: [0], hint: 'Lene is a girl', names });
+    assert.equal(form.get('source_lang'), 'ja');
     requests[3]?.resolve(pageJson('/v1/pages/p/rendered.webp?v=1'));
     await tick();
     assert.equal(requested()[4], 'http://127.0.0.1:7878/v1/pages/p/rendered.webp?v=1');

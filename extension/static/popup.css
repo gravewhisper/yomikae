@@ -12,7 +12,7 @@ header { padding: 10px 14px; font-weight: 700; border-bottom: 1px solid var(--li
 code { display: block; margin-top: 6px; padding: 6px 8px; border-radius: 6px; background: var(--line); font: 11px/1.4 ui-monospace, monospace; user-select: all; word-break: break-all; }
 .toggle { display: flex; gap: 8px; align-items: center; cursor: pointer; width: 100%; }
 .site { display: flex; flex-direction: column; gap: 8px; width: 100%; }
-#site-mode { width: 100%; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
+#site-mode, #site-lang { width: 100%; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit; }
 .toggle input { accent-color: var(--accent); width: 16px; height: 16px; margin: 0; }
 p.muted { padding: 12px 14px; margin: 0; }
 .access { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--warn); border-radius: 6px; color: var(--fg); font-size: 12px; }

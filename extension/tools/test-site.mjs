@@ -24,10 +24,10 @@ function pageSvg(n) {
 </svg>`;
 }
 
-const html = `<!doctype html><html><head><meta charset="utf-8"><title>test reader</title>
+const reader = (lang) => `<!doctype html><html${lang ? ` lang="${lang}"` : ''}><head><meta charset="utf-8"><title>test reader</title>
 <style>body{margin:0;background:#333;font:14px system-ui;color:#eee} main{width:700px;margin:0 auto} img{display:block;width:700px;margin:0 0 24px}
 #spa{border:3px solid #fc0}</style></head><body><main>
-${Array.from({ length: PAGES }, (_, i) => `<img class="page" src="${IMAGE_ORIGIN}/pages/${i + 1}.svg" alt="page ${i + 1}">`).join('\n')}
+${Array.from({ length: PAGES }, (_, i) => `<img class="page" src="${IMAGE_ORIGIN}/pages/${i + 1}.svg${lang ? `?lang=${lang}` : ''}" alt="page ${i + 1}">`).join('\n')}
 <p>SPA element below (src swapped in place):</p>
 <img id="spa" src="/pages/${PAGES + 1}.svg" alt="spa">
 </main>
@@ -91,5 +91,5 @@ createServer((req, res) => {
     return res.end(pageSvg(Number(m[1])));
   }
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-  res.end(html);
+  res.end(reader(url.pathname === '/ko' ? 'ko' : ''));
 }).listen(PORT, '127.0.0.1', () => console.log(`test reader on http://127.0.0.1:${PORT}/`));

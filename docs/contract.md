@@ -290,6 +290,19 @@ Turning the work back on rescans the page. Pages translated earlier show at once
 
 The popup asks the tab for its work with the tab command `{ type: 'work' }`, which the content script answers with `{ id, language, choice }` or `null`. While the site is on and the tab names a work, the popup shows **Translate this gallery**. For a work that is off because it is in English, it also reads "Already in English, not translating." with a **Translate anyway** button, which stores `"on"`.
 
+### Source language
+
+Each tab picks one source language, `ja` or `ko`, before it sends any page, and sends it as `source_lang` with every `POST /v1/pages`, retranslate and report, `ja` included. The tab takes the first of these that gives an answer:
+
+1. The reader's choice for the site, stored in `chrome.storage.local` under its own key, `sourceLang:<site>`, with the value `"ja"` or `"ko"`. The popup's language select, shown under the site mode while the site is on, writes it. Its first option, **Language: detect from the page**, removes the key.
+2. The work's language from the adapter's `workLanguage`: `japanese` gives `ja` and `korean` gives `ko`. Any other name gives no answer.
+3. The page's `<html lang>`: a tag whose first part is `ja` or `ko`, in any case, such as `ko-KR`.
+4. `ja`.
+
+The content script prefixes each job key with the language, as in `ko:<page key>`, so the background worker's queue and render cache keep a page's Japanese and Korean renders apart. A retranslate computes the page id as the server does: the SHA-256 of the image bytes for `ja`, and of `ko`, a zero byte and the bytes for `ko`.
+
+A change of the choice applies to the site's open tabs at once, and a tab whose language changes starts over in the new language. It shows every original again, forgets its jobs in the old language and sends `{ type: 'drop', keys }` for those not `ready`, then asks again for every page that had a job and translates the rest by the site mode. The tab also picks the language again when the address moves to another work.
+
 x.com keys an image as `x:<media id>`, so every size of one image shares one job, and groups context by tweet (`x.com/i/status/<id>`), the thread on a status page or the enclosing tweet on a timeline. X draws each photo as a background image on a DIV next to a transparent IMG, so the swap and the Alt peek change that DIV too. The photo view takes its page number from `/photo/<n>` in the URL. pixiv keys a page as `pixiv:<artwork id>_p<n>`, groups context by artwork (`pixiv.net/artworks/<id>`) and fetches the original named by `/ajax/illust/<id>/pages`, falling back to `master1200`. i.pximg.net refuses requests without a pixiv Referer, so the background worker installs a session `declarativeNetRequest` rule that sets `Referer: https://www.pixiv.net/` on its own requests (tab id -1) to that host.
 
 ## Reporting a page
