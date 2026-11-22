@@ -259,3 +259,16 @@ def test_an_internal_error_hides_the_exception_from_the_client(client, monkeypat
     request_id = body["detail"].rsplit(" ", 1)[-1]
     assert any(request_id in record.getMessage() and record.exc_info for record in caplog.records)
 
+
+@pytest.mark.parametrize(
+    ("path", "fields"),
+    [
+        ("/v1/pages", {"context_key": "k"}),
+        ("/v1/pages/" + "0" * 64 + "/retranslate", {}),
+        ("/v1/reports", {"page_url": "https://a.example/1"}),
+    ],
+)
+def test_a_missing_field_is_a_bad_request_not_a_bad_image(client, path, fields):
+    r = client.post(path, data=fields)
+    assert r.status_code == 400, r.text
+    assert r.json()["error"] == "bad_request"

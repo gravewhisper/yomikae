@@ -79,7 +79,7 @@ async def on_bad_report(_: Request, e: BadReport):
 
 @app.exception_handler(RequestValidationError)
 async def on_validation(_: Request, e: RequestValidationError):
-    return error(400, "bad_image", f"invalid request: {e.errors()}")
+    return error(400, "bad_request", f"invalid request: {e.errors()}")
 
 
 @app.exception_handler(TranslatorUnavailable)

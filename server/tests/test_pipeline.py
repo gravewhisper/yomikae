@@ -112,8 +112,6 @@ def test_bad_image_error_shape(client):
     r = client.post("/v1/pages", files={"image": ("x.png", b"not an image", "image/png")})
     assert r.status_code == 400
     assert r.json()["error"] == "bad_image"
-    r = client.post("/v1/pages", data={"context_key": "k"})
-    assert r.status_code == 400 and r.json()["error"] == "bad_image"
 
 
 @pytest.mark.models
