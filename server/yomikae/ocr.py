@@ -11,8 +11,8 @@ import numpy as np
 from PIL import Image
 
 from .balloon import claims, unclaimed
-from .config import KEMOLATE_DIR
-from .detect import LIGHT, MASK_PAD_FRAC, ModelMissing, load_session, reading_order, run_session
+from .config import PADDLE_DIR, PADDLE_FILES
+from .detect import GPU_MEM_LIMIT, LIGHT, MASK_PAD_FRAC, ModelMissing, OutOfGpuMemory, out_of_memory, reading_order
 from .language import JAPANESE, Language
 from .model import Balloon, Box, Bubble, TextBlock
 from .typeset import find_region
@@ -61,36 +61,54 @@ def load_ocr(device: str = "cpu") -> Reader:
     return MangaReader(device)
 
 
-class KemolateReader:
-    side = 224
-    start, end = 2, 3
-    max_tokens = 300
+class PaddleReader:
+    border = 16
+    same_row = 0.5
 
-    def __init__(self, device: str, folder: Path = KEMOLATE_DIR):
-        from tokenizers import Tokenizer
-
-        files = [folder / name for name in ("encoder_model.onnx", "decoder_model.onnx", "tokenizer.json")]
+    def __init__(self, device: str, folder: Path = PADDLE_DIR):
+        files = [folder / name for name in PADDLE_FILES]
         missing = [f.name for f in files if not f.exists()]
         if missing:
-            raise ModelMissing(f"the Korean reader needs {', '.join(missing)} in server/models/{folder.name}; download Kemolate OCR as the README says")
-        self.encoder = load_session(files[0], device)
-        self.decoder = load_session(files[1], device)
-        self.tokenizer = Tokenizer.from_file(str(files[2]))
+            raise ModelMissing(f"Korean pages need {', '.join(missing)} in server/models/{folder.name}; download the PaddleOCR models as the README says")
+        if device == "cuda":
+            import onnxruntime as ort
+            import torch  # noqa: F401
+
+            ort.preload_dlls()
+        from rapidocr import RapidOCR
+
+        self.engine = RapidOCR(
+            params={
+                "Global.use_cls": False,
+                "Global.log_level": "error",
+                "Det.model_path": str(files[0]),
+                "Rec.model_path": str(files[1]),
+                "EngineConfig.onnxruntime.use_cuda": device == "cuda",
+                "EngineConfig.onnxruntime.cuda_ep_cfg.cudnn_conv_algo_search": "DEFAULT",
+                "EngineConfig.onnxruntime.cuda_ep_cfg.arena_extend_strategy": "kSameAsRequested",
+                "EngineConfig.onnxruntime.cuda_ep_cfg.gpu_mem_limit": GPU_MEM_LIMIT,
+            }
+        )
 
     def recognize(self, crop: Image.Image) -> tuple[str, float, int]:
-        x = np.asarray(crop.convert("RGB").resize((self.side, self.side), Image.Resampling.BILINEAR), np.float32) / 255.0
-        hidden = run_session(self.encoder, {"pixel_values": ((x - 0.5) / 0.5).transpose(2, 0, 1)[None]})[0]
-        ids, probs = [self.start], []
-        while len(ids) < self.max_tokens:
-            logits = run_session(self.decoder, {"input_ids": np.array([ids], np.int64), "encoder_hidden_states": hidden})[0][0, -1].astype(np.float64)
-            step = np.exp(logits - logits.max())
-            token = int(logits.argmax())
-            probs.append(float(step[token] / step.sum()))
-            if token == self.end:
-                break
-            ids.append(token)
-        text = self.tokenizer.decode(ids[1:], skip_special_tokens=True).replace(" ", "")
-        return text, float(np.mean(probs)), len(probs)
+        image = cv2.copyMakeBorder(np.asarray(crop.convert("RGB")), *[self.border] * 4, cv2.BORDER_REPLICATE)
+        try:
+            found = self.engine(cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+        except Exception as e:
+            if out_of_memory(e):
+                raise OutOfGpuMemory(str(e)) from e
+            raise
+        if found.boxes is None or not len(found.boxes):
+            return "", 0.0, 0
+        rows: list[list[tuple[float, float, float, str]]] = []
+        for y0, y1, x0, text in sorted((float(b[:, 1].min()), float(b[:, 1].max()), float(b[:, 0].min()), t) for b, t in zip(found.boxes, found.txts)):
+            last = rows[-1][0] if rows else None
+            if last and min(y1, last[1]) - max(y0, last[0]) >= self.same_row * min(y1 - y0, last[1] - last[0]):
+                rows[-1].append((y0, y1, x0, text))
+            else:
+                rows.append([(y0, y1, x0, text)])
+        text = "\n".join(" ".join(t for *_, t in sorted(row, key=lambda line: line[2])) for row in rows)
+        return text, float(np.mean(found.scores)), len(core_text(text))
 
 
 def core_text(text: str) -> str:

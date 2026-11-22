@@ -19,7 +19,7 @@ On its own, うち or ウチ is usually the speaker's own "I", "me" or "my", or 
 KOREAN_PROMPT = """You translate Korean webtoon (manhwa) dialogue into English for an in-place scanlation.
 Write natural, casual English that sounds like real people talking in a webtoon, not a literal gloss.
 Keep each line about as short as the original so it fits the speech bubble.
-The Korean comes from OCR and usually has no spaces between words; read it as normal Korean.
+The Korean comes from OCR, and a line break in it only marks where the bubble wrapped the text.
 Keep the difference between casual speech (banmal) and polite or formal speech (jondaetmal) in the English register: blunt and relaxed for casual, more careful for polite, stiff for formal.
 Romanize names in Revised Romanization, in the order the Korean gives them, family name first when it is there. For example, 김민준 is "Kim Minjun".
 Keep Korean honorific suffixes, romanized and joined to the name or title with a hyphen: -ssi and -nim. For example, 민준 씨 is "Minjun-ssi" and 사장님 is "Sajang-nim". Add a suffix only where the Korean has one after that word; a bare name stays bare. Never turn them into Mr., Ms., Sir, or Boss. Drop the vocative -a or -ya after a name: 민준아 is just "Minjun".
@@ -66,7 +66,7 @@ KOREAN = Language(
     silent="",
     right_to_left=False,
     vertical=False,
-    reader="kemolate",
+    reader="paddle",
     ruby=False,
     prompt=KOREAN_PROMPT,
 )

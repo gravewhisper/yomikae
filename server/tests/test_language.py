@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from yomikae import detect, ocr, pipeline
 from yomikae.cache import ContextStore
-from yomikae.config import KEMOLATE_DIR
+from yomikae.config import PADDLE_DIR, PADDLE_FILES
 from yomikae.language import JAPANESE, KOREAN, LANGUAGES
 from yomikae.model import ContextLine
 from yomikae.pipeline import page_id_of, translate_page
@@ -52,25 +52,25 @@ def test_a_retranslate_whose_source_lang_is_unknown_or_disagrees_with_the_page_i
     assert r.json()["error"] == "bad_request"
 
 
-def test_a_korean_page_without_kemolate_answers_reader_missing_every_time(client, monkeypatch):
+def test_a_korean_page_without_its_models_answers_reader_missing_every_time(client, monkeypatch):
     engine = client.app.state.engine
 
     def missing(device):
-        raise detect.ModelMissing("the Korean reader needs encoder_model.onnx in server/models/kemolate-ocr")
+        raise detect.ModelMissing("Korean pages need korean_PP-OCRv5_rec_mobile.onnx in server/models/paddleocr")
 
-    monkeypatch.setitem(pipeline.MODELS, "kemolate", missing)
-    monkeypatch.delitem(engine.models, ("kemolate", engine.device), raising=False)
+    monkeypatch.setitem(pipeline.MODELS, "paddle", missing)
+    monkeypatch.delitem(engine.models, ("paddle", engine.device), raising=False)
     data = png_bytes(make_korean_page(5)[0])
     for _ in range(2):
         r = client.post("/v1/pages", files={"image": ("p.png", data, "image/png")}, data={"source_lang": "ko", "context_key": "w/missing"})
         assert r.status_code == 500, r.text
         assert r.json()["error"] == "reader_missing"
-        assert "encoder_model.onnx" in r.json()["detail"]
+        assert "korean_PP-OCRv5_rec_mobile.onnx" in r.json()["detail"]
 
 
-def test_a_missing_kemolate_model_names_the_files_to_download(tmp_path):
-    with pytest.raises(detect.ModelMissing, match="encoder_model.onnx, decoder_model.onnx, tokenizer.json"):
-        ocr.KemolateReader("cpu", tmp_path)
+def test_a_missing_paddle_model_names_the_files_to_download(tmp_path):
+    with pytest.raises(detect.ModelMissing, match="PP-OCRv6_det_small.onnx, korean_PP-OCRv5_rec_mobile.onnx in server/models/"):
+        ocr.PaddleReader("cpu", tmp_path)
 
 
 def test_a_japanese_page_keeps_the_sha256_of_its_bytes_as_its_id():
@@ -83,6 +83,9 @@ def test_the_same_bytes_read_in_another_language_are_another_page():
     ids = {page_id_of(data, language) for language in LANGUAGES.values()}
     assert len(ids) == len(LANGUAGES)
     assert all(len(i) == 64 and set(i) <= set("0123456789abcdef") for i in ids)
+
+
+paddle_files = pytest.mark.skipif(not all((PADDLE_DIR / name).exists() for name in PADDLE_FILES), reason="the PaddleOCR models are not in server/models/paddleocr")
 
 
 class Recorder:
@@ -128,20 +131,21 @@ def test_leftover_hangul_counts_as_untranslated_only_for_korean():
 
 
 @pytest.mark.models
-@pytest.mark.skipif(not (KEMOLATE_DIR / "encoder_model.onnx").exists(), reason="Kemolate OCR is not in server/models/kemolate-ocr")
-def test_a_korean_page_is_read_horizontally_through_kemolate(client):
+@paddle_files
+def test_a_korean_page_is_read_horizontally_with_its_spaces(client):
     img, truth = make_korean_page(3)
     data = png_bytes(img)
     r = client.post("/v1/pages", files={"image": ("p.png", data, "image/png")}, data={"source_lang": "ko"})
     assert r.status_code == 200, r.text
     page = r.json()
     assert page["page_id"] == page_id_of(data, KOREAN)
-    assert sorted(b["source"] for b in page["bubbles"]) == sorted(t.text.replace(" ", "") for t in truth)
+    assert sorted("".join(b["source"].split()) for b in page["bubbles"]) == sorted(t.text.replace(" ", "") for t in truth)
+    assert sum(len(b["source"].split()) for b in page["bubbles"]) >= 0.8 * sum(len(t.text.split()) for t in truth)
     assert not any(b["vertical"] for b in page["bubbles"])
 
 
 @pytest.mark.models
-@pytest.mark.skipif(not (KEMOLATE_DIR / "encoder_model.onnx").exists(), reason="Kemolate OCR is not in server/models/kemolate-ocr")
+@paddle_files
 def test_a_narrow_korean_bubble_of_stacked_short_rows_is_read_as_horizontal_text(client):
     img = Image.new("RGB", (800, 900), "white")
     draw = ImageDraw.Draw(img)
@@ -152,35 +156,35 @@ def test_a_narrow_korean_bubble_of_stacked_short_rows_is_read_as_horizontal_text
         draw.text((372, 328 + 54 * r), row, font=font, fill="black", anchor="mm")
     r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")}, data={"source_lang": "ko"})
     assert r.status_code == 200, r.text
-    assert [(b["source"], b["vertical"]) for b in r.json()["bubbles"]] == [("".join(rows), False)]
+    assert [(b["source"].split(), b["vertical"]) for b in r.json()["bubbles"]] == [(rows, False)]
 
 
 class FullGpuOnce:
-    def __init__(self, session):
-        self.session = session
+    def __init__(self, engine):
+        self.engine = engine
         self.calls = 0
 
-    def run(self, *args):
-        from onnxruntime.capi.onnxruntime_pybind11_state import Fail
+    def __call__(self, *args):
+        from rapidocr.inference_engine.onnxruntime.main import ONNXRuntimeError
 
         self.calls += 1
         if self.calls == 1:
-            raise Fail("Non-zero status code returned while running Add node. Failed to allocate memory for requested buffer of size 6662656")
-        return self.session.run(*args)
+            raise ONNXRuntimeError("Non-zero status code returned while running Conv node. Failed to allocate memory for requested buffer of size 6662656")
+        return self.engine(*args)
 
 
 @pytest.mark.models
-@pytest.mark.skipif(not (KEMOLATE_DIR / "encoder_model.onnx").exists(), reason="Kemolate OCR is not in server/models/kemolate-ocr")
+@paddle_files
 def test_a_korean_page_whose_reader_runs_out_of_gpu_memory_is_read_again(client):
     engine = client.app.state.engine
-    reader = engine.model("kemolate", engine.device)
-    full = FullGpuOnce(reader.decoder)
-    reader.decoder = full
+    reader = engine.model("paddle", engine.device)
+    full = FullGpuOnce(reader.engine)
+    reader.engine = full
     try:
         img, truth = make_korean_page(5)
         r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")}, data={"source_lang": "ko"})
     finally:
-        reader.decoder = full.session
+        reader.engine = full.engine
     assert r.status_code == 200, r.text
     assert full.calls > 1
-    assert sorted(b["source"] for b in r.json()["bubbles"]) == sorted(t.text.replace(" ", "") for t in truth)
+    assert sorted("".join(b["source"].split()) for b in r.json()["bubbles"]) == sorted(t.text.replace(" ", "") for t in truth)

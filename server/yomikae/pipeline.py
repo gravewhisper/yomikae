@@ -149,7 +149,7 @@ class Timer:
 MODELS: dict[str, Callable[[str], object]] = {
     "lama": lambda device: inpaint.load_model(device),
     "manga-ocr": lambda device: ocr.load_ocr(device),
-    "kemolate": lambda device: ocr.KemolateReader(device),
+    "paddle": lambda device: ocr.PaddleReader(device),
 }
 
 

@@ -6,7 +6,7 @@ from make_test_page import FONT_PATH, make_korean_page
 from PIL import Image, ImageDraw, ImageFont
 
 from yomikae import ocr
-from yomikae.config import FONTS_DIR, KEMOLATE_DIR
+from yomikae.config import FONTS_DIR, PADDLE_DIR, PADDLE_FILES
 from yomikae.model import Box, TextBlock
 
 pytestmark = pytest.mark.models
@@ -68,16 +68,16 @@ def test_a_credit_badge_outside_any_balloon_is_not_read_as_dialogue(reader):
     assert [b.source for b in bubbles + unsure] == ["変態だね"]
 
 
-kemolate_files = pytest.mark.skipif(not (KEMOLATE_DIR / "encoder_model.onnx").exists(), reason="Kemolate OCR is not in server/models/kemolate-ocr")
-
-
-@kemolate_files
-def test_kemolate_reads_the_hangul_of_a_synthetic_korean_page():
-    reader = ocr.KemolateReader("cpu")
-    for seed in (0, 1):
+@pytest.mark.skipif(not all((PADDLE_DIR / name).exists() for name in PADDLE_FILES), reason="the PaddleOCR models are not in server/models/paddleocr")
+def test_paddle_reads_the_hangul_of_a_synthetic_korean_page_with_its_spaces():
+    reader = ocr.PaddleReader("cpu")
+    words, kept = 0, 0
+    for seed in range(4):
         page, truth = make_korean_page(seed)
         for t in truth:
             x0, y0, x1, y1 = Box(*t.text_box).expand(ocr.OCR_PAD, page.width, page.height).as_list()
             text, confidence, _ = reader.recognize(page.crop((x0, y0, x1, y1)))
-            assert text == t.text.replace(" ", ""), (text, t.text)
+            assert "".join(text.split()) == "".join(t.text.split()), (text, t.text)
             assert confidence > 0.9, (text, confidence)
+            words, kept = words + len(t.text.split()), kept + len(text.split())
+    assert kept >= 0.8 * words

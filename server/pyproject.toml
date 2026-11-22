@@ -18,6 +18,7 @@ dependencies = [
   "httpx>=0.28",
   "fonttools>=4.55",
   "pyphen>=0.17",
+  "rapidocr==3.10.0",
   "pydensecrf @ git+https://github.com/zyddnys/pydensecrf.git@3ca3d8f0cbd9701f4a765f97fbad43f9b2fe80a6",
 ]
 
