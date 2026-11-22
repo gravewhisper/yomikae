@@ -458,6 +458,12 @@ def infer(session, image: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarra
     return np.concatenate(blks), seg, det, r, nw, nh
 
 
+def text_mask(session, image: np.ndarray) -> np.ndarray:
+    h, w = image.shape[:2]
+    seg = infer(session, image)[1]
+    return cv2.resize((seg > SEG_THRESH).astype(np.uint8) * 255, (w, h), interpolation=cv2.INTER_NEAREST)
+
+
 def detect(session, image: np.ndarray, vertical_text: bool = True) -> list[TextBlock]:
     h, w = image.shape[:2]
     blk, seg, det, r, nw, nh = infer(session, image)

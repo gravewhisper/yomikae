@@ -5,14 +5,15 @@ import hashlib
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
-from conftest import png_bytes
+from conftest import decode, png_bytes
 from make_test_page import FONT_PATH, KR_FONT_INDEX, make_korean_page, make_page
 from PIL import Image, ImageDraw, ImageFont
 
-from yomikae import detect, ocr, pipeline
+from yomikae import animetext, detect, ocr, pipeline
 from yomikae.cache import ContextStore
-from yomikae.config import PADDLE_DIR, PADDLE_FILES
+from yomikae.config import ANIMETEXT_PATH, PADDLE_DIR, PADDLE_FILES
 from yomikae.language import JAPANESE, KOREAN, LANGUAGES
 from yomikae.model import ContextLine
 from yomikae.pipeline import page_id_of, translate_page
@@ -52,20 +53,27 @@ def test_a_retranslate_whose_source_lang_is_unknown_or_disagrees_with_the_page_i
     assert r.json()["error"] == "bad_request"
 
 
-def test_a_korean_page_without_its_models_answers_reader_missing_every_time(client, monkeypatch):
+@pytest.mark.parametrize("name, file", [("paddle", "korean_PP-OCRv5_rec_mobile.onnx"), ("animetext", "animetext_yolo12m.onnx")])
+def test_a_korean_page_without_its_models_answers_reader_missing_every_time(client, monkeypatch, name, file):
     engine = client.app.state.engine
 
     def missing(device):
-        raise detect.ModelMissing("Korean pages need korean_PP-OCRv5_rec_mobile.onnx in server/models/paddleocr")
+        raise detect.ModelMissing(f"Korean pages need {file} in server/models")
 
-    monkeypatch.setitem(pipeline.MODELS, "paddle", missing)
-    monkeypatch.delitem(engine.models, ("paddle", engine.device), raising=False)
+    monkeypatch.setitem(pipeline.MODELS, name, missing)
+    for device in {engine.device, engine.detect_device, "cpu"}:
+        monkeypatch.delitem(engine.models, (name, device), raising=False)
     data = png_bytes(make_korean_page(5)[0])
     for _ in range(2):
         r = client.post("/v1/pages", files={"image": ("p.png", data, "image/png")}, data={"source_lang": "ko", "context_key": "w/missing"})
         assert r.status_code == 500, r.text
         assert r.json()["error"] == "reader_missing"
-        assert "korean_PP-OCRv5_rec_mobile.onnx" in r.json()["detail"]
+        assert file in r.json()["detail"]
+
+
+def test_a_missing_animetext_model_names_the_file_to_download(tmp_path):
+    with pytest.raises(detect.ModelMissing, match="animetext_yolo12m.onnx in server/models"):
+        animetext.AnimeText("cpu", tmp_path / "animetext_yolo12m.onnx")
 
 
 def test_a_missing_paddle_model_names_the_files_to_download(tmp_path):
@@ -86,6 +94,7 @@ def test_the_same_bytes_read_in_another_language_are_another_page():
 
 
 paddle_files = pytest.mark.skipif(not all((PADDLE_DIR / name).exists() for name in PADDLE_FILES), reason="the PaddleOCR models are not in server/models/paddleocr")
+animetext_file = pytest.mark.skipif(not ANIMETEXT_PATH.exists(), reason="AnimeText is not in server/models")
 
 
 class Recorder:
@@ -132,6 +141,7 @@ def test_leftover_hangul_counts_as_untranslated_only_for_korean():
 
 @pytest.mark.models
 @paddle_files
+@animetext_file
 def test_a_korean_page_is_read_horizontally_with_its_spaces(client):
     img, truth = make_korean_page(3)
     data = png_bytes(img)
@@ -146,6 +156,7 @@ def test_a_korean_page_is_read_horizontally_with_its_spaces(client):
 
 @pytest.mark.models
 @paddle_files
+@animetext_file
 def test_a_narrow_korean_bubble_of_stacked_short_rows_is_read_as_horizontal_text(client):
     img = Image.new("RGB", (800, 900), "white")
     draw = ImageDraw.Draw(img)
@@ -175,6 +186,7 @@ class FullGpuOnce:
 
 @pytest.mark.models
 @paddle_files
+@animetext_file
 def test_a_korean_page_whose_reader_runs_out_of_gpu_memory_is_read_again(client):
     engine = client.app.state.engine
     reader = engine.model("paddle", engine.device)
@@ -188,3 +200,51 @@ def test_a_korean_page_whose_reader_runs_out_of_gpu_memory_is_read_again(client)
     assert r.status_code == 200, r.text
     assert full.calls > 1
     assert sorted("".join(b["source"].split()) for b in r.json()["bubbles"]) == sorted(t.text.replace(" ", "") for t in truth)
+
+
+class FullGpuSessionOnce:
+    def __init__(self, session):
+        self.session = session
+        self.calls = 0
+
+    def run(self, *args):
+        from onnxruntime.capi.onnxruntime_pybind11_state import Fail
+
+        self.calls += 1
+        if self.calls == 1:
+            raise Fail("Non-zero status code returned while running Conv node. Failed to allocate memory for requested buffer of size 6662656")
+        return self.session.run(*args)
+
+
+@pytest.mark.models
+@paddle_files
+@animetext_file
+def test_a_korean_page_whose_detector_runs_out_of_gpu_memory_is_found_again(client):
+    engine = client.app.state.engine
+    finder = engine.model("animetext", engine.detect_device)
+    full = FullGpuSessionOnce(finder.session)
+    finder.session = full
+    try:
+        img, truth = make_korean_page(6)
+        r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")}, data={"source_lang": "ko"})
+    finally:
+        finder.session = full.session
+    assert r.status_code == 200, r.text
+    assert full.calls > 1
+    assert sorted("".join(b["source"].split()) for b in r.json()["bubbles"]) == sorted(t.text.replace(" ", "") for t in truth)
+
+
+@pytest.mark.models
+@paddle_files
+@animetext_file
+def test_a_korean_line_the_text_mask_misses_is_still_erased(client, monkeypatch):
+    monkeypatch.setattr(detect, "text_mask", lambda session, image: np.zeros(image.shape[:2], np.uint8))
+    img, truth = make_korean_page(7)
+    r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")}, data={"source_lang": "ko"})
+    assert r.status_code == 200, r.text
+    assert len(r.json()["bubbles"]) == len(truth)
+    rendered = Image.fromarray(decode(client.get(r.json()["rendered_url"]).content))
+    reader = client.app.state.engine.model("paddle", "cpu")
+    for t in truth:
+        text, _, _ = reader.recognize(rendered.crop(tuple(t.text_box)))
+        assert not KOREAN.letters.search(text), (t.text, text)

@@ -39,6 +39,7 @@ class Language:
     silent: str
     right_to_left: bool
     vertical: bool
+    detector: str
     reader: str
     ruby: bool
     prompt: str
@@ -52,6 +53,7 @@ JAPANESE = Language(
     silent="っッｯ",
     right_to_left=True,
     vertical=True,
+    detector="comic-text-detector",
     reader="manga-ocr",
     ruby=True,
     prompt=JAPANESE_PROMPT,
@@ -66,6 +68,7 @@ KOREAN = Language(
     silent="",
     right_to_left=False,
     vertical=False,
+    detector="animetext",
     reader="paddle",
     ruby=False,
     prompt=KOREAN_PROMPT,

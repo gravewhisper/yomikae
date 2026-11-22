@@ -16,6 +16,7 @@ ANIME_ACE = "animeace2_reg.ttf"
 FALLBACK_FONT_PATHS = (SERVER_DIR / "fonts" / "NotoSansSymbols2-Regular.ttf", SERVER_DIR / "fonts" / "NotoSansSymbols-Variable.ttf")
 DETECTOR_PATH = MODELS_DIR / "comictextdetector.pt.onnx"
 LAMA_PATH = MODELS_DIR / "lama_large_512px.ckpt"
+ANIMETEXT_PATH = MODELS_DIR / "animetext_yolo12m.onnx"
 PADDLE_DIR = MODELS_DIR / "paddleocr"
 PADDLE_FILES = ("PP-OCRv6_det_small.onnx", "korean_PP-OCRv5_rec_mobile.onnx")
 BUBBLE_MODEL_PATH = MODELS_DIR / os.environ.get("YOMIKAE_BUBBLE_MODEL", "manga109-bubble-seg.onnx")

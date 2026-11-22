@@ -15,11 +15,11 @@ from typing import TypeVar
 import numpy as np
 from PIL import Image, UnidentifiedImageError
 
-from . import balloon, detect, inpaint, ocr, ruby, typeset
+from . import animetext, balloon, detect, inpaint, ocr, ruby, typeset
 from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, INPUT_FORMATS, Settings
 from .language import DEFAULT, Language
-from .model import Box, Bubble, CastEntry, ContextLine
+from .model import Box, Bubble, CastEntry, ContextLine, TextBlock
 from .ruby import furigana_names
 from .translate import Context, PageImage, Translator, TranslatorFailed, TranslatorUnavailable, make_translator, mend_stutters, subset, translate_lines
 
@@ -150,7 +150,23 @@ MODELS: dict[str, Callable[[str], object]] = {
     "lama": lambda device: inpaint.load_model(device),
     "manga-ocr": lambda device: ocr.load_ocr(device),
     "paddle": lambda device: ocr.PaddleReader(device),
+    "animetext": lambda device: animetext.AnimeText(device),
 }
+
+
+def comic_text_blocks(engine: Engine, image: np.ndarray, language: Language) -> list[TextBlock]:
+    return detect.detect(engine.detector, image, language.vertical)
+
+
+def animetext_blocks(engine: Engine, image: np.ndarray, language: Language) -> list[TextBlock]:
+    try:
+        boxes = engine.model("animetext", engine.detect_device).boxes(image)
+    except detect.OutOfGpuMemory:
+        boxes = engine.model("animetext", "cpu").boxes(image)
+    return animetext.blocks(boxes, detect.text_mask(engine.detector, image), image, language.vertical)
+
+
+DETECTORS: dict[str, Callable[[Engine, np.ndarray, Language], list[TextBlock]]] = {"comic-text-detector": comic_text_blocks, "animetext": animetext_blocks}
 
 
 class Engine:
@@ -290,7 +306,7 @@ class Engine:
 
             def find_text() -> tuple[list, list]:
                 with self.gpu():
-                    return timer.run("detect", detect.detect, self.detector, image, language.vertical), timer.run("balloons", balloon.segment, self.balloons, image)
+                    return timer.run("detect", DETECTORS[language.detector], self, image, language), timer.run("balloons", balloon.segment, self.balloons, image)
 
             def read_text(reader: ocr.Reader, found: tuple[list, list]) -> tuple[list[Bubble], list[Bubble]]:
                 bubbles, unsure = timer.run("ocr", ocr.read, reader, image, *found, language)
