@@ -18,6 +18,7 @@ from PIL import Image, UnidentifiedImageError
 from . import balloon, detect, inpaint, ocr, ruby, typeset
 from .cache import ContextStore, PageCache
 from .config import BUBBLE_MODEL_PATH, DETECTOR_PATH, INPUT_FORMATS, Settings
+from .language import DEFAULT, Language
 from .model import Box, Bubble, CastEntry, ContextLine
 from .ruby import furigana_names
 from .translate import Context, PageImage, Translator, TranslatorFailed, TranslatorUnavailable, make_translator, mend_stutters, subset, translate_lines
@@ -49,6 +50,10 @@ FORMATS = (
 
 class BadImage(Exception):
     pass
+
+
+def page_id_of(data: bytes, language: Language) -> str:
+    return hashlib.sha256(data if language is DEFAULT else language.code.encode() + b"\0" + data).hexdigest()
 
 
 def decode_image(data: bytes) -> np.ndarray:
@@ -141,7 +146,8 @@ class Timer:
             self.ms[stage] = self.ms.get(stage, 0) + round((time.perf_counter() - t) * 1000)
 
 
-CPU_LOADERS: dict[str, Callable[[], object]] = {"lama": lambda: inpaint.load_model("cpu"), "ocr": lambda: ocr.load_ocr("cpu")}
+READERS: dict[str, Callable[[str], ocr.Reader]] = {"manga-ocr": lambda device: ocr.load_ocr(device)}
+CPU_LOADERS: dict[str, Callable[[], object]] = {"lama": lambda: inpaint.load_model("cpu"), "manga-ocr": lambda: READERS["manga-ocr"]("cpu")}
 
 
 class Engine:
@@ -159,6 +165,8 @@ class Engine:
         self.detector = detect.load_session(DETECTOR_PATH, detect_device)
         self.balloons = detect.load_session(BUBBLE_MODEL_PATH, detect_device)
         self.ocr = ocr.load_ocr(self.device)
+        self.readers: dict[str, ocr.Reader] = {DEFAULT.reader: self.ocr}
+        self.reader_lock = threading.Lock()
         self.lama = inpaint.load_model(self.device)
         self.lettering = typeset.load_lettering(settings.case)
         self.translator = make_translator(settings)
@@ -174,6 +182,12 @@ class Engine:
             if name not in self.cpu_models:
                 self.cpu_models[name] = CPU_LOADERS[name]()
             return self.cpu_models[name]
+
+    def reader(self, name: str) -> ocr.Reader:
+        with self.reader_lock:
+            if name not in self.readers:
+                self.readers[name] = READERS[name](self.device)
+            return self.readers[name]
 
     @contextmanager
     def gpu(self) -> Iterator[None]:
@@ -222,20 +236,20 @@ class Engine:
                 mask[side // 4 : side // 2, side // 4 : side // 2] = 255
                 inpaint.run_lama(self.lama, crop, mask)
 
-    async def process(self, data: bytes, context_key: str | None, page_index: int | None) -> dict:
-        page_id = hashlib.sha256(data).hexdigest()
+    async def process(self, data: bytes, context_key: str | None, page_index: int | None, language: Language = DEFAULT) -> dict:
+        page_id = page_id_of(data, language)
         cached = self.cache.load(page_id)
         if cached is not None:
             stale = stale_bubbles(cached, names_in_force(self.context.cast(cached.get("context_key"))))
             if not stale:
                 return {**cached, "timings_ms": {**{s: 0 for s in STAGES}, "total": 0}, "cached": True}
-            return await self.retranslate(page_id, data, cached["context_key"], cached.get("page_index"), [], redo=True)
+            return await self.retranslate(page_id, data, cached["context_key"], cached.get("page_index"), [], redo=True, language=language)
         if page_id in self.inflight:
             return await asyncio.shield(self.inflight[page_id])
         fut = asyncio.get_running_loop().create_future()
         self.inflight[page_id] = fut
         try:
-            result = await self._run(page_id, data, context_key, page_index)
+            result = await self._run(page_id, data, context_key, page_index, language=language)
             fut.set_result(result)
             return result
         except BaseException as e:
@@ -245,19 +259,19 @@ class Engine:
         finally:
             del self.inflight[page_id]
 
-    async def retranslate(self, page_id: str, data: bytes, context_key: str | None, page_index: int | None, picked: list[int], hint: str = "", redo: bool = False) -> dict:
+    async def retranslate(self, page_id: str, data: bytes, context_key: str | None, page_index: int | None, picked: list[int], hint: str = "", redo: bool = False, language: Language = DEFAULT) -> dict:
         async with self.editing.setdefault(page_id, asyncio.Lock()):
             base = self.cache.load(page_id)
             if base is None:
-                return await self.process(data, context_key, page_index)
+                return await self.process(data, context_key, page_index, language)
             stale = stale_bubbles(base, names_in_force(self.context.cast(base.get("context_key"))))
             picked = sorted(set(stale) | set(picked))
             if not picked:
                 return {**base, "timings_ms": {**{s: 0 for s in STAGES}, "total": 0}, "cached": True}
             if not redo:
-                return await self._run(page_id, data, context_key, page_index, base, set(picked), hint)
+                return await self._run(page_id, data, context_key, page_index, base, set(picked), hint, language)
             try:
-                return {**await self._run(page_id, data, context_key, page_index, base, set(picked), hint), "updated": True}
+                return {**await self._run(page_id, data, context_key, page_index, base, set(picked), hint, language), "updated": True}
             except TranslatorUnavailable:
                 return {**base, "timings_ms": {**{s: 0 for s in STAGES}, "total": 0}, "cached": True}
 
@@ -270,6 +284,7 @@ class Engine:
         base: dict | None = None,
         picked: set[int] = frozenset(),
         hint: str = "",
+        language: Language = DEFAULT,
     ) -> dict:
         import torch
 
@@ -282,20 +297,21 @@ class Engine:
                 with self.gpu():
                     return timer.run("detect", detect.detect, self.detector, image), timer.run("balloons", balloon.segment, self.balloons, image)
 
-            def read_text(reader, found: tuple[list, list]) -> tuple[list[Bubble], list[Bubble]]:
-                bubbles, unsure = timer.run("ocr", ocr.read, reader, image, *found)
-                return timer.run("ocr", ruby.attach, reader, image, bubbles), unsure
+            def read_text(reader: ocr.Reader, found: tuple[list, list]) -> tuple[list[Bubble], list[Bubble]]:
+                bubbles, unsure = timer.run("ocr", ocr.read, reader, image, *found, language)
+                return (timer.run("ocr", ruby.attach, reader, image, bubbles) if language.ruby else bubbles), unsure
 
-            def read_text_on_gpu(found: tuple[list, list]) -> tuple[list[Bubble], list[Bubble]]:
+            def read_text_on_gpu(reader: ocr.Reader, found: tuple[list, list]) -> tuple[list[Bubble], list[Bubble]]:
                 with self.gpu():
-                    return read_text(self.ocr, found)
+                    return read_text(reader, found)
 
             async def read_page() -> tuple[list[Bubble], list[Bubble]]:
+                reader = await asyncio.to_thread(self.reader, language.reader)
                 found = await loop.run_in_executor(self.gpu_thread, find_text)
                 try:
-                    return await loop.run_in_executor(self.gpu_thread, read_text_on_gpu, found)
+                    return await loop.run_in_executor(self.gpu_thread, read_text_on_gpu, reader, found)
                 except torch.OutOfMemoryError:
-                    return await asyncio.to_thread(lambda: read_text(self.cpu_model("ocr"), found))
+                    return await asyncio.to_thread(lambda: read_text(self.cpu_model(language.reader), found))
 
             def remove_text(bubbles: list[Bubble]) -> np.ndarray:
                 with self.gpu():
@@ -315,7 +331,7 @@ class Engine:
             carried = None if base else self.cache.remembered(page_id)
             if bubbles:
                 readings = [pair for b in bubbles for pair in b.ruby]
-                translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings, pinned, hint, earlier))
+                translate_task = asyncio.create_task(self._translate([b.source for b in bubbles], context_key, page_index, timer, readings, pinned, hint, earlier, language))
                 try:
                     inpainted = await remove_text_anywhere(bubbles)
                 finally:
@@ -373,12 +389,13 @@ class Engine:
         pinned: list[str | None] | None,
         hint: str,
         earlier: asyncio.Future[None] | None,
+        language: Language,
     ) -> list[str]:
         if earlier:
             await asyncio.shield(earlier)
         t = time.perf_counter()
         try:
-            return await translate_page(self.translator, self.context, lines, context_key, page_index, ruby=readings, pinned=pinned, hint=hint)
+            return await translate_page(self.translator, self.context, lines, context_key, page_index, ruby=readings, pinned=pinned, hint=hint, language=language)
         finally:
             timer.ms["translate"] = round((time.perf_counter() - t) * 1000)
 
@@ -394,6 +411,7 @@ async def translate_page(
     pinned: list[str | None] | None = None,
     hint: str = "",
     upcoming: Sequence[Sequence[str]] = (),
+    language: Language = DEFAULT,
 ) -> list[str]:
     if pinned is None:
         listed = [e for e in store.cast(context_key) if e.source != "auto" and e.ja]
@@ -416,6 +434,7 @@ async def translate_page(
         terms,
         hint,
         [list(page) for page in upcoming],
+        language,
     )
     context = subset(context, [i for i, known in enumerate(recalled) if known is None])
     unread: list[str] = []

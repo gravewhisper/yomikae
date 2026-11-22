@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import secrets
@@ -23,7 +22,8 @@ from .cache import KINDS, SAVED_SOURCES, prune_stale
 from .config import Settings, extension_ids
 from .guard import RequestGuard
 from .model import CastEntry
-from .pipeline import FORMATS, PIPELINE_VERSION, TRANSLATION_VERSION, BadImage, Engine, decode_image
+from .language import DEFAULT, LANGUAGES, Language
+from .pipeline import FORMATS, PIPELINE_VERSION, TRANSLATION_VERSION, BadImage, Engine, decode_image, page_id_of
 from .reports import BadReport, image_extension, image_size, json_bytes, new_report_id, parse_areas, render_marked, resolve_areas, write_report
 from .translate import TranslatorFailed, TranslatorUnavailable
 
@@ -114,17 +114,26 @@ async def health(request: Request):
     return body
 
 
+def source_language(code: str | None) -> Language:
+    language = LANGUAGES.get(code or DEFAULT.code)
+    if language is None:
+        raise BadReport(f"source_lang must be one of {', '.join(LANGUAGES)}")
+    return language
+
+
 @app.post("/v1/pages")
 async def post_page(
     request: Request,
     image: Annotated[UploadFile, File()],
     context_key: Annotated[str | None, Form()] = None,
     page_index: Annotated[int | None, Form(ge=-MAX_PAGE_INDEX, le=MAX_PAGE_INDEX)] = None,
+    source_lang: Annotated[str | None, Form()] = None,
 ):
+    language = source_language(source_lang)
     data = await image.read()
     if not data:
         raise BadImage("empty image")
-    result = await request.app.state.engine.process(data, context_key or None, page_index)
+    result = await request.app.state.engine.process(data, context_key or None, page_index, language)
     if not result["cached"]:
         schedule_eviction(request.app)
     return {k: v for k, v in result.items() if k not in INTERNAL_FIELDS}
@@ -260,18 +269,19 @@ async def retranslate(request: Request, page_id: str, image: Annotated[UploadFil
     data = await image.read()
     if not data:
         raise BadImage("empty image")
-    if hashlib.sha256(data).hexdigest() != page_id:
-        raise BadReport("page_id is not the sha256 of image")
+    language = next((lang for lang in LANGUAGES.values() if page_id_of(data, lang) == page_id), None)
+    if language is None:
+        raise BadReport("page_id is not the page id of image")
     engine: Engine = request.app.state.engine
     key, index, picked = ask["context_key"], ask["page_index"], ask["bubbles"]
     cached = engine.cache.load(page_id)
     if cached is not None:
         check_bubbles(cached, picked)
     if cached is None:
-        check_bubbles(await engine.process(data, key, index), picked)
+        check_bubbles(await engine.process(data, key, index, language), picked)
     for entry in ask["names"]:
         engine.context.set_name(key, entry)
-    result = await engine.retranslate(page_id, data, key, index, picked, ask["hint"])
+    result = await engine.retranslate(page_id, data, key, index, picked, ask["hint"], language=language)
     schedule_eviction(request.app)
     return {k: v for k, v in result.items() if k not in INTERNAL_FIELDS}
 
@@ -311,13 +321,15 @@ async def post_report(
     job_state: Annotated[str | None, Form()] = None,
     job_error: Annotated[str | None, Form()] = None,
     areas: Annotated[str, Form()] = "[]",
+    source_lang: Annotated[str | None, Form()] = None,
 ):
+    language = source_language(source_lang)
     picked = parse_areas(areas)
     data = await image.read()
     if not data:
         raise BadImage("empty image")
     engine: Engine = request.app.state.engine
-    page_id = hashlib.sha256(data).hexdigest()
+    page_id = page_id_of(data, language)
     result = engine.cache.load(page_id)
     size = image_size(data)
     resolved = resolve_areas(picked, size, result["bubbles"] if result else [])
@@ -342,6 +354,7 @@ async def post_report(
             "context_key": context_key or None,
             "page_index": page_index,
             "page_id": page_id,
+            "source_lang": language.code,
             "pipeline_version": PIPELINE_VERSION,
             "note": note,
             "job_state": job_state,
