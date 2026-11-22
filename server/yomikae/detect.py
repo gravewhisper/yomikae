@@ -330,10 +330,10 @@ def merge_overlapping(boxes: list[Box]) -> list[Box]:
     return out
 
 
-def join_split_lines(boxes: list[Box], lines: np.ndarray) -> list[Box]:
+def join_split_lines(boxes: list[Box], lines: np.ndarray, vertical_text: bool = True) -> list[Box]:
 
     def single_line(box: Box) -> tuple[bool, int] | None:
-        vertical = is_vertical(lines, box)
+        vertical = vertical_text and is_vertical(lines, box)
         region = lines[box.y0 : box.y1, box.x0 : box.x1]
         if not region.any():
             return None
@@ -435,7 +435,7 @@ def infer(session, image: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarra
     return np.concatenate(blks), seg, det, r, nw, nh
 
 
-def detect(session, image: np.ndarray) -> list[TextBlock]:
+def detect(session, image: np.ndarray, vertical_text: bool = True) -> list[TextBlock]:
     h, w = image.shape[:2]
     blk, seg, det, r, nw, nh = infer(session, image)
     inv_blk, inv_seg, inv_det, _, _, _ = infer(session, 255 - image)
@@ -467,9 +467,9 @@ def detect(session, image: np.ndarray) -> list[TextBlock]:
     for x0, y0, x1, y1 in xyxy / r:
         heads[int(max(0, y0)) : int(max(0, y1)), int(max(0, x0)) : int(max(0, x1))] = True
     blocks = []
-    for box in join_split_lines(merge_overlapping(drop_merged_blocks([b for b in boxes if b.w >= 6 and b.h >= 6])), line_map):
+    for box in join_split_lines(merge_overlapping(drop_merged_blocks([b for b in boxes if b.w >= 6 and b.h >= 6])), line_map, vertical_text):
         mask_box = box.expand(int(min(box.w, box.h) * MASK_PAD_FRAC) + 4, w, h)
         mask = seg_mask[mask_box.y0 : mask_box.y1, mask_box.x0 : mask_box.x1].copy()
         recovered = heads[box.y0 : box.y1, box.x0 : box.x1].mean() < HEAD_COVER
-        blocks.append(TextBlock(box=box, vertical=is_vertical(line_map, box), mask_box=mask_box, mask=mask, recovered=bool(recovered)))
+        blocks.append(TextBlock(box=box, vertical=vertical_text and is_vertical(line_map, box), mask_box=mask_box, mask=mask, recovered=bool(recovered)))
     return reading_order([part for block in blocks for part in split_by_bubble(gray, block)])

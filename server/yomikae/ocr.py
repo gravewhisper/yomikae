@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import unicodedata
+from pathlib import Path
 from typing import Protocol
 
 import cv2
@@ -10,7 +11,8 @@ import numpy as np
 from PIL import Image
 
 from .balloon import claims, unclaimed
-from .detect import LIGHT, MASK_PAD_FRAC, reading_order
+from .config import KEMOLATE_DIR
+from .detect import LIGHT, MASK_PAD_FRAC, load_session, reading_order
 from .language import JAPANESE, Language
 from .model import Balloon, Box, Bubble, TextBlock
 from .typeset import find_region
@@ -57,6 +59,42 @@ class MangaReader:
 
 def load_ocr(device: str = "cpu") -> Reader:
     return MangaReader(device)
+
+
+class ReaderMissing(Exception):
+    pass
+
+
+class KemolateReader:
+    side = 224
+    start, end = 2, 3
+    max_tokens = 300
+
+    def __init__(self, device: str, folder: Path = KEMOLATE_DIR):
+        from tokenizers import Tokenizer
+
+        files = [folder / name for name in ("encoder_model.onnx", "decoder_model.onnx", "tokenizer.json")]
+        missing = [f.name for f in files if not f.exists()]
+        if missing:
+            raise ReaderMissing(f"the Korean reader needs {', '.join(missing)} in server/models/{folder.name}; download Kemolate OCR as the README says")
+        self.encoder = load_session(files[0], device)
+        self.decoder = load_session(files[1], device)
+        self.tokenizer = Tokenizer.from_file(str(files[2]))
+
+    def recognize(self, crop: Image.Image) -> tuple[str, float, int]:
+        x = np.asarray(crop.convert("RGB").resize((self.side, self.side), Image.Resampling.BILINEAR), np.float32) / 255.0
+        hidden = self.encoder.run(None, {"pixel_values": ((x - 0.5) / 0.5).transpose(2, 0, 1)[None]})[0]
+        ids, probs = [self.start], []
+        while len(ids) < self.max_tokens:
+            logits = self.decoder.run(None, {"input_ids": np.array([ids], np.int64), "encoder_hidden_states": hidden})[0][0, -1].astype(np.float64)
+            step = np.exp(logits - logits.max())
+            token = int(logits.argmax())
+            probs.append(float(step[token] / step.sum()))
+            if token == self.end:
+                break
+            ids.append(token)
+        text = self.tokenizer.decode(ids[1:], skip_special_tokens=True).replace(" ", "")
+        return text, float(np.mean(probs)), len(probs)
 
 
 def core_text(text: str) -> str:
@@ -156,7 +194,7 @@ def without_foreign_edge_line(reader: Reader, page: Image.Image, block: TextBloc
     return block
 
 
-def balloon_text(gray: np.ndarray, balloon: Balloon) -> TextBlock | None:
+def balloon_text(gray: np.ndarray, balloon: Balloon, vertical_text: bool = True) -> TextBlock | None:
     b = balloon.box
     h, w = gray.shape
     interior = cv2.erode(np.pad(balloon.mask, 1).astype(np.uint8), np.ones((2 * OUTLINE + 1, 2 * OUTLINE + 1), np.uint8))[1:-1, 1:-1] > 0
@@ -171,7 +209,7 @@ def balloon_text(gray: np.ndarray, balloon: Balloon) -> TextBlock | None:
     mask_box = box.expand(int(min(box.w, box.h) * MASK_PAD_FRAC) + 4, w, h)
     full = np.zeros((h, w), np.uint8)
     full[b.y0 : b.y1, b.x0 : b.x1] = ink * 255
-    return TextBlock(box=box, vertical=box.h >= box.w, mask_box=mask_box, mask=full[mask_box.y0 : mask_box.y1, mask_box.x0 : mask_box.x1].copy())
+    return TextBlock(box=box, vertical=vertical_text and box.h >= box.w, mask_box=mask_box, mask=full[mask_box.y0 : mask_box.y1, mask_box.x0 : mask_box.x1].copy())
 
 
 def read(reader: Reader, image: np.ndarray, blocks: list[TextBlock], balloons: list[Balloon] = (), language: Language = JAPANESE) -> tuple[list[Bubble], list[Bubble]]:
@@ -182,7 +220,7 @@ def read(reader: Reader, image: np.ndarray, blocks: list[TextBlock], balloons: l
     found = [(block, balloons[pick] if pick is not None else None, pick is not None and picks.count(pick) > 1, False) for block, pick in zip(blocks, picks)]
     spotting = os.environ.get("YOMIKAE_BALLOON_DETECT") == "1"
     for extra in unclaimed(blocks, balloons) if spotting else ():
-        block = balloon_text(gray, extra)
+        block = balloon_text(gray, extra, language.vertical)
         if block is not None:
             found.append((block, extra, False, True))
     order = {id(b): i for i, b in enumerate(reading_order([f[0] for f in found], language.right_to_left))}

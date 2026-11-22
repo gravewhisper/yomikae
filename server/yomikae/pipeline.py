@@ -146,8 +146,8 @@ class Timer:
             self.ms[stage] = self.ms.get(stage, 0) + round((time.perf_counter() - t) * 1000)
 
 
-READERS: dict[str, Callable[[str], ocr.Reader]] = {"manga-ocr": lambda device: ocr.load_ocr(device)}
-CPU_LOADERS: dict[str, Callable[[], object]] = {"lama": lambda: inpaint.load_model("cpu"), "manga-ocr": lambda: READERS["manga-ocr"]("cpu")}
+READERS: dict[str, Callable[[str], ocr.Reader]] = {"manga-ocr": lambda device: ocr.load_ocr(device), "kemolate": lambda device: ocr.KemolateReader(device)}
+CPU_LOADERS: dict[str, Callable[[], object]] = {"lama": lambda: inpaint.load_model("cpu"), "manga-ocr": lambda: READERS["manga-ocr"]("cpu"), "kemolate": lambda: READERS["kemolate"]("cpu")}
 
 
 class Engine:
@@ -295,7 +295,7 @@ class Engine:
 
             def find_text() -> tuple[list, list]:
                 with self.gpu():
-                    return timer.run("detect", detect.detect, self.detector, image), timer.run("balloons", balloon.segment, self.balloons, image)
+                    return timer.run("detect", detect.detect, self.detector, image, language.vertical), timer.run("balloons", balloon.segment, self.balloons, image)
 
             def read_text(reader: ocr.Reader, found: tuple[list, list]) -> tuple[list[Bubble], list[Bubble]]:
                 bubbles, unsure = timer.run("ocr", ocr.read, reader, image, *found, language)

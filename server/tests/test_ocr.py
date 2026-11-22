@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from make_test_page import FONT_PATH
+from make_test_page import FONT_PATH, make_korean_page
 from PIL import Image, ImageDraw, ImageFont
 
 from yomikae import ocr
-from yomikae.config import FONTS_DIR
+from yomikae.config import FONTS_DIR, KEMOLATE_DIR
 from yomikae.model import Box, TextBlock
 
 pytestmark = pytest.mark.models
@@ -66,3 +66,18 @@ def test_a_credit_badge_outside_any_balloon_is_not_read_as_dialogue(reader):
     line[290:360, 290:500] = gray[290:360, 290:500] < 128
     bubbles, unsure = ocr.read(reader, np.asarray(page.convert("RGB")), [block_of(badge), block_of(line)])
     assert [b.source for b in bubbles + unsure] == ["変態だね"]
+
+
+kemolate_files = pytest.mark.skipif(not (KEMOLATE_DIR / "encoder_model.onnx").exists(), reason="Kemolate OCR is not in server/models/kemolate-ocr")
+
+
+@kemolate_files
+def test_kemolate_reads_the_hangul_of_a_synthetic_korean_page():
+    reader = ocr.KemolateReader("cpu")
+    for seed in (0, 1):
+        page, truth = make_korean_page(seed)
+        for t in truth:
+            x0, y0, x1, y1 = Box(*t.text_box).expand(ocr.OCR_PAD, page.width, page.height).as_list()
+            text, confidence, _ = reader.recognize(page.crop((x0, y0, x1, y1)))
+            assert text == t.text.replace(" ", ""), (text, t.text)
+            assert confidence > 0.9, (text, confidence)

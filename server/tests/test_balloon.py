@@ -92,7 +92,7 @@ def test_a_see_through_box_is_set_inside_the_model_outline():
 def test_a_balloon_with_no_detected_text_block_is_found_and_translated(client, monkeypatch):
     img, truth = make_page(401)
     monkeypatch.setenv("YOMIKAE_BALLOON_DETECT", "1")
-    monkeypatch.setattr(detect, "detect", lambda session, image: [])
+    monkeypatch.setattr(detect, "detect", lambda session, image, vertical_text=True: [])
     r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")})
     assert r.status_code == 200, r.text
     page = r.json()
@@ -107,7 +107,7 @@ def test_a_balloon_with_no_detected_text_block_is_found_and_translated(client, m
 @pytest.mark.models
 def test_balloons_with_no_detected_text_block_stay_untouched_when_balloon_detection_is_off(client, monkeypatch):
     img, _ = make_page(402)
-    monkeypatch.setattr(detect, "detect", lambda session, image: [])
+    monkeypatch.setattr(detect, "detect", lambda session, image, vertical_text=True: [])
     monkeypatch.setenv("YOMIKAE_BALLOON_DETECT", "0")
     r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")})
     assert r.status_code == 200, r.text

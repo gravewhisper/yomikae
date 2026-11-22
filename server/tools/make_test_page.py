@@ -17,6 +17,7 @@ CJK_FONT_PATHS = (
     "/usr/share/fonts/google-noto-sans-cjk-fonts/NotoSansCJK-Bold.ttc",
 )
 JP_FONT_INDEX = 0
+KR_FONT_INDEX = 1
 
 
 def find_cjk_font(env=os.environ) -> str:
@@ -49,6 +50,18 @@ LINES = [
     "絶対に負けない",
     "ちょっと待ってくれ",
     "明日また会おうね",
+]
+
+KOREAN_LINES = [
+    "오늘 날씨 정말 좋다",
+    "빨리 집에 가자",
+    "그게 정말이야?",
+    "나한테 맡겨",
+    "어디 가는 거야?",
+    "한 번만 더 말해 줘",
+    "약속했잖아",
+    "내일 또 만나자",
+    "절대 지지 않을 거야",
 ]
 
 
@@ -169,6 +182,35 @@ def make_page(seed: int, width: int = 1280, height: int = 1816) -> tuple[Image.I
         ys, xs = np.nonzero(ink)
         text_box = [int(tx - 10 + xs.min()), int(ty - 10 + ys.min()), int(tx - 10 + xs.max() + 1), int(ty - 10 + ys.max() + 1)]
         bubbles.append(GroundTruthBubble(list(ellipse), text_box, text))
+    return img, bubbles
+
+
+def make_korean_page(seed: int, width: int = 800, height: int = 1800) -> tuple[Image.Image, list[GroundTruthBubble]]:
+    rng = random.Random(seed)
+    img = Image.new("RGB", (width, height), (255, 255, 255))
+    for y0 in range(60, height - 400, 440):
+        if rng.random() < 0.5:
+            draw_line_art(img, (60, y0, width - 60, y0 + 380), rng)
+    draw = ImageDraw.Draw(img)
+    bubbles: list[GroundTruthBubble] = []
+    for i, line in enumerate(rng.sample(KOREAN_LINES, k=3)):
+        font = ImageFont.truetype(FONT_PATH, rng.choice([30, 34]), index=KR_FONT_INDEX)
+        words = line.split()
+        rows = [" ".join(words[: len(words) // 2 + 1]), " ".join(words[len(words) // 2 + 1 :])] if len(words) > 2 else [line]
+        boxes = [draw.textbbox((0, 0), row, font=font) for row in rows]
+        tw, row_h = max(b[2] - b[0] for b in boxes), int(font.size * 1.4)
+        th = row_h * len(rows)
+        ew, eh = tw + 120, th + 90
+        ex = rng.randint(70, width - 70 - ew)
+        ey = 100 + i * 560 + rng.randint(0, 80)
+        ellipse = (ex, ey, ex + ew, ey + eh)
+        draw.ellipse(ellipse, fill=(255, 255, 255), outline=(0, 0, 0), width=4)
+        for r, row in enumerate(rows):
+            draw.text((ex + ew // 2, ey + 45 + row_h * r + row_h // 2), row, font=font, fill=(0, 0, 0), anchor="mm")
+        ink = np.array(img.crop(ellipse).convert("L")) < 128
+        ink[:8], ink[-8:], ink[:, :8], ink[:, -8:] = False, False, False, False
+        ys, xs = np.nonzero(ink)
+        bubbles.append(GroundTruthBubble(list(ellipse), [ex + int(xs.min()), ey + int(ys.min()), ex + int(xs.max()) + 1, ey + int(ys.max()) + 1], line))
     return img, bubbles
 
 

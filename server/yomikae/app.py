@@ -21,8 +21,9 @@ from . import __version__
 from .cache import KINDS, SAVED_SOURCES, prune_stale
 from .config import Settings, extension_ids
 from .guard import RequestGuard
-from .model import CastEntry
 from .language import DEFAULT, LANGUAGES, Language
+from .model import CastEntry
+from .ocr import ReaderMissing
 from .pipeline import FORMATS, PIPELINE_VERSION, TRANSLATION_VERSION, BadImage, Engine, decode_image, page_id_of
 from .reports import BadReport, image_extension, image_size, json_bytes, new_report_id, parse_areas, render_marked, resolve_areas, write_report
 from .translate import TranslatorFailed, TranslatorUnavailable
@@ -80,6 +81,11 @@ async def on_bad_report(_: Request, e: BadReport):
 @app.exception_handler(RequestValidationError)
 async def on_validation(_: Request, e: RequestValidationError):
     return error(400, "bad_request", f"invalid request: {e.errors()}")
+
+
+@app.exception_handler(ReaderMissing)
+async def on_reader_missing(_: Request, e: ReaderMissing):
+    return error(500, "reader_missing", str(e))
 
 
 @app.exception_handler(TranslatorUnavailable)

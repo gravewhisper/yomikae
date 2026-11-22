@@ -16,6 +16,7 @@ ANIME_ACE = "animeace2_reg.ttf"
 FALLBACK_FONT_PATHS = (SERVER_DIR / "fonts" / "NotoSansSymbols2-Regular.ttf", SERVER_DIR / "fonts" / "NotoSansSymbols-Variable.ttf")
 DETECTOR_PATH = MODELS_DIR / "comictextdetector.pt.onnx"
 LAMA_PATH = MODELS_DIR / "lama_large_512px.ckpt"
+KEMOLATE_DIR = MODELS_DIR / "kemolate-ocr"
 BUBBLE_MODEL_PATH = MODELS_DIR / os.environ.get("YOMIKAE_BUBBLE_MODEL", "manga109-bubble-seg.onnx")
 CACHE_MAX_BYTES = 2 * 1024**3
 DEVICES = ("cpu", "cuda")
