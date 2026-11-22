@@ -310,7 +310,7 @@ class Engine:
                 found = await loop.run_in_executor(self.gpu_thread, find_text)
                 try:
                     return await loop.run_in_executor(self.gpu_thread, read_text_on_gpu, reader, found)
-                except torch.OutOfMemoryError:
+                except (torch.OutOfMemoryError, ocr.ReaderOutOfMemory):
                     return await asyncio.to_thread(lambda: read_text(self.cpu_model(language.reader), found))
 
             def remove_text(bubbles: list[Bubble]) -> np.ndarray:

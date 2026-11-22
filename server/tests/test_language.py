@@ -153,3 +153,29 @@ def test_a_narrow_korean_bubble_of_stacked_short_rows_is_read_as_horizontal_text
     r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")}, data={"source_lang": "ko"})
     assert r.status_code == 200, r.text
     assert [(b["source"], b["vertical"]) for b in r.json()["bubbles"]] == [("".join(rows), False)]
+
+
+class FullGpuSession:
+    def __init__(self):
+        self.calls = 0
+
+    def run(self, *args):
+        from onnxruntime.capi.onnxruntime_pybind11_state import Fail
+
+        self.calls += 1
+        raise Fail("Non-zero status code returned while running Add node. Failed to allocate memory for requested buffer of size 6662656")
+
+
+@pytest.mark.models
+@pytest.mark.skipif(not (KEMOLATE_DIR / "encoder_model.onnx").exists(), reason="Kemolate OCR is not in server/models/kemolate-ocr")
+def test_a_korean_page_whose_reader_runs_out_of_gpu_memory_is_read_on_the_cpu(client, monkeypatch):
+    engine = client.app.state.engine
+    gpu_reader = ocr.KemolateReader("cpu")
+    full = FullGpuSession()
+    monkeypatch.setattr(gpu_reader, "decoder", full)
+    monkeypatch.setitem(engine.readers, "kemolate", gpu_reader)
+    img, truth = make_korean_page(5)
+    r = client.post("/v1/pages", files={"image": ("p.png", png_bytes(img), "image/png")}, data={"source_lang": "ko"})
+    assert r.status_code == 200, r.text
+    assert full.calls >= 1
+    assert sorted(b["source"] for b in r.json()["bubbles"]) == sorted(t.text.replace(" ", "") for t in truth)

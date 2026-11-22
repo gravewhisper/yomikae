@@ -65,6 +65,10 @@ class ReaderMissing(Exception):
     pass
 
 
+class ReaderOutOfMemory(Exception):
+    pass
+
+
 class KemolateReader:
     side = 224
     start, end = 2, 3
@@ -82,6 +86,16 @@ class KemolateReader:
         self.tokenizer = Tokenizer.from_file(str(files[2]))
 
     def recognize(self, crop: Image.Image) -> tuple[str, float, int]:
+        from onnxruntime.capi.onnxruntime_pybind11_state import Fail
+
+        try:
+            return self.decode(crop)
+        except Fail as e:
+            if "Failed to allocate memory" in str(e):
+                raise ReaderOutOfMemory(str(e)) from e
+            raise
+
+    def decode(self, crop: Image.Image) -> tuple[str, float, int]:
         x = np.asarray(crop.convert("RGB").resize((self.side, self.side), Image.Resampling.BILINEAR), np.float32) / 255.0
         hidden = self.encoder.run(None, {"pixel_values": ((x - 0.5) / 0.5).transpose(2, 0, 1)[None]})[0]
         ids, probs = [self.start], []
