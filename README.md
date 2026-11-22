@@ -222,7 +222,7 @@ These are planned but not built yet:
 
 ## License
 
-Yomikae is licensed under the MIT License, see [LICENSE](LICENSE). The LaMa inpainting network in `server/yomikae/lama.py` is adapted from advimman/lama under Apache-2.0. The demo images are CC BY-NC 4.0, like the OpenMantra dataset they come from. [docs/credits.md](docs/credits.md) has the details.
+Yomikae is licensed under the MIT License, see [LICENSE](LICENSE). [docs/credits.md](docs/credits.md) lists the code, models and media from other projects and their licenses.
 
 ## Disclaimer
 
