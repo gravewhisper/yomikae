@@ -33,7 +33,7 @@ All configuration is environment variables. There is no settings UI.
 | `YOMIKAE_OPENAI_MODEL` | `google/gemma-4-12b` | Model name sent to the endpoint. Any OpenAI-compatible model works. The model is part of the translator's name, so the server translates a page again when another model made its cached copy. |
 | `YOMIKAE_OPENAI_API_KEY` | `lm-studio` | Bearer token. |
 | `YOMIKAE_OPENAI_REASONING_EFFORT` | `none` | Sent as `reasoning_effort`. `none` stops Gemma from thinking first, which cut a call from 7.6 s to 0.7 s. Set it empty to omit the field for endpoints that reject it. |
-| `YOMIKAE_CLAUDE_MODEL` | `claude-sonnet-5-5` | Model that `claude -p` uses with `YOMIKAE_TRANSLATOR=claude`. |
+| `YOMIKAE_CLAUDE_MODEL` | `claude-haiku-5-5` | Model that `claude -p` uses with `YOMIKAE_TRANSLATOR=claude`. |
 | `YOMIKAE_CLAUDE_EFFORT` | `low` | Effort that `claude -p` uses: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `YOMIKAE_CLAUDE_COMMAND` | `claude` | Command to run, if `claude` is not on `PATH`. |
 | `YOMIKAE_CLAUDE_LOG_DIR` | unset | Folder where each `claude` call is saved as JSON, with the instructions, the request and the whole reply. Unset saves nothing. |

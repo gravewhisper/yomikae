@@ -43,12 +43,12 @@ The server can run the [Claude Code](https://claude.com/claude-code) command lin
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `YOMIKAE_CLAUDE_MODEL` | `claude-sonnet-5-5` | The model `claude` uses. `claude-haiku-5-5` is faster and uses less of a subscription's limit, and `claude-opus-5-5` is slower and uses more. |
+| `YOMIKAE_CLAUDE_MODEL` | `claude-haiku-5-5` | The model `claude` uses. `claude-sonnet-5-5` uses more of a subscription's limit, and `claude-opus-5-5` is slower and uses more still. |
 | `YOMIKAE_CLAUDE_EFFORT` | `low` | How long the model thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `YOMIKAE_CLAUDE_COMMAND` | `claude` | The command to run, if `claude` is not on `PATH`. |
 | `YOMIKAE_CLAUDE_LOG_DIR` | unset | A folder where the server saves each call as JSON: the instructions, the request with the page's lines and context, and `claude`'s whole reply. Unset saves nothing. |
 
-The page's Japanese text, the earlier pages' lines and the work's names leave your computer and go to Anthropic. The page image does not. Each call starts `claude` with no tools, no settings, no plugins and no saved session, in an empty folder, so text on a page cannot make it read files or run commands. On 2026-11-14, at low effort, a call with 8 lines took about 2.7 s with Claude Sonnet 5.5, 2.2 s with Claude Haiku 5.5 and 3.2 to 3.4 s with Claude Opus 5.5, of which about 1 s is `claude` starting. The translation quality of these models on this task was not measured.
+The page's Japanese text, the earlier pages' lines and the work's names leave your computer and go to Anthropic. The page image does not. Each call starts `claude` with no tools, no settings, no plugins and no saved session, in an empty folder, so text on a page cannot make it read files or run commands. On 2026-11-14, at low effort, a call with 8 lines took about 2.7 s with Claude Sonnet 5.5, 2.2 s with Claude Haiku 5.5 and 3.2 to 3.4 s with Claude Opus 5.5, of which about 1 s is `claude` starting. On Korean webtoon pages (2026-11-23, 12 held-out series, 897 lines, text only), Opus graded 78% of lines fully right for Gemma 4 12B, 85% for Haiku 5.5 and 86% for Sonnet 5.5. Haiku and Sonnet both beat Gemma, and Sonnet's lead over Haiku was within noise. Japanese was not measured this way.
 
 ## ChatGPT plan through Codex
 
