@@ -43,7 +43,7 @@ The server can run the [Claude Code](https://claude.com/claude-code) command lin
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `YOMIKAE_CLAUDE_MODEL` | `claude-haiku-5-5` | The model `claude` uses. `claude-sonnet-5-5` uses more of a subscription's limit, and `claude-opus-5-5` is slower and uses more still. |
+| `YOMIKAE_CLAUDE_MODEL` | `claude-sonnet-5-5` | The model `claude` uses. `claude-haiku-5-5` is faster and uses less of a subscription's limit, and `claude-opus-5-5` is slower and uses more. For Korean, `claude-haiku-5-5` scored as well as Sonnet (below). |
 | `YOMIKAE_CLAUDE_EFFORT` | `low` | How long the model thinks: `low`, `medium`, `high`, `xhigh` or `max`. |
 | `YOMIKAE_CLAUDE_COMMAND` | `claude` | The command to run, if `claude` is not on `PATH`. |
 | `YOMIKAE_CLAUDE_LOG_DIR` | unset | A folder where the server saves each call as JSON: the instructions, the request with the page's lines and context, and `claude`'s whole reply. Unset saves nothing. |
