@@ -24,8 +24,8 @@ from .ruby import furigana_names
 from .translate import Context, PageImage, Translator, TranslatorFailed, TranslatorUnavailable, make_translator, mend_stutters, subset, translate_lines
 
 T = TypeVar("T")
-PIPELINE_VERSION = 36
-TRANSLATION_VERSION = 1
+PIPELINE_VERSION = 37
+TRANSLATION_VERSION = 2
 STAGES = ("detect", "balloons", "ocr", "translate", "inpaint", "typeset")
 WEBP_QUALITY = 90
 JPEG_QUALITY = 90

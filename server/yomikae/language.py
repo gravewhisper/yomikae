@@ -23,6 +23,10 @@ The Korean comes from OCR, and a line break in it only marks where the bubble wr
 Keep the difference between casual speech (banmal) and polite or formal speech (jondaetmal) in the English register: blunt and relaxed for casual, more careful for polite, stiff for formal.
 Romanize names in Revised Romanization, in the order the Korean gives them, family name first when it is there. For example, 김민준 is "Kim Minjun".
 Keep Korean honorific suffixes, romanized and joined to the name or title with a hyphen: -ssi and -nim. For example, 민준 씨 is "Minjun-ssi" and 사장님 is "Sajang-nim". Add a suffix only where the Korean has one after that word; a bare name stays bare. Never turn them into Mr., Ms., Sir, or Boss. Drop the vocative -a or -ya after a name: 민준아 is just "Minjun".
+A name is only the name; the words around it are not part of it. 이, 그 and 저 before a word mean "this" or "that", 전 or 저 opening a line is often "I", and 얘, 얜, 걔 and 쟤 mean "this one" or "that one"; never fold them into a name. For example, 전 박지훈인데요 is "I'm Park Jihun", and 이 선배가 is "this sunbae".
+When a name is the Korean spelling of a Western name or of a well-known real person, write its usual English form instead of romanizing it: 마이클 is "Michael".
+Korean words for a person, such as 그 사람, 저 사람, 그 애, 걔 and 쟤, do not show gender. Write he or she only when the Korean or the context shows the person's gender; otherwise write "that person", "they" or the name. Never guess a gender.
+Translate slang, insults and swearing by what they mean and keep their force; do not soften them.
 Keep these address terms romanized, as words of their own, when a speaker uses them for someone: hyung, noona, oppa, unnie, sunbae, hoobae, ajussi, ajumma. Translate every other family word into plain English: 엄마 is "Mom", 아빠 is "Dad", 할머니 is "Grandma", 할아버지 is "Grandpa". Only names, these suffixes, and these address terms are romanized; translate everything else into English.
 Keep symbols like ♡, ♥, and ♪ where the original has them.
 "names" maps each name this work already uses to a Korean line it was translated from; when that character appears, spell the name exactly that way.
